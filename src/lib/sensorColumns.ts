@@ -1,0 +1,183 @@
+/**
+ * センサー一覧の列表示設定 — Phase 9.10
+ *
+ * 「名前」は固定表示（必須）。それ以外の列は表示／非表示を localStorage に永続化する。
+ * 多種多様なセンサー（温湿度・PPM・kW など）を 1 つの一覧で扱えるよう、
+ * 「最新値」は単一カラムにまとめ、温湿度なら "25.0℃ 50%" のように
+ * スペース区切りで表示する設計を前提にしている。
+ */
+
+export type SensorColumnKey =
+  | 'deviceNumber' // EUI / DV-001 形式
+  | 'serialNumber' // 16 桁 HEX
+  | 'model' // モデル名
+  | 'manufacturer' // メーカー名
+  | 'category' // 区分
+  | 'group' // グループ
+  | 'gateway' // 接続ゲートウェイ
+  | 'tags' // タグ
+  | 'status' // オンライン / オフライン
+  | 'battery' // バッテリー
+  | 'lastUpdated' // 最終更新（経過時刻）
+  | 'latestValue' // 最新値（温湿度など）
+  | 'threshold' // 逸脱設定（閾値）
+
+export type SensorColumnVisibility = Record<SensorColumnKey, boolean>
+
+export type SensorColumnDef = {
+  key: SensorColumnKey
+  label: string
+  /** 列の説明（ダイアログのチェックボックスに表示） */
+  hint?: string
+  /** 既定で表示するか */
+  defaultVisible: boolean
+  /** 表示設定でのグルーピング */
+  group: 'identity' | 'classify' | 'status'
+}
+
+/** 列定義（順序が一覧の表示順になる） */
+export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
+  {
+    key: 'deviceNumber',
+    label: 'デバイス番号',
+    hint: 'DV-001 形式のデバイスID（EUI）',
+    defaultVisible: true,
+    group: 'identity',
+  },
+  {
+    key: 'serialNumber',
+    label: 'シリアル番号',
+    hint: '16 桁 HEX のシリアル番号',
+    defaultVisible: false,
+    group: 'identity',
+  },
+  {
+    key: 'model',
+    label: 'モデル',
+    hint: '機種名（例: EM320-TH）',
+    defaultVisible: false,
+    group: 'identity',
+  },
+  {
+    key: 'manufacturer',
+    label: 'メーカー',
+    hint: 'メーカー名',
+    defaultVisible: false,
+    group: 'identity',
+  },
+  {
+    key: 'category',
+    label: '区分',
+    defaultVisible: true,
+    group: 'classify',
+  },
+  {
+    key: 'group',
+    label: 'グループ',
+    defaultVisible: true,
+    group: 'classify',
+  },
+  {
+    key: 'gateway',
+    label: 'ゲートウェイ',
+    hint: '接続されている親機（ゲートウェイ）名',
+    defaultVisible: false,
+    group: 'classify',
+  },
+  {
+    key: 'tags',
+    label: 'タグ',
+    defaultVisible: true,
+    group: 'classify',
+  },
+  {
+    key: 'status',
+    label: '状態',
+    hint: 'オンライン / オフライン',
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'battery',
+    label: 'バッテリー',
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'lastUpdated',
+    label: '最終更新',
+    hint: '直近の受信からの経過時間',
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'latestValue',
+    label: '最新値',
+    hint: '温湿度なら "25.0℃ 50%" のように 1 列にまとめて表示',
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'threshold',
+    label: '逸脱設定（閾値）',
+    hint: '現在のセンサーで使われている逸脱判定の上下限',
+    defaultVisible: false,
+    group: 'status',
+  },
+]
+
+const STORAGE_KEY = 'miterude:sensors:columns:v1'
+
+export function defaultColumnVisibility(): SensorColumnVisibility {
+  const out = {} as SensorColumnVisibility
+  for (const def of SENSOR_COLUMN_DEFS) {
+    out[def.key] = def.defaultVisible
+  }
+  return out
+}
+
+export function loadColumnVisibility(): SensorColumnVisibility {
+  const def = defaultColumnVisibility()
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return def
+    const parsed = JSON.parse(raw) as Partial<SensorColumnVisibility>
+    if (!parsed || typeof parsed !== 'object') return def
+    const out = { ...def }
+    for (const k of Object.keys(def) as SensorColumnKey[]) {
+      if (typeof parsed[k] === 'boolean') out[k] = parsed[k] as boolean
+    }
+    return out
+  } catch {
+    return def
+  }
+}
+
+export function saveColumnVisibility(v: SensorColumnVisibility): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(v))
+  } catch {
+    /* noop */
+  }
+}
+
+/* ---------- Phase B: ワイド表示モード ---------- */
+
+const WIDE_KEY = 'miterude:sensors:wide:v1'
+
+export function loadWideMode(): boolean {
+  try {
+    const raw = localStorage.getItem(WIDE_KEY)
+    return raw === '1' || raw === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function saveWideMode(v: boolean): void {
+  try {
+    localStorage.setItem(WIDE_KEY, v ? '1' : '0')
+  } catch {
+    /* noop */
+  }
+}

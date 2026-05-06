@@ -1,0 +1,23 @@
+/* App-level minimal layout. Shell, panels, forms etc. live in dashboard.css.
+ * This file only owns what's specific to the print bulk-output mode and a few
+ * legacy escape hatches that report.css depends on.
+ */
+
+@media print {
+  .no-print-shell .sidebar,
+  .no-print-shell .breadcrumb,
+  .no-print-shell .view-header,
+  .no-print-shell .panel-card-head,
+  .no-print-shell .preview-toolbar-new,
+  .no-print-shell .month-tabs,
+  .no-print-shell .device-grid,
+  .no-print-shell .advanced-toggle,
+  .no-print-shell .advanced-body,
+  .no-print-shell .action-bar,
+  .no-print-shell .detail-foot,
+  .no-print-shell .month-tabs-card,
+  .no-print-shell .recent-table-wrap,
+  .no-print-shell .kpi-grid {
+    display: none !important;
+  }
+}

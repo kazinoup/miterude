@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Claude Code ローカル設定（個人用、共有しない）
+.claude/
+
+# デモ用 CSV データ（公開リポジトリには含めない。
+# 必要な場合はユーザがアプリのインポート機能で手元の CSV を読み込む想定）
+csv_files/
+
+# Vercel
+.vercel

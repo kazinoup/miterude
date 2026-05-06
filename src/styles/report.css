@@ -1,0 +1,705 @@
+/* ----- レポート共通（数値は等幅・やや細め） ----- */
+.report-numeric,
+.summary-page,
+.monthly-page {
+  font-family:
+    'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo UI', 'Noto Sans JP',
+    sans-serif;
+}
+
+.report-page {
+  padding: 1rem 1.25rem 1.5rem;
+  border-bottom: 1px dashed var(--border);
+  box-sizing: border-box;
+}
+
+.report-bundle {
+  margin-bottom: 3rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.report-bundle .report-page:last-child {
+  border-bottom: none;
+}
+
+.report-title,
+.monthly-title {
+  text-align: center;
+  margin: 0 0 0.35rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+/* サマリー・月報共通: 【年月】とデバイス名を1行・中央 */
+.report-hero-wrap {
+  margin: 0 0 0.55rem;
+}
+
+.report-hero-line {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.2rem 0.45rem;
+  line-height: 1.3;
+}
+
+.report-hero-ym {
+  font-size: 1.42rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+}
+
+.report-hero-device {
+  font-size: 1.58rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.summary-header .meta-sub {
+  margin: 0 0 1.25rem;
+  font-size: 0.82rem;
+  text-align: center;
+  color: #444;
+  line-height: 1.45;
+}
+
+/* ----- サマリ: 温度グラフ → 湿度グラフ → 集計表 ----- */
+.summary-layout-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  align-items: stretch;
+}
+
+/* 集計表と同じ幅にグラフを収める（560px の約 1.2 倍でやや広め） */
+.summary-charts-column {
+  width: 100%;
+  max-width: 672px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
+}
+
+.chart-block-title {
+  margin: 0 0 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.chart-wrap-temp,
+.chart-wrap-hum {
+  width: 100%;
+  height: 300px;
+  min-height: 300px;
+  border: none;
+  border-radius: 0;
+  padding: 0.55rem 0.35rem 0.65rem 0.45rem;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.chart-wrap-temp {
+  margin-bottom: 0.15rem;
+}
+
+.chart-wrap-hum {
+  margin-top: 0.15rem;
+}
+
+.chart-wrap-temp .recharts-responsive-container,
+.chart-wrap-hum .recharts-responsive-container {
+  width: 100% !important;
+  height: 260px !important;
+}
+
+.summary-table {
+  width: 100%;
+  max-width: 672px;
+  margin: 0.75rem auto 0;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.summary-table th,
+.summary-table td {
+  border: 1px solid #333;
+  padding: 0.4rem 0.45rem;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-table thead th {
+  background: #f0f4f8;
+  font-weight: 600;
+}
+
+.summary-table tbody th {
+  background: #f7f7f7;
+  text-align: left;
+}
+
+.summary-table .deviation {
+  color: #c00;
+  font-weight: 700;
+}
+
+.summary-foot {
+  margin-top: 1rem;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.no-data {
+  padding: 2rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ----- 月報表 ----- */
+.monthly-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.meta-table {
+  border-collapse: collapse;
+  font-size: 0.76rem;
+}
+
+.meta-table th,
+.meta-table td {
+  border: 1px solid #333;
+  padding: 0.25rem 0.5rem;
+}
+
+/* 確認印（実線・隙間なし・文字は薄め） */
+.stamp-row {
+  border-collapse: collapse;
+  flex-shrink: 0;
+}
+
+.stamp-row td.stamp {
+  width: 3.5rem;
+  height: 3.5rem;
+  border: 1px solid #888;
+  vertical-align: middle;
+  text-align: center;
+  font-size: 0.62rem;
+  font-weight: 300;
+  color: #c8c8c8;
+  padding: 0;
+}
+
+.stats-row {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.68rem;
+  font-weight: 400;
+  margin-bottom: 0.4rem;
+}
+
+.stats-row th,
+.stats-row td {
+  border: 1px solid #333;
+  padding: 0.25rem 0.3rem;
+  text-align: center;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-row th {
+  background: #f0f4f8;
+}
+
+.stats-row .deviation {
+  color: #c00;
+  font-weight: 700;
+}
+
+.monthly-page {
+  display: flex;
+  flex-direction: column;
+}
+
+.monthly-table-scroll {
+  overflow-x: auto;
+  max-width: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.monthly-grid {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  height: 100%;
+  font-size: 0.52rem;
+  font-weight: 400;
+}
+
+.monthly-grid th,
+.monthly-grid td {
+  border: 1px solid #222;
+  text-align: center;
+  vertical-align: middle;
+  padding: 3px 2px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.monthly-hour-row td {
+  min-height: 1.3rem;
+  height: 1.3rem;
+  box-sizing: border-box;
+}
+
+.monthly-hour-row-sub td {
+  border-top: 1px solid #bbb;
+  min-height: 1.3rem;
+  height: 1.3rem;
+  box-sizing: border-box;
+}
+
+.monthly-grid .cell-num {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+}
+
+.monthly-grid .corner {
+  width: 2.4rem;
+  background: #eef2f6;
+  font-size: 0.58rem;
+  font-weight: 600;
+}
+
+.monthly-grid .day-head {
+  background: #f5f5f5;
+  font-weight: 600;
+  min-width: 1.45rem;
+  font-size: 0.52rem;
+  padding: 2px 1px;
+}
+
+.monthly-grid .wd {
+  display: block;
+  font-weight: 400;
+  font-size: 0.48rem;
+}
+
+.monthly-grid .row-head-hour {
+  background: #fafafa;
+  font-size: 0.58rem;
+  font-weight: 600;
+  vertical-align: middle;
+  width: 2.1rem;
+  padding: 2px 3px;
+  line-height: 1.15;
+}
+
+.monthly-grid .cell-deviation {
+  color: #c00;
+  font-weight: 600;
+}
+
+.monthly-grid.temperature .cell-num {
+  font-size: 0.5rem;
+}
+
+.monthly-grid.humidity .cell-num {
+  font-size: 0.52rem;
+}
+
+.remarks {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.5rem;
+  font-size: 0.72rem;
+}
+
+.remarks th,
+.remarks td {
+  border: 1px solid #333;
+  padding: 0.35rem 0.5rem;
+}
+
+.remarks-label {
+  width: 3.2rem;
+  background: #f7f7f7;
+  white-space: nowrap;
+}
+
+/* td 単体では min-height が効かないことがあるため内側にブロックを置く */
+.remarks-body-cell {
+  padding: 0 !important;
+  vertical-align: top;
+}
+
+.remarks-write-area {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(1.45em * 3 + 0.5rem);
+  padding: 0.4rem 0.55rem 0.5rem;
+  line-height: 1.45;
+}
+
+/* 週報用：7列グリッドはセルが広いので文字も少し大きく */
+.weekly-grid .day-head {
+  font-size: 0.7rem;
+  padding: 4px 2px;
+  min-width: 4rem;
+}
+.weekly-grid .wd {
+  font-size: 0.62rem;
+}
+.weekly-grid.temperature .cell-num {
+  font-size: 0.7rem;
+}
+.weekly-grid.humidity .cell-num {
+  font-size: 0.72rem;
+}
+.weekly-grid .corner {
+  font-size: 0.66rem;
+  width: 3rem;
+}
+.weekly-grid .row-head-hour {
+  font-size: 0.66rem;
+  width: 2.6rem;
+}
+.weekly-page .monthly-hour-row td,
+.weekly-page .monthly-hour-row-sub td {
+  height: 1.5rem;
+  min-height: 1.5rem;
+}
+
+/* 画面プレビュー（印刷対象外） */
+.screen-preview-root {
+  margin-top: 0.75rem;
+}
+
+/* 一括印刷用：レイアウトは取るが clip しない（SVG が PDF に乗るように） */
+@media screen {
+  #bulk-print-root,
+  .bulk-print-root {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 210mm;
+    max-width: 100vw;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    z-index: -1;
+    overflow: visible;
+    height: auto;
+  }
+}
+
+/* ----- 印刷 ----- */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm;
+  }
+
+  body {
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .app-main {
+    padding: 0 !important;
+    max-width: none !important;
+  }
+
+  /* 単体プレビュー印刷では画面用ルートを出す。一括 PDF 時は body にクラスを付けて切替 */
+  #bulk-print-root,
+  .bulk-print-root {
+    display: none !important;
+  }
+
+  #screen-preview-root,
+  .screen-preview-root {
+    display: block !important;
+  }
+
+  body.printing-bulk-month #screen-preview-root,
+  body.printing-bulk-month .screen-preview-root {
+    display: none !important;
+  }
+
+  body.printing-bulk-month #bulk-print-root,
+  body.printing-bulk-month .bulk-print-root {
+    display: block !important;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    clip: auto !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    left: auto !important;
+    top: auto !important;
+    z-index: auto !important;
+    max-width: none !important;
+  }
+
+  .report-bundle {
+    border: none;
+    margin: 0;
+    border-radius: 0;
+    break-inside: avoid;
+  }
+
+  .report-page {
+    page-break-after: always;
+    border: none;
+    padding: 3mm 4mm 4mm;
+    min-height: 0;
+  }
+
+  #screen-preview-root .report-bundle:last-child .report-page:last-child,
+  body.printing-bulk-month #bulk-print-root .report-bundle:last-child .report-page:last-child {
+    page-break-after: auto;
+  }
+
+  .summary-layout-vertical {
+    gap: 5.5mm;
+  }
+
+  .summary-charts-column {
+    max-width: none;
+    width: 100%;
+    margin-left: 0;
+    margin-right: 0;
+  }
+
+  .summary-header .meta-sub {
+    margin-bottom: 4mm;
+  }
+
+  .report-hero-line {
+    gap: 1.5mm 2.5mm;
+  }
+
+  .report-hero-ym {
+    font-size: 13pt;
+  }
+
+  .report-hero-device {
+    font-size: 14pt;
+  }
+
+  .report-hero-wrap {
+    margin-bottom: 0.35rem;
+  }
+
+  .chart-block-title {
+    font-size: 9pt;
+    margin-bottom: 1.5mm;
+  }
+
+  .chart-wrap-temp,
+  .chart-wrap-hum {
+    height: 63mm;
+    min-height: 63mm;
+    max-height: 63mm;
+    border: none !important;
+    page-break-inside: avoid;
+    padding: 2mm 1.5mm 2.5mm 1.8mm;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+
+  .chart-wrap-temp .recharts-responsive-container,
+  .chart-wrap-hum .recharts-responsive-container {
+    height: 56mm !important;
+    min-height: 56mm !important;
+    width: 100% !important;
+  }
+
+  .summary-table {
+    font-size: 7.5pt;
+    max-width: none;
+    margin-top: 3mm !important;
+  }
+
+  .summary-table th,
+  .summary-table td {
+    padding: 0.2rem 0.3rem;
+  }
+
+  .summary-foot {
+    margin-top: 3mm;
+  }
+
+  /* ----- 月報：1ページに収めるため行高を抑える ----- */
+  .monthly-page {
+    min-height: 0;
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .monthly-table-scroll {
+    overflow: visible;
+    flex: 0 1 auto;
+    display: block;
+  }
+
+  .monthly-grid {
+    font-size: 4.9pt;
+    height: auto;
+  }
+
+  .monthly-grid .day-head {
+    font-size: 4.6pt;
+    padding: 0;
+  }
+
+  .monthly-grid .wd {
+    font-size: 4pt;
+  }
+
+  .monthly-grid .row-head-hour {
+    font-size: 5pt;
+    width: 5.5mm;
+    height: 8.7mm;
+    box-sizing: border-box;
+    padding: 0 1px;
+  }
+
+  .monthly-grid th,
+  .monthly-grid td {
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  .monthly-hour-row td,
+  .monthly-hour-row-sub td {
+    height: 4.35mm;
+    min-height: 4.35mm;
+    max-height: 4.35mm;
+  }
+
+  .monthly-grid.temperature .cell-num {
+    font-size: 4.8pt;
+  }
+
+  .monthly-grid.humidity .cell-num {
+    font-size: 5pt;
+  }
+
+  .monthly-grid .corner {
+    width: 6mm;
+    font-size: 5pt;
+  }
+
+  .stats-row {
+    font-size: 6.2pt;
+    margin-bottom: 0.2rem;
+  }
+
+  .stats-row th,
+  .stats-row td {
+    padding: 0.15rem 0.2rem;
+  }
+
+  .meta-table {
+    font-size: 6.8pt;
+  }
+
+  .meta-table th,
+  .meta-table td {
+    padding: 0.15rem 0.3rem;
+  }
+
+  .monthly-title {
+    font-size: 10.5pt;
+    margin-bottom: 0.2rem;
+  }
+
+  .remarks-write-area {
+    min-height: 17mm;
+    padding: 0.8mm 1mm 1.2mm;
+    line-height: 1.4;
+  }
+
+  .remarks th,
+  .remarks td {
+    padding: 0.25rem 0.35rem;
+  }
+
+  .remarks td.remarks-body-cell {
+    padding: 0 !important;
+    vertical-align: top;
+  }
+
+  .remarks th.remarks-label {
+    vertical-align: middle;
+  }
+
+  .report-title {
+    font-size: 11pt;
+  }
+
+  .stamp-row td.stamp {
+    width: 14mm;
+    height: 14mm;
+    font-size: 6pt;
+    color: #d0d0d0;
+  }
+
+  /* 週報の印刷時調整：7列なので大きめ表示 */
+  .weekly-grid {
+    font-size: 8pt;
+  }
+  .weekly-grid .day-head {
+    font-size: 7pt;
+    padding: 1mm 0.5mm;
+  }
+  .weekly-grid .wd {
+    font-size: 6pt;
+  }
+  .weekly-grid.temperature .cell-num {
+    font-size: 7.6pt;
+  }
+  .weekly-grid.humidity .cell-num {
+    font-size: 8pt;
+  }
+  .weekly-grid .corner {
+    width: 9mm;
+    font-size: 7pt;
+  }
+  .weekly-grid .row-head-hour {
+    font-size: 7pt;
+    width: 9mm;
+    height: auto;
+  }
+  .weekly-page .monthly-hour-row td,
+  .weekly-page .monthly-hour-row-sub td {
+    height: 5.2mm;
+    min-height: 5.2mm;
+    max-height: 5.2mm;
+  }
+}
