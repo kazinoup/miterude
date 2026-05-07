@@ -213,7 +213,10 @@ export function DashboardView({
       <div className="dashboard-view">
         <header className="view-header">
           <div className="view-header-text">
-            <h1>ダッシュボード</h1>
+            <h1>
+              <LayoutDashboard size={20} className="head-icon" />
+              ダッシュボード
+            </h1>
             <p>
               {dashboardCount === 0
                 ? 'まだダッシュボードがありません。フロアやチームごとに作成できます。'
@@ -278,7 +281,10 @@ export function DashboardView({
     <div className="dashboard-view">
       <header className="view-header">
         <div className="view-header-text">
-          <h1>{dashboard.name}</h1>
+          <h1>
+            <LayoutDashboard size={20} className="head-icon" />
+            {dashboard.name}
+          </h1>
           {dashboard.description && <p>{dashboard.description}</p>}
           <p className="dashboard-context-info">
             <span>

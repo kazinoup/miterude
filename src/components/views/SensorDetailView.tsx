@@ -351,20 +351,22 @@ export function SensorDetailView({
 
   return (
     <div className="device-detail-view">
-      <div className="breadcrumb">
-        <button type="button" className="link-btn" onClick={onBack}>
-          <ArrowLeft size={14} />
-          <span>センサー一覧</span>
-        </button>
-        <ChevronRight size={14} className="bc-sep" />
-        <span className="bc-current">{sensor?.name || deviceId}</span>
-      </div>
-
       <header className="view-header">
         <div className="view-header-text">
-          <h1 className="device-title">
+          {/* 1 行に集約: 「← 戻る  センサー > [センサー名]」 */}
+          <h1 className="device-title detail-title-line">
+            <button
+              type="button"
+              className="detail-back-btn"
+              onClick={onBack}
+              aria-label="戻る"
+            >
+              <ArrowLeft size={16} />
+              <span>戻る</span>
+            </button>
+            <span className="detail-title-sep">センサー</span>
+            <ChevronRight size={14} className="bc-sep" />
             <span className="device-title-id">{sensor?.name || deviceId}</span>
-            {sensor && <span className="device-devnum">{sensor.deviceNumber}</span>}
           </h1>
           <p>{readings.length.toLocaleString('ja-JP')} 件の計測データ</p>
         </div>

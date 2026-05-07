@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ClipboardCheck,
   Pencil,
@@ -62,6 +62,16 @@ export function RecordsView({
 }: Props) {
   const [tab, setTab] = useState<Tab>('checkins')
   const [filterStatus, setFilterStatus] = useState<'all' | 'pending' | 'approved'>('all')
+
+  // ワイド表示固定（センサー一覧と同じ扱い）
+  useEffect(() => {
+    const el = document.querySelector('.app-content-inner')
+    if (!el) return
+    el.classList.add('is-wide')
+    return () => {
+      el.classList.remove('is-wide')
+    }
+  }, [])
 
   const checkinList = useMemo(
     () =>

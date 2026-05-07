@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ChevronRight,
   Trash2,
+  Cpu,
   BatteryFull,
   BatteryMedium,
   BatteryLow,
@@ -807,7 +808,10 @@ export function SensorsView({
       <div className="dashboard-view">
         <header className="view-header">
           <div className="view-header-text">
-            <h1>センサー</h1>
+            <h1>
+              <Cpu size={20} className="head-icon" />
+              センサー
+            </h1>
             <p>登録されているセンサーがありません。</p>
           </div>
         </header>
@@ -824,7 +828,10 @@ export function SensorsView({
     <div className="dashboard-view">
       <header className="view-header">
         <div className="view-header-text">
-          <h1>センサー</h1>
+          <h1>
+            <Cpu size={20} className="head-icon" />
+            センサー
+          </h1>
           <p>登録されているセンサー（IoT デバイス）を一覧で確認します。</p>
         </div>
         <div className="view-header-actions">

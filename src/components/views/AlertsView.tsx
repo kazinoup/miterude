@@ -99,6 +99,16 @@ export function AlertsView({ alertLogs, sensors, gateways }: Props) {
     setPage(0)
   }, [selectedTargets, selectedKinds, fromDate, toDate])
 
+  // ワイド表示固定（センサー一覧と同じ扱い）
+  useEffect(() => {
+    const el = document.querySelector('.app-content-inner')
+    if (!el) return
+    el.classList.add('is-wide')
+    return () => {
+      el.classList.remove('is-wide')
+    }
+  }, [])
+
   /** 対象デバイス候補（センサー + ゲートウェイ）をまとめて返す */
   const targetCandidates = useMemo(() => {
     const list: {

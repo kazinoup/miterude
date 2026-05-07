@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import {
   Router as RouterIcon,
   ChevronRight,
@@ -49,6 +49,16 @@ export function GatewaysView({
   sensors,
   onOpenGateway,
 }: Props) {
+  // ワイド表示固定（センサー一覧と同じ扱い）
+  useEffect(() => {
+    const el = document.querySelector('.app-content-inner')
+    if (!el) return
+    el.classList.add('is-wide')
+    return () => {
+      el.classList.remove('is-wide')
+    }
+  }, [])
+
   const list: Gateway[] = useMemo(
     () => Object.values(gateways).sort((a, b) => a.id.localeCompare(b.id)),
     [gateways],
@@ -59,7 +69,10 @@ export function GatewaysView({
       <div className="dashboard-view">
         <header className="view-header">
           <div className="view-header-text">
-            <h1>ゲートウェイ</h1>
+            <h1>
+              <RouterIcon size={20} className="head-icon" />
+              ゲートウェイ
+            </h1>
             <p>ゲートウェイは登録されていません。CSV をインポートすると自動で割り当てられます。</p>
           </div>
         </header>
@@ -71,7 +84,10 @@ export function GatewaysView({
     <div className="dashboard-view">
       <header className="view-header">
         <div className="view-header-text">
-          <h1>ゲートウェイ</h1>
+          <h1>
+            <RouterIcon size={20} className="head-icon" />
+            ゲートウェイ
+          </h1>
           <p>センサーの親機となるゲートウェイの一覧です。</p>
         </div>
       </header>
@@ -180,19 +196,21 @@ export function GatewayDetailView({
 
   return (
     <div className="dashboard-view">
-      <div className="breadcrumb">
-        <button type="button" className="link-btn" onClick={onBack}>
-          <ArrowLeft size={14} />
-          <span>ゲートウェイ一覧</span>
-        </button>
-        <ChevronRight size={14} className="bc-sep" />
-        <span className="bc-current">{gateway.name}</span>
-      </div>
-
       <header className="view-header">
         <div className="view-header-text">
-          <h1 className="device-title">
-            <RouterIcon size={22} className="head-icon" />
+          {/* 1 行に集約: 「← 戻る  ゲートウェイ > [ゲートウェイ名]」 */}
+          <h1 className="device-title detail-title-line">
+            <button
+              type="button"
+              className="detail-back-btn"
+              onClick={onBack}
+              aria-label="戻る"
+            >
+              <ArrowLeft size={16} />
+              <span>戻る</span>
+            </button>
+            <span className="detail-title-sep">ゲートウェイ</span>
+            <ChevronRight size={14} className="bc-sep" />
             <span className="device-title-id">{gateway.name}</span>
           </h1>
           <p>

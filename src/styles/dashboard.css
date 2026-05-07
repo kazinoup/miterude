@@ -1294,6 +1294,41 @@
   letter-spacing: 0.02em;
 }
 
+/* センサー / ゲートウェイ 詳細画面の 1 行タイトル
+ * 「← 戻る  センサー > [センサー名]」を flex で 1 行に並べる */
+.detail-title-line {
+  flex-wrap: wrap;
+  gap: 0.5rem 0.55rem;
+  font-size: 1.2rem;
+}
+
+.detail-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.6rem;
+  background: transparent;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  color: var(--navy-700);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.detail-back-btn:hover {
+  background: var(--gray-50);
+  border-color: var(--navy-500);
+}
+
+.detail-title-sep {
+  font-weight: 600;
+  color: var(--gray-700);
+  font-size: 0.95rem;
+}
+
 .storage-label {
   font-weight: 600;
   color: var(--navy-700);
@@ -4256,6 +4291,8 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
+  /* settings-tabs（記録履歴のサブタブ）と承認状態フィルタが密着しないように上にも余白を確保 */
+  margin-top: 1rem;
   margin-bottom: 1rem;
   font-size: 0.85rem;
 }

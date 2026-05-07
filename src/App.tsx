@@ -1163,7 +1163,6 @@ export default function App() {
               reportSchedules={reportSchedules}
               onGoSettings={() => navigate('settings')}
               onPrint={startBulkPrint}
-              onBack={() => navigate('dashboard')}
             />
           )}
         </div>

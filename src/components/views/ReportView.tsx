@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   CheckSquare,
@@ -68,7 +67,6 @@ type Props = {
   onGoSettings: () => void
 
   onPrint: () => void
-  onBack: () => void
 }
 
 function sortIds(ids: string[]): string[] {
@@ -165,7 +163,6 @@ export function ReportView({
   reportSchedules,
   onGoSettings,
   onPrint,
-  onBack,
 }: Props) {
   const [previewIndex, setPreviewIndex] = useState(0)
 
@@ -223,16 +220,12 @@ export function ReportView({
 
   return (
     <div className="report-view">
-      <div className="breadcrumb">
-        <button type="button" className="link-btn" onClick={onBack}>
-          <ArrowLeft size={14} />
-          <span>戻る</span>
-        </button>
-      </div>
-
       <header className="view-header">
         <div className="view-header-text">
-          <h1>レポート出力</h1>
+          <h1>
+            <FileBarChart2 size={20} className="head-icon" />
+            レポート
+          </h1>
           <p>
             出力タイプと期間、対象デバイスを指定して、選択した全デバイスを 1 つの PDF にまとめます。
           </p>
