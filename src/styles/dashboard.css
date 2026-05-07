@@ -5870,7 +5870,8 @@
 .threshold-metric {
   border: 1px solid var(--gray-200);
   border-radius: 6px;
-  padding: 0.6rem 0.85rem 0.85rem;
+  /* legend が border に被らないよう、上を広めに取る */
+  padding: 1.1rem 0.85rem 0.85rem;
   background: #fff;
   display: flex;
   flex-direction: column;
@@ -5878,13 +5879,23 @@
   margin: 0;
 }
 
+/* 温度と湿度の fieldset 間の縦間隔を広めに */
+.threshold-values-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
 .threshold-metric:disabled {
   background: var(--gray-50);
   opacity: 0.85;
 }
 
+/* legend は枠線を「白で抜く」ことで境界線と重ならないようにする */
 .threshold-metric-legend {
-  padding: 0;
+  padding: 0 0.35rem;
+  margin-left: 0.3rem;
+  background: #fff;
 }
 
 .threshold-metric-toggle {

@@ -135,9 +135,7 @@ export function ThresholdTemplateEditDialog({
 
           <div className="form-row">
             <span className="form-label">対象種別</span>
-            <span className="muted">
-              温湿度センサー（Phase 9.14 では本種別のみ対応）
-            </span>
+            <span className="muted">温湿度センサー</span>
           </div>
 
           <div className="form-row">

@@ -85,33 +85,19 @@ const FREEZER_DEFAULT: TempHumidityThresholds = {
   },
 }
 
-const ROOM_TEMP_DEFAULT: TempHumidityThresholds = {
-  kind: 'temperature-humidity',
-  // 室温は温度判定なし、湿度のみ
-  temperature: {
-    alert: { enabled: false },
-    warn: { enabled: false },
-  },
-  humidity: {
-    alert: { enabled: true, min: 40, max: 85 },
-    warn: { enabled: false },
-  },
-}
-
 /** 既定テンプレートの固定 ID（マイグレーションで参照する） */
 export const DEFAULT_TEMPLATE_IDS = {
   refrigerator: 'tpl-default-refrigerator',
   freezer: 'tpl-default-freezer',
-  roomTemp: 'tpl-default-room-temp',
 } as const
 
-/** 初期 3 テンプレ。新規ユーザの最初の体験を整える。 */
+/** 新規テナント用の初期テンプレート。冷蔵庫・冷凍庫の 2 件のみ。 */
 export function buildDefaultTemplates(): ThresholdTemplateStore {
   const now = new Date()
   return {
     [DEFAULT_TEMPLATE_IDS.refrigerator]: {
       id: DEFAULT_TEMPLATE_IDS.refrigerator,
-      name: '冷蔵 標準',
+      name: '冷蔵庫の管理',
       description: '0〜10℃ / 湿度 40〜85%（標準セット）',
       targetKind: 'temperature-humidity',
       thresholds: REFRIG_DEFAULT,
@@ -120,19 +106,10 @@ export function buildDefaultTemplates(): ThresholdTemplateStore {
     },
     [DEFAULT_TEMPLATE_IDS.freezer]: {
       id: DEFAULT_TEMPLATE_IDS.freezer,
-      name: '冷凍 標準',
+      name: '冷凍庫の管理',
       description: '-30〜-10℃ / 湿度 40〜85%（標準セット）',
       targetKind: 'temperature-humidity',
       thresholds: FREEZER_DEFAULT,
-      createdAt: now,
-      updatedAt: now,
-    },
-    [DEFAULT_TEMPLATE_IDS.roomTemp]: {
-      id: DEFAULT_TEMPLATE_IDS.roomTemp,
-      name: '室温（湿度のみ）',
-      description: '温度判定なし / 湿度 40〜85%',
-      targetKind: 'temperature-humidity',
-      thresholds: ROOM_TEMP_DEFAULT,
       createdAt: now,
       updatedAt: now,
     },
