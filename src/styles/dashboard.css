@@ -6711,8 +6711,16 @@
   color: var(--navy-700);
 }
 
-.threshold-help span {
+.threshold-help > span {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+/* 各ヒント行は独立した行で表示し、文章が中途半端に折り返さないようにする */
+.threshold-help-line {
+  display: block;
 }
 
 .threshold-help .threshold-arrow-down,

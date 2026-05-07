@@ -61,26 +61,37 @@ export function removeTemplate(
 
 /* ---------- 既定テンプレート ---------- */
 
+/** 冷蔵庫: 注意レベルが OK 範囲（0〜10℃）、危険レベルがその外側（-5〜15℃）。
+ *  - 値が 0〜10℃: 正常
+ *  - 値が -5〜0℃ または 10〜15℃: 注意
+ *  - 値が -5℃ 未満 または 15℃ 超: 危険
+ */
 const REFRIG_DEFAULT: TempHumidityThresholds = {
   kind: 'temperature-humidity',
   temperature: {
-    alert: { enabled: true, min: 0, max: 10 },
-    warn: { enabled: false },
+    alert: { enabled: true, min: -5, max: 15 },
+    warn: { enabled: true, min: 0, max: 10 },
   },
   humidity: {
-    alert: { enabled: true, min: 40, max: 85 },
+    alert: { enabled: false },
     warn: { enabled: false },
   },
 }
 
+/** 冷凍庫: 注意は -35〜-10℃ の範囲、危険は「0℃ 超」のみ（下限なし）。
+ *  - 値が -35〜-10℃: 正常
+ *  - 値が -35℃ 未満 または -10℃〜0℃: 注意
+ *  - 値が 0℃ 超: 危険
+ *  下限を「なし」にすることで「冷えすぎても危険にはならない」ことを表現。
+ */
 const FREEZER_DEFAULT: TempHumidityThresholds = {
   kind: 'temperature-humidity',
   temperature: {
-    alert: { enabled: true, min: -30, max: -10 },
-    warn: { enabled: false },
+    alert: { enabled: true, max: 0 },
+    warn: { enabled: true, min: -35, max: -10 },
   },
   humidity: {
-    alert: { enabled: true, min: 40, max: 85 },
+    alert: { enabled: false },
     warn: { enabled: false },
   },
 }
@@ -97,8 +108,8 @@ export function buildDefaultTemplates(): ThresholdTemplateStore {
   return {
     [DEFAULT_TEMPLATE_IDS.refrigerator]: {
       id: DEFAULT_TEMPLATE_IDS.refrigerator,
-      name: '冷蔵庫の管理',
-      description: '0〜10℃ / 湿度 40〜85%（標準セット）',
+      name: '冷蔵庫',
+      description: '注意：0℃未満 10℃より高温 / 危険：-5℃未満 15℃より高温',
       targetKind: 'temperature-humidity',
       thresholds: REFRIG_DEFAULT,
       createdAt: now,
@@ -106,8 +117,8 @@ export function buildDefaultTemplates(): ThresholdTemplateStore {
     },
     [DEFAULT_TEMPLATE_IDS.freezer]: {
       id: DEFAULT_TEMPLATE_IDS.freezer,
-      name: '冷凍庫の管理',
-      description: '-30〜-10℃ / 湿度 40〜85%（標準セット）',
+      name: '冷凍庫',
+      description: '注意：-35℃未満 -10℃より高温 / 危険：0℃より高温',
       targetKind: 'temperature-humidity',
       thresholds: FREEZER_DEFAULT,
       createdAt: now,
