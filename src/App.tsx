@@ -1138,6 +1138,9 @@ export default function App() {
               alertLogs={alertLogs}
               sensors={sensors}
               gateways={gateways}
+              sensorGroups={sensorGroups}
+              sensorCategories={sensorCategories}
+              savedFilters={savedFilters}
             />
           )}
 
