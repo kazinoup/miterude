@@ -3,7 +3,6 @@ import {
   X,
   Settings2,
   RotateCcw,
-  Maximize2,
   ListOrdered,
   GripVertical,
 } from 'lucide-react'
@@ -22,9 +21,6 @@ type Props = {
   open: boolean
   visibility: SensorColumnVisibility
   onChange: (next: SensorColumnVisibility) => void
-  /** Phase B: ワイド表示モード（画面端まで広げる） */
-  wideMode: boolean
-  onWideModeChange: (v: boolean) => void
   /** ページネーションの 1 ページあたりの表示件数 */
   pageSize: PageSize
   onPageSizeChange: (n: PageSize) => void
@@ -45,8 +41,6 @@ export function SensorColumnSettingsDialog({
   open,
   visibility,
   onChange,
-  wideMode,
-  onWideModeChange,
   pageSize,
   onPageSizeChange,
   order,
@@ -138,22 +132,8 @@ export function SensorColumnSettingsDialog({
 
           {/* 表示領域 + ページサイズ（並び替え対象外） */}
           <div className="column-settings-group">
-            <h3 className="column-settings-group-title">表示領域・件数</h3>
+            <h3 className="column-settings-group-title">表示件数</h3>
             <ul className="column-settings-list">
-              <li className="column-settings-item">
-                <label className="column-settings-row">
-                  <input
-                    type="checkbox"
-                    checked={wideMode}
-                    onChange={(e) => onWideModeChange(e.target.checked)}
-                  />
-                  <span className="column-settings-row-text">
-                    <span className="column-settings-row-label">
-                      <Maximize2 size={12} className="inline-icon" /> ワイド表示
-                    </span>
-                  </span>
-                </label>
-              </li>
               <li className="column-settings-item">
                 <div className="column-settings-row column-settings-row-control">
                   <span className="column-settings-row-text">

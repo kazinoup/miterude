@@ -35,7 +35,8 @@ export type SensorColumnDef = {
   group: 'identity' | 'classify' | 'status'
 }
 
-/** 列定義（順序が一覧の表示順になる） */
+/** 列定義（順序が一覧の表示順になる）— Phase F-3 で並び順を固定し、
+ *  全列を既定で表示するように変更。 */
 export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
   {
     key: 'deviceNumber',
@@ -48,21 +49,21 @@ export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
     key: 'serialNumber',
     label: 'シリアル番号',
     hint: '16 桁 HEX のシリアル番号',
-    defaultVisible: false,
-    group: 'identity',
-  },
-  {
-    key: 'model',
-    label: 'モデル',
-    hint: '機種名（例: EM320-TH）',
-    defaultVisible: false,
+    defaultVisible: true,
     group: 'identity',
   },
   {
     key: 'manufacturer',
     label: 'メーカー',
     hint: 'メーカー名',
-    defaultVisible: false,
+    defaultVisible: true,
+    group: 'identity',
+  },
+  {
+    key: 'model',
+    label: 'モデル',
+    hint: '機種名（例: EM320-TH）',
+    defaultVisible: true,
     group: 'identity',
   },
   {
@@ -75,13 +76,6 @@ export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
     key: 'group',
     label: 'グループ',
     defaultVisible: true,
-    group: 'classify',
-  },
-  {
-    key: 'gateway',
-    label: 'ゲートウェイ',
-    hint: '接続されている親機（ゲートウェイ）名',
-    defaultVisible: false,
     group: 'classify',
   },
   {
@@ -98,17 +92,11 @@ export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
     group: 'status',
   },
   {
-    key: 'battery',
-    label: 'バッテリー',
+    key: 'gateway',
+    label: 'ゲートウェイ',
+    hint: '接続されている親機（ゲートウェイ）名',
     defaultVisible: true,
-    group: 'status',
-  },
-  {
-    key: 'lastUpdated',
-    label: '最終更新',
-    hint: '直近の受信からの経過時間',
-    defaultVisible: true,
-    group: 'status',
+    group: 'classify',
   },
   {
     key: 'latestValue',
@@ -121,12 +109,26 @@ export const SENSOR_COLUMN_DEFS: SensorColumnDef[] = [
     key: 'threshold',
     label: '逸脱設定（閾値）',
     hint: '現在のセンサーで使われている逸脱判定の上下限',
-    defaultVisible: false,
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'battery',
+    label: 'バッテリー',
+    defaultVisible: true,
+    group: 'status',
+  },
+  {
+    key: 'lastUpdated',
+    label: '最終更新',
+    hint: '直近の受信からの経過時間',
+    defaultVisible: true,
     group: 'status',
   },
 ]
 
-const STORAGE_KEY = 'miterude:sensors:columns:v1'
+/** Phase F-3 で既定列順を全更新。古い v1 永続化は無視して v2 から始める。 */
+const STORAGE_KEY = 'miterude:sensors:columns:v2'
 
 export function defaultColumnVisibility(): SensorColumnVisibility {
   const out = {} as SensorColumnVisibility
@@ -184,7 +186,8 @@ export function saveWideMode(v: boolean): void {
 
 /* ---------- Phase 9.13: 列の並び順 ---------- */
 
-const ORDER_KEY = 'miterude:sensors:columnOrder:v1'
+/** Phase F-3 で既定列順を全更新。古い v1 永続化は無視して v2 から始める。 */
+const ORDER_KEY = 'miterude:sensors:columnOrder:v2'
 
 /** 既定の列順序（SENSOR_COLUMN_DEFS の宣言順） */
 export function defaultColumnOrder(): SensorColumnKey[] {

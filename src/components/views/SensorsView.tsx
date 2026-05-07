@@ -2,11 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   ChevronRight,
   Trash2,
-  Thermometer,
-  Droplets,
-  LayoutGrid,
-  Rows3,
-  Clock,
   BatteryFull,
   BatteryMedium,
   BatteryLow,
@@ -57,10 +52,8 @@ import { formatRelativeAgo } from '../../lib/jp'
 import {
   loadColumnOrder,
   loadColumnVisibility,
-  loadWideMode,
   saveColumnOrder,
   saveColumnVisibility,
-  saveWideMode,
   type SensorColumnKey,
   type SensorColumnVisibility,
 } from '../../lib/sensorColumns'
@@ -112,7 +105,6 @@ type SensorRow = {
 }
 
 type SortKey = 'name' | 'updated' | 'battery'
-type ViewMode = 'table' | 'tile'
 
 const PAGE_SIZE_STORAGE_KEY = 'miterude:sensors:pageSize:v1'
 const VALID_PAGE_SIZES: PageSize[] = [25, 50, 100, 200]
@@ -578,86 +570,8 @@ function GroupBadge({
   )
 }
 
-type TileProps = {
-  row: SensorRow
-  group?: SensorGroup
-  category?: SensorCategory
-  onOpen: (id: string) => void
-}
-
-function SensorTile({ row, group, category, onOpen }: TileProps) {
-  const { sensor } = row
-  const tLevel = evaluateMetricLevel(row.lastTemp ?? null, 'temperature', sensor.thresholds)
-  const hLevel = evaluateMetricLevel(row.lastHum ?? null, 'humidity', sensor.thresholds)
-  const tDev = tLevel === 'alert' || tLevel === 'warn'
-  const hDev = hLevel === 'alert' || hLevel === 'warn'
-
-  return (
-    <article
-      className={`device-tile ${tDev || hDev ? 'has-deviation' : ''}`}
-      onClick={() => onOpen(sensor.id)}
-      role="button"
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault()
-          onOpen(sensor.id)
-        }
-      }}
-    >
-      <header className="tile-header">
-        <div className="tile-id-block">
-          <span className="tile-id">{sensor.id}</span>
-          <span className="tile-devnum">{sensor.deviceNumber}</span>
-        </div>
-        <CategoryBadge category={category} />
-      </header>
-
-      <div className="tile-readings">
-        <div className="tile-reading">
-          <span className="tile-reading-label">
-            <Thermometer size={13} strokeWidth={2.2} />
-            温度
-          </span>
-          <div className={`tile-reading-value ${levelClass(tLevel)}`}>
-            <span className="num-big">
-              {row.lastTemp != null ? row.lastTemp.toFixed(1) : '-'}
-            </span>
-            <span className="num-unit">℃</span>
-          </div>
-        </div>
-        <div className="tile-reading">
-          <span className="tile-reading-label">
-            <Droplets size={13} strokeWidth={2.2} />
-            湿度
-          </span>
-          <div className={`tile-reading-value ${levelClass(hLevel)}`}>
-            <span className="num-big">
-              {row.lastHum != null ? row.lastHum.toFixed(1) : '-'}
-            </span>
-            <span className="num-unit">%</span>
-          </div>
-        </div>
-      </div>
-
-      <footer className="tile-footer">
-        <div className="tile-foot-row tile-foot-meta">
-          <OnlineBadge online={sensor.online} />
-          <BatteryIndicator pct={sensor.battery} />
-        </div>
-        <div className="tile-foot-row tile-foot-meta">
-          <GroupBadge group={group} />
-          {(sensor.tags ?? []).length > 0 && <TagPills tags={sensor.tags ?? []} max={3} />}
-        </div>
-        <div className="tile-foot-row" title={fmtDateTime(row.last)}>
-          <Clock size={12} strokeWidth={2} />
-          <span>{formatRelativeAgo(row.last ?? sensor.lastSeenAt)}</span>
-        </div>
-      </footer>
-
-    </article>
-  )
-}
+// Phase F-1: タイル形式は廃止（ダッシュボードで表現するため）。
+//   SensorTile / TileProps を撤去。レポート系のタイル CSS は残置（他で使われる可能性）。
 
 export function SensorsView({
   devices,
@@ -691,7 +605,8 @@ export function SensorsView({
   )
 
   const [sortKey, setSortKey] = useState<SortKey>('name')
-  const [viewMode, setViewMode] = useState<ViewMode>('table')
+  // Phase F-1: タイル形式は廃止しテーブル固定。ViewMode 自体は廃止予定だが、
+  //   呼び出し元の影響を最小にするため state は据え置き。
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [conditions, setConditions] = useState<FilterConditions>({})
   const [page, setPage] = useState(1)
@@ -723,21 +638,16 @@ export function SensorsView({
     saveColumnOrder(columnOrder)
   }, [columnOrder])
 
-  // Phase B: ワイド表示モード
-  const [wideMode, setWideMode] = useState<boolean>(() => loadWideMode())
-  useEffect(() => {
-    saveWideMode(wideMode)
-  }, [wideMode])
-  // SensorsView がマウントされている間だけ app-content-inner にクラスを付与
+  // Phase F-2: ワイド表示は固定。SensorsView がマウントされている間は
+  //   常に app-content-inner に is-wide を付与する。
   useEffect(() => {
     const el = document.querySelector('.app-content-inner')
     if (!el) return
-    if (wideMode) el.classList.add('is-wide')
-    else el.classList.remove('is-wide')
+    el.classList.add('is-wide')
     return () => {
       el.classList.remove('is-wide')
     }
-  }, [wideMode])
+  }, [])
 
   // フィルタ適用（区分は sensor.categoryId として groups.ts 側で判定）
   const filteredRows = useMemo(() => {
@@ -1013,26 +923,7 @@ export function SensorsView({
                 <option value="battery">バッテリー残量（少ない順）</option>
               </select>
             </label>
-            <div className="view-toggle" role="group" aria-label="表示モード">
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'table' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('table')}
-                aria-pressed={viewMode === 'table'}
-              >
-                <Rows3 size={15} />
-                <span>テーブル</span>
-              </button>
-              <button
-                type="button"
-                className={`view-toggle-btn ${viewMode === 'tile' ? 'is-active' : ''}`}
-                onClick={() => setViewMode('tile')}
-                aria-pressed={viewMode === 'tile'}
-              >
-                <LayoutGrid size={15} />
-                <span>タイル</span>
-              </button>
-            </div>
+            {/* Phase F-1: タイル形式は廃止。テーブル固定 */}
           </div>
           <PaginationControls
             page={page}
@@ -1044,9 +935,9 @@ export function SensorsView({
           />
         </div>
 
-        {viewMode === 'table' ? (
-          <div className="device-table-wrap">
-            <table className="device-table">
+        {/* Phase F-1: テーブル固定（タイル形式は廃止） */}
+        <div className="device-table-wrap">
+          <table className="device-table">
               <thead>
                 <tr>
                   <th className="check-cell col-check">
@@ -1118,21 +1009,6 @@ export function SensorsView({
               </tbody>
             </table>
           </div>
-        ) : (
-          <div className="device-tile-grid">
-            {pagedRows.map((r) => (
-              <SensorTile
-                key={r.sensor.id}
-                row={r}
-                group={r.sensor.groupId ? groups[r.sensor.groupId] : undefined}
-                category={
-                  r.sensor.categoryId ? categories[r.sensor.categoryId] : undefined
-                }
-                onOpen={onOpenSensor}
-              />
-            ))}
-          </div>
-        )}
 
         {/* 下段ツールバー: ページネーションのみ（件数は内部に集約） */}
         {sortedRows.length > 0 && (
@@ -1193,8 +1069,6 @@ export function SensorsView({
         open={columnSettingsOpen}
         visibility={columnVisibility}
         onChange={setColumnVisibility}
-        wideMode={wideMode}
-        onWideModeChange={setWideMode}
         pageSize={pageSize}
         onPageSizeChange={setPageSize}
         order={columnOrder}
