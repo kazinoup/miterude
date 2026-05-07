@@ -11,7 +11,6 @@ import {
   RotateCcw,
   X,
   Folder,
-  Tag,
   Tags,
   Settings2,
   ChevronLeft,
@@ -883,8 +882,8 @@ export function SensorsView({
                 className="btn btn-secondary btn-sm"
                 onClick={() => setBulkActionOpen(true)}
               >
-                <Tag size={14} />
-                <span>タグ／グループ</span>
+                <Settings2 size={14} />
+                <span>一括操作</span>
               </button>
               <button
                 type="button"

@@ -2762,6 +2762,83 @@
   max-width: 480px;
 }
 
+/* Phase: センサー一括操作ダイアログ — 左ナビ + 右設定の 2 ペイン構成 */
+.app-dialog-bulk {
+  max-width: 760px;
+}
+
+/* .app-dialog-body のデフォルト (flex 縦並び) を上書きするため class を 2 段重ねて
+ *  specificity を 1+1 = 2 に。padding も 0 にして左右ペインの内側で個別に持たせる。 */
+.app-dialog-body.bulk-actions-2pane {
+  display: grid;
+  grid-template-columns: 11.5rem 1fr;
+  gap: 0;
+  padding: 0;
+  min-height: 18rem;
+}
+
+.bulk-actions-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.85rem 0.6rem;
+  background: var(--gray-50);
+  border-right: 1px solid var(--gray-200);
+}
+
+.bulk-actions-nav-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--gray-700);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.bulk-actions-nav-item:hover {
+  background: #fff;
+  border-color: var(--gray-200);
+  color: var(--navy-700);
+}
+
+.bulk-actions-nav-item.is-active {
+  background: var(--navy-800);
+  border-color: var(--navy-800);
+  color: #fff;
+}
+
+.bulk-actions-pane {
+  padding: 0.85rem 1rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .app-dialog-bulk {
+    max-width: 95vw;
+  }
+  .bulk-actions-2pane {
+    grid-template-columns: 1fr;
+  }
+  .bulk-actions-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: none;
+    border-bottom: 1px solid var(--gray-200);
+  }
+}
+
 .app-dialog-md {
   max-width: 760px;
 }

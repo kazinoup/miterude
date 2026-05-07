@@ -127,10 +127,23 @@ export function SensorBulkActionsDialog({
     a.name.localeCompare(b.name),
   )
 
+  /** Phase: 2 ペインレイアウト用 — 左ナビ項目の定義 */
+  const NAV_ITEMS: {
+    mode: Mode
+    label: string
+    icon: React.ComponentType<{ size?: number }>
+  }[] = [
+    { mode: 'tag-add', label: 'タグ付与', icon: Tag },
+    { mode: 'tag-remove', label: 'タグ削除', icon: Trash2 },
+    { mode: 'group-set', label: 'グループ移動', icon: Folder },
+    { mode: 'category-set', label: '区分変更', icon: Tags },
+    { mode: 'threshold-set', label: '閾値一括変更', icon: Sliders },
+  ]
+
   return (
     <dialog
       ref={ref}
-      className="app-dialog app-dialog-sm"
+      className="app-dialog app-dialog-bulk"
       onCancel={(e) => {
         e.preventDefault()
         onClose()
@@ -145,203 +158,181 @@ export function SensorBulkActionsDialog({
           </button>
         </header>
 
-        <div className="app-dialog-body">
-          <div className="form-row">
-            <label className="form-label">操作</label>
-            <div className="seg-toggle">
+        <div className="app-dialog-body bulk-actions-2pane">
+          {/* 左ペイン: 操作項目を縦並び */}
+          <nav className="bulk-actions-nav" aria-label="操作">
+            {NAV_ITEMS.map(({ mode: m, label, icon: Icon }) => (
               <button
+                key={m}
                 type="button"
-                className={`seg-toggle-btn ${mode === 'tag-add' ? 'is-active' : ''}`}
-                onClick={() => setMode('tag-add')}
+                className={`bulk-actions-nav-item ${mode === m ? 'is-active' : ''}`}
+                onClick={() => setMode(m)}
+                aria-pressed={mode === m}
               >
-                <Tag size={13} /> タグ付与
+                <Icon size={14} />
+                <span>{label}</span>
               </button>
-              <button
-                type="button"
-                className={`seg-toggle-btn ${mode === 'tag-remove' ? 'is-active' : ''}`}
-                onClick={() => setMode('tag-remove')}
-              >
-                <Trash2 size={13} /> タグ削除
-              </button>
-              <button
-                type="button"
-                className={`seg-toggle-btn ${mode === 'group-set' ? 'is-active' : ''}`}
-                onClick={() => setMode('group-set')}
-              >
-                <Folder size={13} /> グループ移動
-              </button>
-              <button
-                type="button"
-                className={`seg-toggle-btn ${mode === 'category-set' ? 'is-active' : ''}`}
-                onClick={() => setMode('category-set')}
-              >
-                <Tags size={13} /> 区分変更
-              </button>
-              <button
-                type="button"
-                className={`seg-toggle-btn ${mode === 'threshold-set' ? 'is-active' : ''}`}
-                onClick={() => setMode('threshold-set')}
-              >
-                <Sliders size={13} /> 閾値一括変更
-              </button>
-            </div>
-          </div>
+            ))}
+          </nav>
 
-          {(mode === 'tag-add' || mode === 'tag-remove') && (
-            <div className="form-row">
-              <label className="form-label" htmlFor="bulk-tags">
-                タグ（複数可。スペース・カンマ区切り）
-              </label>
-              <input
-                id="bulk-tags"
-                type="text"
-                className="form-input"
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                placeholder="例: 冷凍 重要 肉"
-                autoFocus
-                list="bulk-tag-suggest"
-              />
-              <datalist id="bulk-tag-suggest">
-                {existingTags.map((t) => (
-                  <option key={t} value={t} />
-                ))}
-              </datalist>
-              {existingTags.length > 0 && (
-                <p className="form-hint muted">
-                  既存タグ: {existingTags.slice(0, 12).join(', ')}
-                  {existingTags.length > 12 ? ' …' : ''}
-                </p>
-              )}
-            </div>
-          )}
-
-          {mode === 'group-set' && (
-            <div className="form-row">
-              <label className="form-label" htmlFor="bulk-group">
-                所属グループ
-              </label>
-              <select
-                id="bulk-group"
-                className="select"
-                value={groupId}
-                onChange={(e) => setGroupId(e.target.value)}
-                autoFocus
-              >
-                <option value="">未分類（グループから外す）</option>
-                {groupList.map((g) => (
-                  <option key={g.id} value={g.id}>
-                    {g.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {mode === 'category-set' && (
-            <div className="form-row">
-              <label className="form-label" htmlFor="bulk-category">
-                区分
-              </label>
-              <select
-                id="bulk-category"
-                className="select"
-                value={categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
-                autoFocus
-              >
-                <option value="">未設定（区分を外す）</option>
-                {categoryList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {mode === 'threshold-set' && (
-            <>
+          {/* 右ペイン: 選択中の操作の設定 */}
+          <div className="bulk-actions-pane">
+            {(mode === 'tag-add' || mode === 'tag-remove') && (
               <div className="form-row">
-                <span className="form-label">適用方法</span>
-                <div className="seg-toggle">
-                  <button
-                    type="button"
-                    className={`seg-toggle-btn ${thresholdSource === 'template' ? 'is-active' : ''}`}
-                    onClick={() => setThresholdSource('template')}
-                  >
-                    <FileText size={13} /> テンプレートから
-                  </button>
-                  <button
-                    type="button"
-                    className={`seg-toggle-btn ${thresholdSource === 'direct' ? 'is-active' : ''}`}
-                    onClick={() => setThresholdSource('direct')}
-                  >
-                    <Sliders size={13} /> 直接入力
-                  </button>
-                  <button
-                    type="button"
-                    className={`seg-toggle-btn ${thresholdSource === 'clear' ? 'is-active' : ''}`}
-                    onClick={() => setThresholdSource('clear')}
-                  >
-                    <Trash2 size={13} /> 閾値をクリア
-                  </button>
-                </div>
+                <label className="form-label" htmlFor="bulk-tags">
+                  タグ（複数可。スペース・カンマ区切り）
+                </label>
+                <input
+                  id="bulk-tags"
+                  type="text"
+                  className="form-input"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
+                  placeholder="例: 冷凍 重要 肉"
+                  autoFocus
+                  list="bulk-tag-suggest"
+                />
+                <datalist id="bulk-tag-suggest">
+                  {existingTags.map((t) => (
+                    <option key={t} value={t} />
+                  ))}
+                </datalist>
+                {existingTags.length > 0 && (
+                  <p className="form-hint muted">
+                    既存タグ: {existingTags.slice(0, 12).join(', ')}
+                    {existingTags.length > 12 ? ' …' : ''}
+                  </p>
+                )}
               </div>
+            )}
 
-              {thresholdSource === 'template' && (
+            {mode === 'group-set' && (
+              <div className="form-row">
+                <label className="form-label" htmlFor="bulk-group">
+                  所属グループ
+                </label>
+                <select
+                  id="bulk-group"
+                  className="select"
+                  value={groupId}
+                  onChange={(e) => setGroupId(e.target.value)}
+                  autoFocus
+                >
+                  <option value="">未分類（グループから外す）</option>
+                  {groupList.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {mode === 'category-set' && (
+              <div className="form-row">
+                <label className="form-label" htmlFor="bulk-category">
+                  区分
+                </label>
+                <select
+                  id="bulk-category"
+                  className="select"
+                  value={categoryId}
+                  onChange={(e) => setCategoryId(e.target.value)}
+                  autoFocus
+                >
+                  <option value="">未設定（区分を外す）</option>
+                  {categoryList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {mode === 'threshold-set' && (
+              <>
                 <div className="form-row">
-                  <label className="form-label" htmlFor="bulk-threshold-template">
-                    テンプレート
-                  </label>
-                  {templateList.length === 0 ? (
-                    <p className="muted in-panel">
-                      テンプレートがありません。「設定 → 閾値テンプレート」で作成してください。
-                    </p>
-                  ) : (
-                    <select
-                      id="bulk-threshold-template"
-                      className="select"
-                      value={selectedTemplateId}
-                      onChange={(e) => setSelectedTemplateId(e.target.value)}
+                  <span className="form-label">適用方法</span>
+                  <div className="seg-toggle">
+                    <button
+                      type="button"
+                      className={`seg-toggle-btn ${thresholdSource === 'template' ? 'is-active' : ''}`}
+                      onClick={() => setThresholdSource('template')}
                     >
-                      <option value="">— 選択してください —</option>
-                      {templateList.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name}
-                          {t.description ? `（${t.description}）` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-              )}
-
-              {thresholdSource === 'direct' && (
-                <div className="form-row">
-                  <span className="form-label">閾値の値</span>
-                  <div className="bulk-threshold-direct">
-                    <TempHumidityThresholdsEditor
-                      value={directThresholds}
-                      onChange={setDirectThresholds}
-                    />
+                      <FileText size={13} /> テンプレートから
+                    </button>
+                    <button
+                      type="button"
+                      className={`seg-toggle-btn ${thresholdSource === 'direct' ? 'is-active' : ''}`}
+                      onClick={() => setThresholdSource('direct')}
+                    >
+                      <Sliders size={13} /> 直接入力
+                    </button>
+                    <button
+                      type="button"
+                      className={`seg-toggle-btn ${thresholdSource === 'clear' ? 'is-active' : ''}`}
+                      onClick={() => setThresholdSource('clear')}
+                    >
+                      <Trash2 size={13} /> 閾値をクリア
+                    </button>
                   </div>
                 </div>
-              )}
 
-              {thresholdSource === 'clear' && (
-                <p className="muted in-panel">
-                  選択中の <strong>{selectedCount}</strong> 台すべてから
-                  閾値設定を取り除き、逸脱判定を無効化します。
+                {thresholdSource === 'template' && (
+                  <div className="form-row">
+                    <label className="form-label" htmlFor="bulk-threshold-template">
+                      テンプレート
+                    </label>
+                    {templateList.length === 0 ? (
+                      <p className="muted in-panel">
+                        テンプレートがありません。「設定 → 閾値テンプレート」で作成してください。
+                      </p>
+                    ) : (
+                      <select
+                        id="bulk-threshold-template"
+                        className="select"
+                        value={selectedTemplateId}
+                        onChange={(e) => setSelectedTemplateId(e.target.value)}
+                      >
+                        <option value="">— 選択してください —</option>
+                        {templateList.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name}
+                            {t.description ? `（${t.description}）` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                )}
+
+                {thresholdSource === 'direct' && (
+                  <div className="form-row">
+                    <span className="form-label">閾値の値</span>
+                    <div className="bulk-threshold-direct">
+                      <TempHumidityThresholdsEditor
+                        value={directThresholds}
+                        onChange={setDirectThresholds}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {thresholdSource === 'clear' && (
+                  <p className="muted in-panel">
+                    選択中の <strong>{selectedCount}</strong> 台すべてから
+                    閾値設定を取り除き、逸脱判定を無効化します。
+                  </p>
+                )}
+
+                <p className="muted in-panel form-hint">
+                  ※ 種別が一致するセンサー（温湿度センサー）にのみ適用されます。
+                  それ以外のセンサーはスキップされます。
                 </p>
-              )}
-
-              <p className="muted in-panel form-hint">
-                ※ 種別が一致するセンサー（温湿度センサー）にのみ適用されます。
-                それ以外のセンサーはスキップされます。
-              </p>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
 
         <footer className="app-dialog-foot">
