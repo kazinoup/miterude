@@ -12,6 +12,7 @@ import {
   Mail,
   MessageSquare,
   Webhook,
+  Sliders,
 } from 'lucide-react'
 import type {
   ManufacturerIntegration,
@@ -20,25 +21,32 @@ import type {
   NotificationGroupStore,
   SensorKind,
   SensorStore,
+  ThresholdTemplate,
+  ThresholdTemplateStore,
 } from '../../types'
 import { NOTIFICATION_TIMING_LABELS, SENSOR_KIND_DEFS } from '../../types'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
 import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
+import { ThresholdTemplateManageDialog } from '../ThresholdTemplateManageDialog'
 
 type Props = {
   notificationGroups: NotificationGroupStore
   manufacturerIntegrations: ManufacturerIntegrationStore
   sensors: SensorStore
+  thresholdTemplates: ThresholdTemplateStore
   onUpsertNotificationGroup: (g: NotificationGroup) => void
   onDeleteNotificationGroup: (id: string) => void
   onUpdateIntegration: (i: ManufacturerIntegration) => void
+  onUpsertThresholdTemplate: (t: ThresholdTemplate) => void
+  onDeleteThresholdTemplate: (id: string) => void
 }
 
-type Tab = 'integrations' | 'notifications' | 'kinds'
+type Tab = 'integrations' | 'notifications' | 'thresholds' | 'kinds'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { key: 'integrations', label: 'デバイス連携', icon: Plug },
   { key: 'notifications', label: '通知グループ', icon: Bell },
+  { key: 'thresholds', label: '閾値テンプレート', icon: Sliders },
   { key: 'kinds', label: 'センサー種別', icon: Cpu },
 ]
 
@@ -69,11 +77,15 @@ export function SettingsView({
   notificationGroups,
   manufacturerIntegrations,
   sensors,
+  thresholdTemplates,
   onUpsertNotificationGroup,
   onDeleteNotificationGroup,
   onUpdateIntegration,
+  onUpsertThresholdTemplate,
+  onDeleteThresholdTemplate,
 }: Props) {
   const [tab, setTab] = useState<Tab>('integrations')
+  const [thresholdDialogOpen, setThresholdDialogOpen] = useState(false)
 
   const [groupDialog, setGroupDialog] = useState<{
     open: boolean
@@ -316,6 +328,49 @@ export function SettingsView({
         </section>
       )}
 
+      {tab === 'thresholds' && (
+        <section className="panel-card">
+          <div className="panel-card-head">
+            <h2>
+              <Sliders size={16} className="head-icon" />
+              閾値テンプレート
+            </h2>
+            <span className="panel-card-meta">
+              よく使う閾値の組み合わせを保存しておき、各センサーや一括選択で
+              呼び出して適用できます
+            </span>
+          </div>
+          <p className="muted in-panel">
+            登録済みのテンプレート: {Object.keys(thresholdTemplates).length} 件。
+            一覧の編集や新規作成は専用ダイアログから行います。
+          </p>
+          <div className="threshold-template-summary">
+            {Object.values(thresholdTemplates)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .slice(0, 6)
+              .map((t) => (
+                <span key={t.id} className="threshold-template-chip">
+                  <Sliders size={11} />
+                  {t.name}
+                </span>
+              ))}
+            {Object.keys(thresholdTemplates).length > 6 && (
+              <span className="muted">…ほか</span>
+            )}
+          </div>
+          <div className="settings-section-actions">
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={() => setThresholdDialogOpen(true)}
+            >
+              <Pencil size={14} />
+              <span>テンプレートを管理</span>
+            </button>
+          </div>
+        </section>
+      )}
+
       {tab === 'kinds' && (
         <section className="panel-card">
           <div className="panel-card-head">
@@ -377,6 +432,14 @@ export function SettingsView({
           onUpdateIntegration(i)
           setIntegrationDialog({ open: false, initial: null })
         }}
+      />
+
+      <ThresholdTemplateManageDialog
+        open={thresholdDialogOpen}
+        templates={thresholdTemplates}
+        onClose={() => setThresholdDialogOpen(false)}
+        onUpsert={onUpsertThresholdTemplate}
+        onDelete={onDeleteThresholdTemplate}
       />
     </div>
   )

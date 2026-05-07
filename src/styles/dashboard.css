@@ -6363,3 +6363,225 @@
 .column-settings-row-compact input[type='checkbox'] {
   margin-top: 0;
 }
+
+/* ---------- Phase 9.14: Threshold templates ---------- */
+
+/* SensorThresholdSettings 上部のツールバー */
+.threshold-settings-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.threshold-template-empty {
+  font-size: 0.78rem;
+}
+
+/* 「テンプレートから読み込み」ボタン + ポップオーバー */
+.threshold-template-wrap {
+  position: relative;
+}
+
+.threshold-template-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  min-width: 240px;
+  max-width: 360px;
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(15, 39, 68, 0.18);
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.threshold-template-option {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.85rem;
+  color: var(--navy-800);
+}
+
+.threshold-template-option:hover {
+  background: var(--gray-50);
+}
+
+.threshold-template-name {
+  font-weight: 600;
+}
+
+.threshold-template-desc {
+  font-size: 0.75rem;
+}
+
+/* テンプレート管理ダイアログ — 一覧 */
+.template-list-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0.6rem 0 0.5rem;
+}
+
+.template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.template-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.template-list-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.template-list-name-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.92rem;
+  color: var(--navy-800);
+  text-align: left;
+}
+
+.template-list-name-btn:hover .template-list-name {
+  text-decoration: underline;
+}
+
+.template-list-name {
+  font-weight: 700;
+}
+
+.template-list-desc {
+  font-size: 0.78rem;
+}
+
+.template-list-summary {
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  font-variant-numeric: tabular-nums;
+}
+
+.template-list-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  flex-shrink: 0;
+}
+
+/* テンプレート管理ダイアログ — フォーム */
+.template-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.template-form-head {
+  margin-bottom: 0.2rem;
+}
+
+.template-form-back {
+  font-size: 0.85rem;
+  color: var(--gray-600);
+}
+
+.template-form-back:hover {
+  color: var(--navy-700);
+}
+
+.template-form .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.template-form .form-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.template-form-values {
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  background: var(--gray-50);
+}
+
+.template-form-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+/* 設定ページの閾値テンプレートサマリ */
+.threshold-template-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0 0.6rem;
+}
+
+.threshold-template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.2rem 0.5rem;
+  background: var(--navy-50, rgba(15, 39, 68, 0.06));
+  color: var(--navy-700);
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+
+.settings-section-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.4rem;
+}
+
+/* 一括ダイアログ — 直接入力モードの値エディタ枠 */
+.bulk-threshold-direct {
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0.7rem 0.85rem;
+  background: var(--gray-50);
+  max-height: 480px;
+  overflow-y: auto;
+}

@@ -38,6 +38,8 @@ import type {
   SensorGroupStore,
   SensorReading,
   SensorStore,
+  SensorThresholds,
+  ThresholdTemplateStore,
 } from '../../types'
 import {
   evaluateMetricLevel,
@@ -80,6 +82,7 @@ type Props = {
   groups: SensorGroupStore
   categories: SensorCategoryStore
   savedFilters: SavedFilterStore
+  thresholdTemplates: ThresholdTemplateStore
   onOpenSensor: (id: string) => void
   onDeleteSensors: (ids: string[]) => void
   onUpsertGroup: (g: SensorGroup) => void
@@ -91,6 +94,10 @@ type Props = {
   onApplyBulkTags: (ids: string[], tags: string[], remove: boolean) => void
   onApplyBulkGroup: (ids: string[], groupId: string | null) => void
   onApplyBulkCategory: (ids: string[], categoryId: string | null) => void
+  onApplyBulkThresholds: (
+    ids: string[],
+    thresholds: SensorThresholds | undefined,
+  ) => void
 }
 
 type SensorRow = {
@@ -659,6 +666,7 @@ export function SensorsView({
   groups,
   categories,
   savedFilters,
+  thresholdTemplates,
   onOpenSensor,
   onDeleteSensors,
   onUpsertGroup,
@@ -670,6 +678,7 @@ export function SensorsView({
   onApplyBulkTags,
   onApplyBulkGroup,
   onApplyBulkCategory,
+  onApplyBulkThresholds,
 }: Props) {
   const sensorList = useMemo(
     () => Object.values(sensors).sort((a, b) => a.id.localeCompare(b.id)),
@@ -842,7 +851,8 @@ export function SensorsView({
       | { kind: 'tag-add'; tags: string[] }
       | { kind: 'tag-remove'; tags: string[] }
       | { kind: 'group-set'; groupId: string | null }
-      | { kind: 'category-set'; categoryId: string | null },
+      | { kind: 'category-set'; categoryId: string | null }
+      | { kind: 'threshold-set'; thresholds: SensorThresholds | undefined },
   ) {
     const ids = Array.from(selected)
     if (ids.length === 0) return
@@ -858,12 +868,22 @@ export function SensorsView({
         ? groups[action.groupId]?.name ?? '（不明）'
         : '未分類'
       toast(`${ids.length} 台を「${groupName}」に移動しました`, 'success')
-    } else {
+    } else if (action.kind === 'category-set') {
       onApplyBulkCategory(ids, action.categoryId)
       const catName = action.categoryId
         ? categories[action.categoryId]?.name ?? '（不明）'
         : '未設定'
       toast(`${ids.length} 台の区分を「${catName}」に変更しました`, 'success')
+    } else {
+      // threshold-set
+      onApplyBulkThresholds(ids, action.thresholds)
+      // App.tsx 側で種別不一致は弾くが、ここでは「適用しました」を出す
+      toast(
+        action.thresholds
+          ? `${ids.length} 台に閾値を適用しました（種別が一致するセンサーのみ）`
+          : `${ids.length} 台の閾値をクリアしました`,
+        'success',
+      )
     }
     setBulkActionOpen(false)
   }
@@ -1163,6 +1183,7 @@ export function SensorsView({
         selectedCount={selected.size}
         groups={groups}
         categories={categories}
+        thresholdTemplates={thresholdTemplates}
         existingTags={allTagsList}
         onClose={() => setBulkActionOpen(false)}
         onApply={handleBulkAction}

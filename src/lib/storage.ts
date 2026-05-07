@@ -16,6 +16,7 @@ import type {
   SensorGroupStore,
   SensorNoteStore,
   SensorStore,
+  ThresholdTemplateStore,
 } from '../types'
 import { defaultAlertSettings, ensureDate } from './mock'
 import {
@@ -27,6 +28,7 @@ import {
   buildDefaultCategories,
   defaultCategoryIdForKind,
 } from './categories'
+import { buildDefaultTemplates } from './thresholdTemplates'
 import { collectYearMonths, inferStorageKind } from './report'
 
 const KEY = 'miterude:state:v3'
@@ -52,6 +54,8 @@ export type PersistedState = {
   savedFilters?: SavedFilterStore
   /** Phase 9.9: ユーザー定義区分 */
   sensorCategories?: SensorCategoryStore
+  /** Phase 9.14: 閾値テンプレート */
+  thresholdTemplates?: ThresholdTemplateStore
 }
 
 const DATE_MARKER = '__d'
@@ -328,6 +332,26 @@ export function loadState(): PersistedState | null {
           ...s,
           categoryId: validIds.has(fallback) ? fallback : null,
         }
+      }
+    }
+
+    // Phase 9.14: 閾値テンプレートの初期化＋日付ハイドレーション
+    if (
+      !parsed.thresholdTemplates ||
+      typeof parsed.thresholdTemplates !== 'object'
+    ) {
+      parsed.thresholdTemplates = buildDefaultTemplates()
+    } else {
+      for (const id of Object.keys(parsed.thresholdTemplates)) {
+        const t = parsed.thresholdTemplates[id]
+        if (t) {
+          t.createdAt = ensureDate(t.createdAt)
+          t.updatedAt = ensureDate(t.updatedAt)
+        }
+      }
+      // ストアが空ならデフォルトを投入（後方互換）
+      if (Object.keys(parsed.thresholdTemplates).length === 0) {
+        parsed.thresholdTemplates = buildDefaultTemplates()
       }
     }
 

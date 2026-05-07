@@ -52,6 +52,7 @@ import type {
   SensorStore,
   SensorThresholds,
   TempHumidityThresholds,
+  ThresholdTemplateStore,
   UserSession,
   YearMonth,
 } from '../../types'
@@ -92,6 +93,7 @@ type Props = {
   session: UserSession
   groups: SensorGroupStore
   categories: SensorCategoryStore
+  thresholdTemplates: ThresholdTemplateStore
   onBack: () => void
   onGoReport: (deviceId: string, ym?: YearMonth) => void
   onSwitchDevice: (deviceId: string) => void
@@ -234,6 +236,7 @@ export function SensorDetailView({
   session,
   groups,
   categories,
+  thresholdTemplates,
   onBack,
   onGoReport,
   onSwitchDevice,
@@ -696,6 +699,7 @@ export function SensorDetailView({
           </div>
           <SensorThresholdSettings
             sensor={sensor}
+            templates={thresholdTemplates}
             onChange={(next: TempHumidityThresholds | undefined) => {
               onUpdateSensorThresholds(deviceId, next)
             }}

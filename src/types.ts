@@ -95,6 +95,27 @@ export type SensorThresholds =
  */
 export type DeviationLevel = 'alert' | 'warn' | 'normal' | null
 
+/* ---------- 閾値テンプレート (Phase 9.14) ----------
+ *  「冷蔵 標準」「冷凍 標準」など、よく使う閾値の組み合わせを保存しておき、
+ *  センサー一覧 / 詳細から呼び出して適用する。
+ *
+ *  スナップショット方式: テンプレを適用すると値がコピーされ、その後
+ *  テンプレを編集してもセンサー側には伝搬しない。再適用が必要。
+ */
+export type ThresholdTemplate = {
+  id: string
+  name: string
+  description?: string
+  /** 対象センサー種別（誤適用防止のために記録） */
+  targetKind: SensorKind
+  /** スナップショット元の閾値。targetKind と整合する kind を持つ */
+  thresholds: SensorThresholds
+  createdAt: Date
+  updatedAt: Date
+}
+
+export type ThresholdTemplateStore = Record<string, ThresholdTemplate>
+
 export type YearMonth = { year: number; month: number }
 
 /** 年月キー "2025-12" */

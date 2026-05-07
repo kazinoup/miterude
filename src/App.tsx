@@ -35,6 +35,8 @@ import type {
   SensorNoteStore,
   SensorStore,
   SensorThresholds,
+  ThresholdTemplate,
+  ThresholdTemplateStore,
   UserSession,
   ViewKey,
   Widget,
@@ -86,6 +88,12 @@ import {
   removeCategory as deleteCategoryFromStore,
   upsertCategory as upsertCategoryInStore,
 } from './lib/categories'
+import {
+  buildDefaultTemplates,
+  cloneThresholds,
+  removeTemplate as deleteTemplateFromStore,
+  upsertTemplate as upsertTemplateInStore,
+} from './lib/thresholdTemplates'
 import { toast } from './lib/toast'
 import './App.css'
 import './styles/dashboard.css'
@@ -134,6 +142,10 @@ export default function App() {
   const [sensorCategories, setSensorCategories] = useState<SensorCategoryStore>(
     initial?.sensorCategories ?? buildDefaultCategories(),
   )
+  const [thresholdTemplates, setThresholdTemplates] =
+    useState<ThresholdTemplateStore>(
+      initial?.thresholdTemplates ?? buildDefaultTemplates(),
+    )
   const [savedFilters, setSavedFilters] = useState<SavedFilterStore>(
     initial?.savedFilters ?? {},
   )
@@ -223,6 +235,7 @@ export default function App() {
       sensorNotes,
       sensorGroups,
       sensorCategories,
+      thresholdTemplates,
       savedFilters,
     })
   }, [
@@ -237,6 +250,7 @@ export default function App() {
     sensorNotes,
     sensorGroups,
     sensorCategories,
+    thresholdTemplates,
     savedFilters,
   ])
 
@@ -527,6 +541,61 @@ export default function App() {
     })
   }
 
+  /* -------- Phase 9.14: 閾値テンプレート -------- */
+
+  function handleUpsertThresholdTemplate(t: ThresholdTemplate) {
+    const isNew = !thresholdTemplates[t.id]
+    setThresholdTemplates((prev) => upsertTemplateInStore(prev, t))
+    toast(
+      isNew
+        ? `閾値テンプレート「${t.name}」を作成しました`
+        : `閾値テンプレート「${t.name}」を更新しました`,
+      'success',
+    )
+  }
+
+  function handleDeleteThresholdTemplate(id: string) {
+    const t = thresholdTemplates[id]
+    setThresholdTemplates((prev) => deleteTemplateFromStore(prev, id))
+    toast(`閾値テンプレート「${t?.name ?? id}」を削除しました`, 'info')
+  }
+
+  /** 複数センサーへ閾値を一括適用（種別が一致するものだけ更新、他はスキップ） */
+  function handleApplyBulkThresholds(
+    ids: string[],
+    thresholds: SensorThresholds | undefined,
+  ) {
+    setSensors((prev) => {
+      const next: SensorStore = { ...prev }
+      let skipped = 0
+      for (const sid of ids) {
+        const s = next[sid]
+        if (!s) continue
+        if (thresholds) {
+          // 種別チェック: thresholds.kind がセンサーの kind と一致するかチェック
+          const sensorKind = s.kind ?? 'temperature-humidity'
+          if (thresholds.kind !== sensorKind) {
+            skipped += 1
+            continue
+          }
+          // スナップショット適用: 参照を切り離してコピー
+          next[sid] = { ...s, thresholds: cloneThresholds(thresholds) }
+        } else {
+          // クリア
+          next[sid] = { ...s, thresholds: undefined }
+        }
+      }
+      if (skipped > 0) {
+        // state 更新中に toast を呼ぶと不安定なので setTimeout で逃がす
+        setTimeout(
+          () => toast(`${skipped} 台は種別が一致しないためスキップしました`, 'info'),
+          0,
+        )
+      }
+      return next
+    })
+  }
+
   /** 基本情報（名前・デバイス番号・シリアル・モデル・メーカー・ゲートウェイ）の編集 */
   function handleUpdateSensorInfo(
     sensorId: string,
@@ -800,6 +869,7 @@ export default function App() {
               groups={sensorGroups}
               categories={sensorCategories}
               savedFilters={savedFilters}
+              thresholdTemplates={thresholdTemplates}
               onOpenSensor={openSensor}
               onDeleteSensors={handleDeleteSensors}
               onUpsertGroup={handleUpsertGroup}
@@ -811,6 +881,7 @@ export default function App() {
               onApplyBulkTags={handleApplyBulkTags}
               onApplyBulkGroup={handleApplyBulkGroup}
               onApplyBulkCategory={handleApplyBulkCategory}
+              onApplyBulkThresholds={handleApplyBulkThresholds}
             />
           )}
 
@@ -825,6 +896,7 @@ export default function App() {
               session={MOCK_SESSION}
               groups={sensorGroups}
               categories={sensorCategories}
+              thresholdTemplates={thresholdTemplates}
               onBack={() => navigate('sensors')}
               onGoReport={(id, ym) => gotoReport(id, ym)}
               onSwitchDevice={(id) => setActiveSensorId(id)}
@@ -867,9 +939,12 @@ export default function App() {
               notificationGroups={notificationGroups}
               manufacturerIntegrations={manufacturerIntegrations}
               sensors={sensors}
+              thresholdTemplates={thresholdTemplates}
               onUpsertNotificationGroup={handleUpsertNotificationGroup}
               onDeleteNotificationGroup={handleDeleteNotificationGroup}
               onUpdateIntegration={handleUpdateIntegration}
+              onUpsertThresholdTemplate={handleUpsertThresholdTemplate}
+              onDeleteThresholdTemplate={handleDeleteThresholdTemplate}
             />
           )}
 
