@@ -1,6 +1,5 @@
 import type {
   DeviationLevel,
-  MissingDisplay,
   SensorReading,
   SensorThresholds,
   StorageKind,
@@ -469,12 +468,12 @@ export function summarizeMetric(
   return { count, deviationCount, avg, min, max }
 }
 
+/** 数値セルの表示値。未計測（null）はハイフン固定（Phase A-2 で「欠損表示の設定」を撤去）。 */
 export function formatCellValue(
   v: number | null,
-  missing: MissingDisplay,
   decimals: number,
 ): string {
-  if (v == null) return missing === 'hyphen' ? '-' : ''
+  if (v == null) return '-'
   return v.toFixed(decimals)
 }
 

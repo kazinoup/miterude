@@ -1,6 +1,5 @@
 import { Fragment } from 'react'
 import type {
-  MissingDisplay,
   SensorReading,
   SensorThresholds,
 } from '../types'
@@ -23,7 +22,6 @@ type Props = {
   weekStart: Date
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
-  missingDisplay: MissingDisplay
 }
 
 function formatPeriodWeekJp(weekStart: Date): string {
@@ -47,7 +45,6 @@ export function WeeklyTableReport({
   weekStart,
   readings,
   thresholds,
-  missingDisplay,
 }: Props) {
   const range = {
     start: weekStart,
@@ -179,7 +176,7 @@ export function WeeklyTableReport({
                     {Array.from({ length: 7 }, (_, col) => {
                       const v = grid[rowA]?.[col] ?? null
                       const dev = cellIsDeviation(v, metric, thresholds)
-                      const text = formatCellValue(v, missingDisplay, decimals)
+                      const text = formatCellValue(v, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
                           <span className="cell-num">{text}</span>
@@ -191,7 +188,7 @@ export function WeeklyTableReport({
                     {Array.from({ length: 7 }, (_, col) => {
                       const v = grid[rowB]?.[col] ?? null
                       const dev = cellIsDeviation(v, metric, thresholds)
-                      const text = formatCellValue(v, missingDisplay, decimals)
+                      const text = formatCellValue(v, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
                           <span className="cell-num">{text}</span>

@@ -703,3 +703,262 @@
     max-height: 5.2mm;
   }
 }
+
+/* =====================================================
+   Phase A-3 改訂: 週報マージ版（温度・湿度を 1 ページに集約）
+   - 上部サマリを左右 2 ブロックに分割
+   - 中央列に時刻を配置して温度／湿度を視覚的に分離
+   - 色（赤・薄いブルー）はセクション識別から外す
+   ===================================================== */
+
+/* 「対象期間」と「確認印」を確認印枠の下端で揃える */
+.weekly-merged-page .monthly-meta.meta-bottom-aligned {
+  align-items: flex-end;
+}
+
+/* 温度・湿度サマリを「左ブロック / 時刻列ぶんの空き / 右ブロック」の 3 分割で配置。
+ * 下の表が 7 + 0.5 + 7 = 14.5 列幅 なので、サマリも同じ比率で割る。 */
+.stats-split-row {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.45rem;
+  align-items: stretch;
+}
+
+.stats-split-row .stats-row-block {
+  /* 7 列分（48.27%）の幅を取る。下の表の day 列 7 つぶんと一致させる */
+  flex: 7 0 0;
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 48.27%;
+}
+
+/* 中央の時刻列ぶんの空きスペーサ（サマリには時刻列を含めない） */
+.stats-split-row .stats-spacer {
+  /* 0.5 列分の幅 */
+  flex: 0.5 0 0;
+  width: 3.45%;
+}
+
+/* パディング用の空セル（左右の列幅を揃えるためのもの） */
+.stats-row-block .stats-pad {
+  border: 1px solid #333;
+  background: transparent;
+}
+
+/* 基準セル — 月報 / 週報 共通。
+ *  注意・危険が両方設定されているとき、1 セル内で 2 行に分けて表示するため
+ *  改行文字（\n）を有効化する。
+ *  .stats-row td の white-space: nowrap を上書きするため、td 付きの
+ *  セレクタで specificity を確保している。 */
+.stats-row td.threshold-range-cell {
+  white-space: pre-line;
+  word-break: keep-all;
+  line-height: 1.4;
+  text-align: left;
+}
+
+/* 週報マージ版（colspan=3 で表示するブロック）はやや小さめのフォントで揃える */
+.stats-row-block td.threshold-range-cell {
+  font-size: 0.72rem;
+}
+
+/* 14 列 + 時刻列なので、画面プレビューでは横スクロール、印刷ではフィット */
+.weekly-merged-page .monthly-table-scroll {
+  overflow-x: auto;
+}
+
+/* 列幅を明示的に 7 + 0.5 + 7 比率で振り分ける。
+ *  下の表本体: 日付列 7 ＋ 時刻 0.5 ＋ 日付列 7 = 14.5 列幅
+ *  → 日付列 = 6.9%、時刻列 = 3.45%（半分） */
+.weekly-merged-grid {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.weekly-merged-grid .col-day {
+  width: 6.9%;
+}
+
+.weekly-merged-grid .col-time {
+  width: 3.45%;
+}
+
+.weekly-merged-grid .day-head {
+  font-size: 0.66rem;
+}
+
+.weekly-merged-grid .cell-num {
+  font-size: 0.72rem;
+}
+
+/* 中央の時刻列（左右の区切りとしても機能） */
+.weekly-merged-grid .merged-time-col-head {
+  text-align: center;
+  font-size: 0.66rem;
+  background: var(--gray-50, #f8fafc);
+}
+
+.weekly-merged-grid .merged-time-col {
+  /* 時刻ラベルの背景はテーブル既定（行頭セルと同じ）に揃える */
+  text-align: center;
+}
+
+@media print {
+  .weekly-merged-grid {
+    font-size: 7.5pt;
+    width: 100%;
+    table-layout: fixed;
+  }
+  .weekly-merged-grid .day-head {
+    font-size: 6.5pt;
+    padding: 0.8mm 0.4mm;
+    min-width: 0;
+    width: auto;
+  }
+  .weekly-merged-grid .corner,
+  .weekly-merged-grid .row-head-hour {
+    width: 8mm;
+    font-size: 6.5pt;
+  }
+  .weekly-merged-grid .cell-num {
+    font-size: 7pt;
+  }
+  .weekly-merged-page .monthly-hour-row td,
+  .weekly-merged-page .monthly-hour-row-sub td {
+    height: 4.8mm;
+    min-height: 4.8mm;
+    max-height: 4.8mm;
+  }
+  /* 印刷時、左右ブロックのサマリ表は同じ font-size に */
+  .stats-split-row .stats-row-block {
+    font-size: 7.5pt;
+  }
+}
+
+/* =====================================================
+   Phase A-4: 記録履歴・運用メモページ
+   ===================================================== */
+
+.records-page {
+  /* 既存の report-page と同じスケールで A4 portrait に乗る */
+}
+
+.records-section {
+  margin: 0.6rem 0 0.8rem;
+}
+
+.records-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+  color: var(--navy-800, #0f2744);
+  border-left: 4px solid var(--navy-700, #14365e);
+  padding-left: 0.5rem;
+}
+
+.records-empty {
+  font-size: 0.82rem;
+  color: var(--gray-600, #6b7280);
+  margin: 0.2rem 0 0.4rem;
+}
+
+.records-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  table-layout: fixed;
+}
+
+.records-table th,
+.records-table td {
+  border: 1px solid var(--gray-300, #cbd5e1);
+  padding: 4px 6px;
+  vertical-align: top;
+  text-align: left;
+  word-break: break-word;
+}
+
+.records-table thead th {
+  background: var(--gray-50, #f8fafc);
+  font-weight: 600;
+  font-size: 0.74rem;
+}
+
+.records-table .cell-nowrap {
+  white-space: nowrap;
+}
+
+.records-table .cell-memo {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.records-issue-yes {
+  color: #c00;
+  font-weight: 700;
+}
+
+.records-issue-no {
+  color: var(--gray-700, #4b5563);
+}
+
+.records-sensor-memos {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.records-sensor-memos li {
+  margin-bottom: 0.2rem;
+  line-height: 1.45;
+}
+
+.records-sensor-memos li:last-child {
+  margin-bottom: 0;
+}
+
+.records-sensor-kinds {
+  font-size: 0.72rem;
+  color: var(--gray-600, #6b7280);
+}
+
+.records-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.records-note-block {
+  padding: 0;
+}
+
+.records-note-device {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--navy-800, #0f2744);
+}
+
+.records-notes-table {
+  font-size: 0.76rem;
+}
+
+@media print {
+  .records-page {
+    page-break-before: always;
+  }
+  .records-table {
+    font-size: 7.5pt;
+  }
+  .records-table thead th {
+    font-size: 7pt;
+  }
+  .records-section-title {
+    font-size: 9pt;
+  }
+  .records-note-device {
+    font-size: 8pt;
+  }
+}
+

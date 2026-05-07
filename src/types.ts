@@ -10,8 +10,6 @@ export type SensorReading = {
 /** デバイスごとの疑似DB */
 export type DeviceStore = Record<string, SensorReading[]>
 
-export type MissingDisplay = 'blank' | 'hyphen'
-
 /** 当月の平均温度から推定する庫内区分（レポートのラベル等の表示用に残置）。
  *  Phase 9.11 以降、逸脱判定は各センサーの thresholds を直接参照するため、
  *  この値は閾値判定には関与しない。 */

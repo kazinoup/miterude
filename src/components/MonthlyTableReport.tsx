@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import type { MissingDisplay, SensorThresholds, YearMonth } from '../types'
+import type { SensorThresholds, YearMonth } from '../types'
 import {
   buildMonthlyGrid,
   cellIsDeviation,
@@ -10,7 +10,11 @@ import {
   summarizeMetric,
 } from '../lib/report'
 import type { SensorReading } from '../types'
-import { formatPeriodLongJp, formatThresholdRange, weekdayJp } from '../lib/jp'
+import {
+  formatBothThresholdLevels,
+  formatPeriodLongJp,
+  weekdayJp,
+} from '../lib/jp'
 import { ReportHeroLine } from './ReportHeroLine'
 
 type Metric = 'temperature' | 'humidity'
@@ -22,7 +26,6 @@ type Props = {
   ym: YearMonth
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
-  missingDisplay: MissingDisplay
 }
 
 export function MonthlyTableReport({
@@ -32,7 +35,6 @@ export function MonthlyTableReport({
   ym,
   readings,
   thresholds,
-  missingDisplay,
 }: Props) {
   const dim = daysInMonth(ym.year, ym.month)
   const grid = buildMonthlyGrid(readings, ym, metric)
@@ -76,10 +78,10 @@ export function MonthlyTableReport({
             {showDeviationStats && m ? (
               <>
                 <th>基準</th>
-                <td>
-                  {formatThresholdRange(
-                    m.alert.min,
-                    m.alert.max,
+                <td className="threshold-range-cell">
+                  {formatBothThresholdLevels(
+                    m.warn,
+                    m.alert,
                     metric === 'temperature' ? '℃' : '%',
                   )}
                 </td>
@@ -147,7 +149,7 @@ export function MonthlyTableReport({
                     {Array.from({ length: dim }, (_, col) => {
                       const v = grid[rowA]?.[col] ?? null
                       const dev = cellIsDeviation(v, metric, thresholds)
-                      const text = formatCellValue(v, missingDisplay, decimals)
+                      const text = formatCellValue(v, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
                           <span className="cell-num">{text}</span>
@@ -159,7 +161,7 @@ export function MonthlyTableReport({
                     {Array.from({ length: dim }, (_, col) => {
                       const v = grid[rowB]?.[col] ?? null
                       const dev = cellIsDeviation(v, metric, thresholds)
-                      const text = formatCellValue(v, missingDisplay, decimals)
+                      const text = formatCellValue(v, decimals)
                       return (
                         <td key={col} className={dev ? 'cell-deviation' : ''}>
                           <span className="cell-num">{text}</span>

@@ -1,5 +1,4 @@
 import type {
-  MissingDisplay,
   ReportKind,
   SensorReading,
   SensorThresholds,
@@ -8,7 +7,7 @@ import type {
 import { yearMonthKey } from '../types'
 import { MonthlyTableReport } from './MonthlyTableReport'
 import { SummaryReport } from './SummaryReport'
-import { WeeklyTableReport } from './WeeklyTableReport'
+import { WeeklyMergedTableReport } from './WeeklyMergedTableReport'
 import { WeeklySummaryReport } from './WeeklySummaryReport'
 
 type CommonProps = {
@@ -16,7 +15,6 @@ type CommonProps = {
   readings: SensorReading[]
   /** 該当センサーの個別閾値。未設定なら逸脱判定なし。 */
   thresholds: SensorThresholds | undefined
-  missingDisplay: MissingDisplay
 }
 
 type Props = CommonProps &
@@ -26,18 +24,16 @@ type Props = CommonProps &
   )
 
 export function ReportPreview(props: Props) {
-  const {
-    deviceId,
-    readings,
-    thresholds,
-    missingDisplay,
-  } = props
+  const { deviceId, readings, thresholds } = props
   const kind: ReportKind = props.kind ?? 'monthly'
 
   if (kind === 'weekly' && props.weekStart) {
     const weekStart = props.weekStart
     const key = `${deviceId}-w-${weekStart.toISOString().slice(0, 10)}`
 
+    // Phase A-3: 週報は 2 ページ構成
+    //   1) WeeklySummaryReport（グラフ + サマリ）
+    //   2) WeeklyMergedTableReport（温度・湿度を 1 ページに左右並びで集約）
     return (
       <article className="report-bundle" data-report-key={key}>
         <WeeklySummaryReport
@@ -46,23 +42,11 @@ export function ReportPreview(props: Props) {
           readings={readings}
           thresholds={thresholds}
         />
-        <WeeklyTableReport
-          title="温度週報"
-          metric="temperature"
+        <WeeklyMergedTableReport
           deviceId={deviceId}
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
-          missingDisplay={missingDisplay}
-        />
-        <WeeklyTableReport
-          title="湿度週報"
-          metric="humidity"
-          deviceId={deviceId}
-          weekStart={weekStart}
-          readings={readings}
-          thresholds={thresholds}
-          missingDisplay={missingDisplay}
         />
       </article>
     )
@@ -87,7 +71,6 @@ export function ReportPreview(props: Props) {
         ym={ym}
         readings={readings}
         thresholds={thresholds}
-        missingDisplay={missingDisplay}
       />
       <MonthlyTableReport
         title="湿度月報"
@@ -96,7 +79,6 @@ export function ReportPreview(props: Props) {
         ym={ym}
         readings={readings}
         thresholds={thresholds}
-        missingDisplay={missingDisplay}
       />
     </article>
   )

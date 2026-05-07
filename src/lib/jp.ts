@@ -49,6 +49,27 @@ export function formatThresholdRange(
   return '—'
 }
 
+/** 注意・危険の両方の閾値をレンダリング用の文字列で返す。
+ *  両方有効: "注意 x〜y\n危険 x〜y"（CSS の white-space: pre-line で改行が表示される）
+ *  片方だけ: その 1 行
+ *  両方無効: "—"
+ *  月報・週報の「基準」セル共通で使う。 */
+export function formatBothThresholdLevels(
+  warn: { enabled: boolean; min?: number; max?: number },
+  alert: { enabled: boolean; min?: number; max?: number },
+  unit: string,
+  decimals = 1,
+): string {
+  const parts: string[] = []
+  if (warn.enabled && (warn.min != null || warn.max != null)) {
+    parts.push(`注意 ${formatThresholdRange(warn.min, warn.max, unit, decimals)}`)
+  }
+  if (alert.enabled && (alert.min != null || alert.max != null)) {
+    parts.push(`危険 ${formatThresholdRange(alert.min, alert.max, unit, decimals)}`)
+  }
+  return parts.length === 0 ? '—' : parts.join('\n')
+}
+
 /** 相対時間表示（最終更新からの経過時間）
  *  - 1分未満: "now"
  *  - 1時間未満: "30min"

@@ -6965,3 +6965,126 @@
   gap: 0.35rem;
   padding: 0.85rem 1rem;
 }
+
+/* =====================================================
+   Phase A-1: レポート期間カード（出力タイプ + 月／週ナビゲータ）
+   左:[週報][月報]  右:◀ ラベル ▶ + 先月/先週ボタン  を 1 行に並べる
+   ===================================================== */
+
+.period-card-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.7rem 0.9rem;
+  padding-top: 0.2rem;
+}
+
+.period-kind-toggle .seg-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.period-navigator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  /* 月報「2026年4月」/週報「4月27日 〜 5月3日」が片側 1 行で収まる最小幅 */
+  min-width: 14rem;
+  flex: 0 1 auto;
+}
+
+.period-nav-btn {
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.period-nav-label {
+  flex: 1;
+  text-align: center;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 「先月」「先週」へジャンプするボタン
+ * 既定値と一致しているときは押されている状態（is-active）で表示する。
+ * 矢印で前後に動かすと is-active が外れ、再度押すと既定値に戻る。 */
+.period-default-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--gray-700);
+  font-size: 0.83rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.period-default-btn:hover {
+  background: var(--gray-50);
+  color: var(--navy-700);
+}
+
+.period-default-btn.is-active {
+  background: var(--navy-800);
+  color: #fff;
+  border-color: var(--navy-800);
+}
+
+/* =====================================================
+   Phase A-4: 出力項目チェックボックス
+   ===================================================== */
+
+.output-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin: 0.3rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.output-option input[type='checkbox'] {
+  margin-top: 0.18rem;
+}
+
+.output-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.output-option-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.output-option-desc {
+  font-size: 0.78rem;
+  line-height: 1.55;
+}

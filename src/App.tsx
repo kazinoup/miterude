@@ -9,6 +9,7 @@ import { ReportView } from './components/views/ReportView'
 import { SettingsView } from './components/views/SettingsView'
 import { RecordsView } from './components/views/RecordsView'
 import { ReportPreview } from './components/ReportPreview'
+import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
 import { DashboardEditDialog } from './components/DashboardEditDialog'
 import type {
@@ -21,7 +22,6 @@ import type {
   GatewayStore,
   ManufacturerIntegration,
   ManufacturerIntegrationStore,
-  MissingDisplay,
   NotificationGroup,
   NotificationGroupStore,
   ReportKind,
@@ -44,11 +44,9 @@ import type {
 } from './types'
 import { yearMonthKey } from './types'
 import {
-  collectYearMonths,
   deviceHasDataForMonth,
   deviceHasDataForRange,
 } from './lib/report'
-import { startOfWeek } from './lib/period'
 import { ensureDate, syncMetadata } from './lib/mock'
 import { loadState, saveState } from './lib/storage'
 import {
@@ -155,15 +153,17 @@ export default function App() {
   const [activeGatewayId, setActiveGatewayId] = useState<string | null>(null)
 
   // Phase 9.11: 共通 ReportThresholds は廃止。閾値はセンサー個別 (sensor.thresholds) で管理。
-  const [missingDisplay, setMissingDisplay] = useState<MissingDisplay>('blank')
+  // Phase A-2 (Phase 10): 「欠損表示の設定」は撤去。未計測セルはハイフン固定。
 
   const [reportDeviceIds, setReportDeviceIds] = useState<string[]>([])
   const [reportKind, setReportKind] = useState<ReportKind>('monthly')
   const [reportMonth, setReportMonth] = useState<YearMonth | null>(null)
   const [reportWeekStart, setReportWeekStart] = useState<Date | null>(null)
+  // Phase A-4: 記録履歴・運用メモページの出力可否（既定 OFF）
+  const [reportIncludeRecords, setReportIncludeRecords] = useState<boolean>(false)
   const [printingBulk, setPrintingBulk] = useState<
-    | { kind: 'monthly'; ym: YearMonth }
-    | { kind: 'weekly'; weekStart: Date }
+    | { kind: 'monthly'; ym: YearMonth; includeRecords: boolean }
+    | { kind: 'weekly'; weekStart: Date; includeRecords: boolean }
     | null
   >(null)
 
@@ -295,27 +295,8 @@ export default function App() {
       return valid.length > 0 ? valid : ids
     })
 
-    const allMonths = collectYearMonths(Object.values(next).flat())
-    setReportMonth((prev) => {
-      if (allMonths.length === 0) return null
-      if (prev && allMonths.some((m) => yearMonthKey(m) === yearMonthKey(prev))) return prev
-      return allMonths[allMonths.length - 1]
-    })
-
-    // 週の初期値: 最新読取日を含む週の月曜
-    setReportWeekStart((prev) => {
-      if (prev) return prev
-      const all = Object.values(next).flat()
-      if (all.length === 0) return null
-      const latest = all.reduce((max, r) => {
-        const t = (r.measuredAt instanceof Date
-          ? r.measuredAt
-          : new Date(r.measuredAt as unknown as string)
-        ).getTime()
-        return t > max ? t : max
-      }, 0)
-      return latest > 0 ? startOfWeek(new Date(latest)) : null
-    })
+    // Phase A-1（Phase 10）: 月／週の既定値は ReportView 側で「先月／先週」を
+    // 自動補完するため、ここで CSV 取り込み完了時に上書きしない。
 
     // ダッシュボードのクリーンアップ＋初回作成
     setDashboards((prev) => {
@@ -771,14 +752,18 @@ export default function App() {
 
   const startBulkPrint = useCallback(() => {
     let target:
-      | { kind: 'monthly'; ym: YearMonth }
-      | { kind: 'weekly'; weekStart: Date }
+      | { kind: 'monthly'; ym: YearMonth; includeRecords: boolean }
+      | { kind: 'weekly'; weekStart: Date; includeRecords: boolean }
       | null = null
     let ids: string[] = []
 
     if (reportKind === 'monthly') {
       if (!reportMonth) return
-      target = { kind: 'monthly', ym: reportMonth }
+      target = {
+        kind: 'monthly',
+        ym: reportMonth,
+        includeRecords: reportIncludeRecords,
+      }
       ids = sortIds(reportDeviceIds).filter((id) =>
         deviceHasDataForMonth(devices[id], reportMonth),
       )
@@ -792,7 +777,11 @@ export default function App() {
           return e
         })(),
       }
-      target = { kind: 'weekly', weekStart: reportWeekStart }
+      target = {
+        kind: 'weekly',
+        weekStart: reportWeekStart,
+        includeRecords: reportIncludeRecords,
+      }
       ids = sortIds(reportDeviceIds).filter((id) =>
         deviceHasDataForRange(devices[id], range),
       )
@@ -815,7 +804,14 @@ export default function App() {
         window.print()
       })
     })
-  }, [reportKind, reportMonth, reportWeekStart, reportDeviceIds, devices])
+  }, [
+    reportKind,
+    reportMonth,
+    reportWeekStart,
+    reportDeviceIds,
+    reportIncludeRecords,
+    devices,
+  ])
 
   return (
     <div className="app-shell">
@@ -966,8 +962,6 @@ export default function App() {
           {view === 'report' && (
             <ReportView
               devices={devices}
-              missingDisplay={missingDisplay}
-              onMissingDisplay={setMissingDisplay}
               selectedDeviceIds={reportDeviceIds}
               onSelectedDeviceIds={setReportDeviceIds}
               sensors={sensors}
@@ -980,6 +974,10 @@ export default function App() {
               onPrintMonth={setReportMonth}
               printWeekStart={reportWeekStart}
               onPrintWeekStart={setReportWeekStart}
+              includeRecordsPage={reportIncludeRecords}
+              onIncludeRecordsPage={setReportIncludeRecords}
+              checkins={checkins}
+              sensorNotes={sensorNotes}
               onPrint={startBulkPrint}
               onBack={() => navigate('dashboard')}
             />
@@ -1012,7 +1010,6 @@ export default function App() {
                   deviceId={deviceId}
                   readings={devices[deviceId] ?? []}
                   thresholds={sensors[deviceId]?.thresholds}
-                  missingDisplay={missingDisplay}
                 />
               ) : (
                 <ReportPreview
@@ -1022,10 +1019,29 @@ export default function App() {
                   deviceId={deviceId}
                   readings={devices[deviceId] ?? []}
                   thresholds={sensors[deviceId]?.thresholds}
-                  missingDisplay={missingDisplay}
                 />
               ),
             )}
+            {/* Phase A-4: includeRecords ON のとき、対象デバイス全体に対して
+             *   記録履歴・運用メモページを末尾に 1 ページ追加 */}
+            {printingBulk.includeRecords &&
+              (printingBulk.kind === 'monthly' ? (
+                <RecordsAndNotesReport
+                  kind="monthly"
+                  ym={printingBulk.ym}
+                  checkins={checkins}
+                  sensorNotes={sensorNotes}
+                  deviceIds={bulkPrintDeviceIds}
+                />
+              ) : (
+                <RecordsAndNotesReport
+                  kind="weekly"
+                  weekStart={printingBulk.weekStart}
+                  checkins={checkins}
+                  sensorNotes={sensorNotes}
+                  deviceIds={bulkPrintDeviceIds}
+                />
+              ))}
           </div>
         )}
       </main>
