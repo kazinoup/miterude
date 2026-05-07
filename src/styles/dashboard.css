@@ -6746,3 +6746,16 @@
   /* 既存の inline-flex を流用、アイコンとラベルの間を詰める */
   gap: 0.25rem;
 }
+
+/* ---------- Phase 9.16: マルチライン説明文（中途改行抑止） ---------- */
+/* 文章を <span> で分けて、各 span を block に倒すことで
+ *  「文章末の 1 〜 2 文字だけ次行に折り返す」みっともない改行を防ぐ。 */
+.multiline-help {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.multiline-help > span {
+  display: block;
+}

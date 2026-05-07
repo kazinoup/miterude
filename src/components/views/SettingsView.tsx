@@ -379,10 +379,13 @@ export function SettingsView({
               </button>
             </div>
           </div>
-          <p className="muted in-panel">
-            よく使う閾値の組み合わせを保存しておくと、各センサーや一括選択で
-            まとめて適用できます。テンプレートを編集しても、すでに適用済みの
-            センサー側の値は変わりません（スナップショット方式）。
+          <p className="muted in-panel multiline-help">
+            <span>
+              よく使う閾値の組み合わせを保存しておくと、各センサーや一括選択でまとめて適用できます。
+            </span>
+            <span>
+              テンプレートを編集しても、すでに適用済みのセンサー側の値は変わりません（スナップショット方式）。
+            </span>
           </p>
 
           {Object.keys(thresholdTemplates).length === 0 ? (
