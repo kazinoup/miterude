@@ -32,6 +32,80 @@ import { buildDefaultTemplates } from './thresholdTemplates'
 import { collectYearMonths, inferStorageKind } from './report'
 
 const KEY = 'miterude:state:v3'
+
+/* ---------- thresholds マイグレーション (Phase 9.14) ----------
+ *  旧形式: { kind: 'temperature-humidity',
+ *            temperature: { enabled, alertMin, alertMax, warnMin?, warnMax? },
+ *            humidity: { ... } }
+ *  新形式: { kind: 'temperature-humidity',
+ *            temperature: { alert: { enabled, min?, max? }, warn: { enabled, min?, max? } },
+ *            humidity: { ... } }
+ *
+ *  - 既に新形式 → そのまま返す
+ *  - 旧形式 → 新形式に変換
+ *  - 想定外の形 → undefined（閾値なし扱い）に倒す。これでアプリは安全に起動する。
+ */
+type LegacyLevel = {
+  enabled?: boolean
+  alertMin?: number
+  alertMax?: number
+  warnMin?: number
+  warnMax?: number
+}
+
+function migrateLegacyMetric(m: unknown): import('../types').ThresholdMetric | null {
+  if (!m || typeof m !== 'object') return null
+  const obj = m as Record<string, unknown>
+  // 既に新形式
+  if (obj.alert && typeof obj.alert === 'object' && obj.warn && typeof obj.warn === 'object') {
+    return obj as unknown as import('../types').ThresholdMetric
+  }
+  // 旧形式（alertMin/alertMax 等を直接持つ）→ ネスト構造に持ち上げる
+  const legacy = obj as LegacyLevel
+  if (
+    'alertMin' in legacy ||
+    'alertMax' in legacy ||
+    'warnMin' in legacy ||
+    'warnMax' in legacy ||
+    'enabled' in legacy
+  ) {
+    const legacyEnabled = legacy.enabled === true
+    return {
+      alert: {
+        enabled: legacyEnabled,
+        min: typeof legacy.alertMin === 'number' ? legacy.alertMin : undefined,
+        max: typeof legacy.alertMax === 'number' ? legacy.alertMax : undefined,
+      },
+      warn: {
+        enabled:
+          legacyEnabled &&
+          (typeof legacy.warnMin === 'number' || typeof legacy.warnMax === 'number'),
+        min: typeof legacy.warnMin === 'number' ? legacy.warnMin : undefined,
+        max: typeof legacy.warnMax === 'number' ? legacy.warnMax : undefined,
+      },
+    }
+  }
+  return null
+}
+
+function migrateThresholds(
+  t: unknown,
+): import('../types').SensorThresholds | undefined {
+  if (!t || typeof t !== 'object') return undefined
+  const obj = t as Record<string, unknown>
+  if (obj.kind === 'temperature-humidity') {
+    const temp = migrateLegacyMetric(obj.temperature)
+    const hum = migrateLegacyMetric(obj.humidity)
+    if (!temp && !hum) return undefined
+    return {
+      kind: 'temperature-humidity',
+      temperature: temp ?? { alert: { enabled: false }, warn: { enabled: false } },
+      humidity: hum ?? { alert: { enabled: false }, warn: { enabled: false } },
+    }
+  }
+  // 想定外の kind は破棄（破損データ防止）
+  return undefined
+}
 /** v2 以前のキー（読み込み時に存在すれば破棄して v3 に切り替え） */
 const LEGACY_KEYS = ['miterude:state:v2', 'miterude:state:v1']
 
@@ -141,6 +215,7 @@ export function loadState(): PersistedState | null {
     // Phase 7: kind / notificationGroupId のデフォルト補完
     // Phase 9.5: groupId / tags のデフォルト補完
     // Phase 9.9: categoryId の補完（後段で実データに応じて自動アサイン）
+    // Phase 9.12 → 9.14: thresholds の旧形式から新形式への変換
     for (const id of Object.keys(parsed.sensors)) {
       const s = parsed.sensors[id]
       if (s) {
@@ -153,6 +228,9 @@ export function loadState(): PersistedState | null {
           tags: Array.isArray(s.tags) ? s.tags : [],
           // categoryId は後段でデフォルト区分に紐付ける
           categoryId: s.categoryId ?? null,
+          // 旧形式 thresholds（alertMin/alertMax/warnMin/warnMax）を新形式
+          // （alert/warn にネスト）に変換、または不正な形式なら破棄
+          thresholds: migrateThresholds(s.thresholds),
         }
       }
     }
@@ -336,6 +414,7 @@ export function loadState(): PersistedState | null {
     }
 
     // Phase 9.14: 閾値テンプレートの初期化＋日付ハイドレーション
+    //              + 旧形式 thresholds の新形式変換
     if (
       !parsed.thresholdTemplates ||
       typeof parsed.thresholdTemplates !== 'object'
@@ -347,6 +426,14 @@ export function loadState(): PersistedState | null {
         if (t) {
           t.createdAt = ensureDate(t.createdAt)
           t.updatedAt = ensureDate(t.updatedAt)
+          // テンプレート内の thresholds も旧形式→新形式に変換。
+          //  変換不能（破損）なら、テンプレ自体を破棄する。
+          const migrated = migrateThresholds(t.thresholds)
+          if (!migrated) {
+            delete parsed.thresholdTemplates[id]
+            continue
+          }
+          t.thresholds = migrated
         }
       }
       // ストアが空ならデフォルトを投入（後方互換）

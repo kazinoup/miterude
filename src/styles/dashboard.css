@@ -6585,3 +6585,79 @@
   max-height: 480px;
   overflow-y: auto;
 }
+
+/* ---------- Phase 9.14: Error boundary fallback ---------- */
+.error-boundary {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background: var(--gray-100);
+}
+
+.error-boundary-card {
+  max-width: 560px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 2rem;
+  box-shadow: 0 4px 24px rgba(15, 39, 68, 0.08);
+}
+
+.error-boundary-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(204, 0, 0, 0.08);
+  color: var(--danger);
+  margin-bottom: 0.85rem;
+}
+
+.error-boundary-card h1 {
+  margin: 0 0 0.6rem;
+  font-size: 1.25rem;
+  color: var(--navy-800);
+}
+
+.error-boundary-card > p {
+  margin: 0 0 1.2rem;
+  color: var(--gray-700);
+  line-height: 1.7;
+}
+
+.error-boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.error-boundary-details {
+  border-top: 1px solid var(--gray-200);
+  padding-top: 0.85rem;
+  font-size: 0.78rem;
+  color: var(--gray-600);
+}
+
+.error-boundary-details summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.error-boundary-pre {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  font-size: 0.74rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  color: var(--gray-700);
+  overflow-x: auto;
+}
