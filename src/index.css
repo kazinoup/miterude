@@ -61,3 +61,12 @@ select,
 textarea {
   font-family: inherit;
 }
+
+/* ---------- 全体の配色トークン ----------
+ * チェックボックスとラジオボタンは accent-color でブランドのネイビーに統一する。
+ * 個別の <input> に accent-color を上書き指定しないこと（このルールが適用される）。
+ */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--navy-700);
+}
