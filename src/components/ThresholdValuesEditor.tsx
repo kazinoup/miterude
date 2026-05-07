@@ -49,16 +49,11 @@ export function TempHumidityThresholdsEditor({ value, onChange }: Props) {
     <div className="threshold-values-editor">
       <p className="threshold-help">
         <Info size={12} className="threshold-help-icon" />
-        <span>
-          <span className="threshold-help-line">
-            <ArrowDownToLine size={11} strokeWidth={2.4} className="threshold-arrow-down" />
-            下限値を下回るか、
-            <ArrowUpToLine size={11} strokeWidth={2.4} className="threshold-arrow-up" />
-            上限値を上回ると発動します。
-          </span>
-          <span className="threshold-help-line">
-            片方だけ設定すれば、その方向だけの閾値として動作します。
-          </span>
+        <span className="threshold-help-line">
+          <ArrowDownToLine size={11} strokeWidth={2.4} className="threshold-arrow-down" />
+          下限値を下回るか、
+          <ArrowUpToLine size={11} strokeWidth={2.4} className="threshold-arrow-up" />
+          上限値を上回ると発動します。片方だけ設定すれば、その方向だけの閾値として動作します。
         </span>
       </p>
       <ThresholdMetricEditor

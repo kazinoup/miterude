@@ -7062,16 +7062,12 @@
   color: var(--navy-700);
 }
 
-.threshold-help > span {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-/* 各ヒント行は独立した行で表示し、文章が中途半端に折り返さないようにする */
+/* 単一行のヒントテキストブロック。
+ *  以前は 2 行に分けて表示していたが、現在は 1 行に統合されたためシンプルに。 */
 .threshold-help-line {
-  display: block;
+  flex: 1;
+  display: inline;
+  line-height: 1.6;
 }
 
 .threshold-help .threshold-arrow-down,
