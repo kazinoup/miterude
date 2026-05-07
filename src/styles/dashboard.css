@@ -1930,6 +1930,10 @@
 .bulk-bar-actions-primary {
   display: inline-flex;
   gap: 0.4rem;
+  /* 「件選択中 × 解除」と一括操作ボタンの間にスペース + 縦線を入れて区切る */
+  margin-left: 0.4rem;
+  padding-left: 0.85rem;
+  border-left: 1px solid rgba(255, 255, 255, 0.18);
 }
 
 .bulk-bar-actions-danger {
