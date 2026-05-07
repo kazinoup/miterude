@@ -5,6 +5,7 @@
  * デシリアライズ時に Date インスタンスへ復元する。
  */
 import type {
+  AlertLogStore,
   DashboardCheckinStore,
   DashboardStore,
   DeviceStore,
@@ -130,6 +131,8 @@ export type PersistedState = {
   sensorCategories?: SensorCategoryStore
   /** Phase 9.14: 閾値テンプレート */
   thresholdTemplates?: ThresholdTemplateStore
+  /** Phase B / Phase 10: アラートログ（蓄積） */
+  alertLogs?: AlertLogStore
 }
 
 const DATE_MARKER = '__d'
@@ -439,6 +442,17 @@ export function loadState(): PersistedState | null {
       // ストアが空ならデフォルトを投入（後方互換）
       if (Object.keys(parsed.thresholdTemplates).length === 0) {
         parsed.thresholdTemplates = buildDefaultTemplates()
+      }
+    }
+
+    // Phase B (Phase 10): アラートログの補完。未存在時は空オブジェクト。
+    //   occurredAt を Date 化（reviver でケアされている想定だが念のため）。
+    if (!parsed.alertLogs || typeof parsed.alertLogs !== 'object') {
+      parsed.alertLogs = {}
+    } else {
+      for (const id of Object.keys(parsed.alertLogs)) {
+        const e = parsed.alertLogs[id]
+        if (e) e.occurredAt = ensureDate(e.occurredAt)
       }
     }
 

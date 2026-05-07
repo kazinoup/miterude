@@ -8,11 +8,13 @@ import { GatewaysView, GatewayDetailView } from './components/views/GatewaysView
 import { ReportView } from './components/views/ReportView'
 import { SettingsView } from './components/views/SettingsView'
 import { RecordsView } from './components/views/RecordsView'
+import { AlertsView } from './components/views/AlertsView'
 import { ReportPreview } from './components/ReportPreview'
 import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
 import { DashboardEditDialog } from './components/DashboardEditDialog'
 import type {
+  AlertLogStore,
   AlertSettings,
   DashboardCheckin,
   DashboardCheckinStore,
@@ -48,6 +50,11 @@ import {
   deviceHasDataForRange,
 } from './lib/report'
 import { ensureDate, syncMetadata } from './lib/mock'
+import {
+  appendAlertEntries,
+  judgeAllReadingsForSensor,
+  judgeOfflineTransitionAlert,
+} from './lib/alertLog'
 import { loadState, saveState } from './lib/storage'
 import {
   addWidget,
@@ -147,6 +154,10 @@ export default function App() {
   const [savedFilters, setSavedFilters] = useState<SavedFilterStore>(
     initial?.savedFilters ?? {},
   )
+  // Phase B (Phase 10): アラートログ
+  const [alertLogs, setAlertLogs] = useState<AlertLogStore>(
+    initial?.alertLogs ?? {},
+  )
 
   const [view, setView] = useState<ViewKey>('dashboard')
   const [activeSensorId, setActiveSensorId] = useState<string | null>(null)
@@ -218,6 +229,32 @@ export default function App() {
       const firstId = Object.keys(dashboards).sort()[0]
       setActiveDashboardId(firstId)
     }
+
+    // Phase B: 起動時にアラートログを補完。
+    //   既存 readings × 現在の thresholds で判定し、欠けているエントリを追加。
+    //   オフラインのセンサーには代表 1 件の "offline" アラートも生成（lastSeenAt + 24h を発生時刻とみなす）。
+    if (Object.keys(devices).length > 0) {
+      let acc = alertLogs
+      for (const [sid, sensor] of Object.entries(nextSensors)) {
+        const readings = devices[sid] ?? []
+        const generated = judgeAllReadingsForSensor(sensor, readings)
+        if (generated.length > 0) acc = appendAlertEntries(acc, generated)
+        // 現在オフラインなら、最終受信から 24h 経過時点のオフラインアラートを 1 件作る
+        if (sensor.online === false) {
+          const offlineAt = new Date(
+            (sensor.lastSeenAt instanceof Date
+              ? sensor.lastSeenAt.getTime()
+              : new Date(sensor.lastSeenAt as unknown as string).getTime()) +
+              24 * 60 * 60 * 1000,
+          )
+          acc = appendAlertEntries(
+            acc,
+            judgeOfflineTransitionAlert(sensor, true, offlineAt),
+          )
+        }
+      }
+      if (acc !== alertLogs) setAlertLogs(acc)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -237,6 +274,7 @@ export default function App() {
       sensorCategories,
       thresholdTemplates,
       savedFilters,
+      alertLogs,
     })
   }, [
     devices,
@@ -252,6 +290,7 @@ export default function App() {
     sensorCategories,
     thresholdTemplates,
     savedFilters,
+    alertLogs,
   ])
 
   const sensorIds = useMemo(() => Object.keys(sensors).sort(), [sensors])
@@ -308,6 +347,21 @@ export default function App() {
         return { [def.id]: def }
       }
       return pruned
+    })
+
+    // Phase B (Phase 10): CSV 取り込み完了時にアラートログを再計算。
+    //   既存ログとは appendAlertEntries 側で重複除去されるので、再取り込みでも安全。
+    setAlertLogs((prev) => {
+      let acc = prev
+      for (const sid of ids) {
+        const sensor = synced.sensors[sid]
+        if (!sensor) continue
+        const readings = next[sid] ?? []
+        const generated = judgeAllReadingsForSensor(sensor, readings)
+        if (generated.length === 0) continue
+        acc = appendAlertEntries(acc, generated)
+      }
+      return acc
     })
   }
 
@@ -956,6 +1010,14 @@ export default function App() {
               onDeleteCheckin={handleDeleteCheckin}
               onDeleteNote={handleDeleteSensorNote}
               onOpenSensor={openSensor}
+            />
+          )}
+
+          {view === 'alerts' && (
+            <AlertsView
+              alertLogs={alertLogs}
+              sensors={sensors}
+              gateways={gateways}
             />
           )}
 

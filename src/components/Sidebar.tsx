@@ -6,6 +6,7 @@ import {
   Plus,
   Settings,
   ClipboardCheck,
+  AlertTriangle,
 } from 'lucide-react'
 import type {
   Dashboard,
@@ -53,6 +54,7 @@ const NAV: NavItem[] = [
   },
   { key: 'report', label: 'レポート', icon: FileBarChart2 },
   { key: 'records', label: '記録履歴', icon: ClipboardCheck },
+  { key: 'alerts', label: 'アラート', icon: AlertTriangle },
   { key: 'settings', label: '設定', icon: Settings },
 ]
 

@@ -140,6 +140,7 @@ export type ViewKey =
   | 'gateway-detail'
   | 'report'
   | 'records'
+  | 'alerts'
   | 'settings'
 
 /* ---------- センサー種別（Phase 7） ---------- */
@@ -631,3 +632,49 @@ export type SavedFilter = {
 }
 
 export type SavedFilterStore = Record<string, SavedFilter>
+
+/* ---------- アラートログ（Phase B / Phase 10） ----------
+ * センサー / ゲートウェイで発生したアラート事象を蓄積する場所。
+ * 通知のまとめ送信（1 日 1 回など）はここから期間で SELECT してまとめる、
+ * という前提のデータ層で、画面では「アラート」メニューから一覧確認できる。 */
+
+export type AlertLogKind =
+  | 'deviation-alert' // 逸脱・危険（赤）
+  | 'deviation-warn'  // 逸脱・注意（オレンジ）
+  | 'offline'         // オフライン
+  | 'battery'         // バッテリー残量低下（Phase C）
+
+export const ALERT_LOG_KIND_LABELS: Record<AlertLogKind, string> = {
+  'deviation-alert': '逸脱（危険）',
+  'deviation-warn': '逸脱（注意）',
+  offline: 'オフライン',
+  battery: 'バッテリー残量',
+}
+
+export type AlertLogTargetKind = 'sensor' | 'gateway'
+
+export type AlertLogEntry = {
+  id: string
+  /** 発生日時 */
+  occurredAt: Date
+  /** 対象がセンサーかゲートウェイか */
+  targetKind: AlertLogTargetKind
+  /** 内部参照 ID（Sensor.id / Gateway.id） */
+  targetId: string
+  /** 対象のメーカー / モデル / シリアルナンバー / センサー番号（記録時点の値をスナップショット） */
+  manufacturer: string
+  model: string
+  serialNumber: string
+  /** ゲートウェイ配下のセンサー番号など、機種固有の補助 ID（任意） */
+  sensorNumber?: string
+  /** アラート種別 */
+  kind: AlertLogKind
+  /** 関連する計測項目（温度・湿度・バッテリーなど。種別によっては省略） */
+  metric?: 'temperature' | 'humidity' | 'battery'
+  /** 計測値（任意。逸脱・バッテリーで利用） */
+  value?: number
+  /** ユーザ向け 1 行説明（例: "温度 -5.3℃ が下限 -5.0℃ を下回りました"） */
+  message: string
+}
+
+export type AlertLogStore = Record<string, AlertLogEntry>

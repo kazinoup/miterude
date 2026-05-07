@@ -7088,3 +7088,337 @@
   font-size: 0.78rem;
   line-height: 1.55;
 }
+
+/* =====================================================
+   Phase B (Phase 10): アラートログ画面
+   ===================================================== */
+
+.alerts-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+/* ----- フィルタパネル ----- */
+.alerts-filter-card .panel-card-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.alerts-filter-grid {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 1.5fr;
+  gap: 0.9rem;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 1100px) {
+  .alerts-filter-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.alerts-filter-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.alerts-filter-label {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  letter-spacing: 0.02em;
+}
+
+.alerts-period-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.alerts-period-row .select {
+  flex: 0 1 9rem;
+  font-family: inherit;
+}
+
+/* 種別チップ */
+.alerts-kind-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.alert-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.32rem 0.6rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 0.74rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--gray-700);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.alert-kind-chip:hover {
+  background: var(--gray-50);
+}
+
+.alert-kind-chip.is-active {
+  background: var(--navy-800);
+  border-color: var(--navy-800);
+  color: #fff;
+}
+
+/* 対象デバイス絞り込み */
+.alerts-filter-block-targets {
+  /* 縦に長くなるとフィルタパネル全体が縦伸びするので max-height で抑える */
+}
+
+.alerts-target-search {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.alerts-target-search .select {
+  border: none;
+  flex: 1;
+  padding: 0.1rem 0.2rem;
+  font-size: 0.82rem;
+}
+
+.alerts-target-list {
+  max-height: 11rem;
+  overflow-y: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: #fff;
+  padding: 0.25rem 0;
+}
+
+.alerts-target-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--gray-100, #f1f5f9);
+}
+
+.alerts-target-item:last-child {
+  border-bottom: none;
+}
+
+.alerts-target-item:hover {
+  background: var(--gray-50);
+}
+
+.alerts-target-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.alerts-target-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.alerts-target-sub {
+  font-size: 0.74rem;
+}
+
+.alerts-target-kind {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.alerts-target-kind-sensor {
+  background: rgba(37, 99, 235, 0.08);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.24);
+}
+
+.alerts-target-kind-gateway {
+  background: rgba(13, 148, 136, 0.08);
+  color: #0f766e;
+  border-color: rgba(13, 148, 136, 0.26);
+}
+
+/* ----- アラート一覧グリッド ----- */
+.alerts-grid-card {
+  padding-top: 0.4rem;
+}
+
+.alerts-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  table-layout: fixed;
+}
+
+.alerts-grid thead th {
+  background: var(--gray-50);
+  text-align: left;
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: var(--navy-800);
+  padding: 0.55rem 0.7rem;
+  border-bottom: 2px solid var(--gray-200);
+  letter-spacing: 0.02em;
+}
+
+.alerts-grid tbody td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--gray-200);
+  vertical-align: top;
+  word-break: break-word;
+}
+
+.alerts-grid tbody tr:hover {
+  background: var(--gray-50);
+}
+
+.alerts-grid .col-time {
+  width: 11rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.alerts-grid .col-target {
+  width: 18rem;
+}
+
+.alerts-grid .col-kind {
+  width: 9rem;
+}
+
+.alerts-grid .col-message {
+  /* 残り全て */
+}
+
+.alerts-target-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.18rem;
+}
+
+.alerts-target-cell-name {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.alerts-target-cell-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 種別バッジ */
+.alert-kind-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.alert-kind-badge-deviation-alert,
+.alert-kind-chip-deviation-alert {
+  background: rgba(204, 0, 0, 0.08);
+  color: #c00;
+  border-color: rgba(204, 0, 0, 0.28);
+}
+
+.alert-kind-chip-deviation-alert.is-active {
+  background: #c00;
+  color: #fff;
+  border-color: #c00;
+}
+
+.alert-kind-badge-deviation-warn,
+.alert-kind-chip-deviation-warn {
+  background: rgba(217, 119, 6, 0.10);
+  color: #b45309;
+  border-color: rgba(217, 119, 6, 0.30);
+}
+
+.alert-kind-chip-deviation-warn.is-active {
+  background: #b45309;
+  color: #fff;
+  border-color: #b45309;
+}
+
+.alert-kind-badge-offline,
+.alert-kind-chip-offline {
+  background: var(--gray-50);
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+
+.alert-kind-chip-offline.is-active {
+  background: var(--gray-700);
+  color: #fff;
+  border-color: var(--gray-700);
+}
+
+.alert-kind-badge-battery,
+.alert-kind-chip-battery {
+  background: rgba(202, 138, 4, 0.10);
+  color: #854d0e;
+  border-color: rgba(202, 138, 4, 0.30);
+}
+
+.alert-kind-chip-battery.is-active {
+  background: #854d0e;
+  color: #fff;
+  border-color: #854d0e;
+}
+
+/* ページネーション */
+.alerts-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 0.7rem;
+  border-top: 1px solid var(--gray-200);
+  margin-top: 0.5rem;
+}
+
+.alerts-pagination-info {
+  font-size: 0.85rem;
+  color: var(--gray-700);
+  font-variant-numeric: tabular-nums;
+}
