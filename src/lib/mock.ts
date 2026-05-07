@@ -23,6 +23,9 @@ export function defaultAlertSettings(): AlertSettings {
     deviationEnabled: true,
     deviationConsecutiveCount: 3,
     notifyChannels: { email: true, slack: false, push: false },
+    /** Phase C: バッテリー残量アラート — 既定 OFF / 10% */
+    batteryEnabled: false,
+    batteryThresholdPercent: 10,
   }
 }
 

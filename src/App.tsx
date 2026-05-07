@@ -53,8 +53,10 @@ import { ensureDate, syncMetadata } from './lib/mock'
 import {
   appendAlertEntries,
   judgeAllReadingsForSensor,
+  judgeBatteryForAlerts,
   judgeOfflineTransitionAlert,
 } from './lib/alertLog'
+import { canReportBattery } from './lib/supportedDevices'
 import { loadState, saveState } from './lib/storage'
 import {
   addWidget,
@@ -233,12 +235,22 @@ export default function App() {
     // Phase B: 起動時にアラートログを補完。
     //   既存 readings × 現在の thresholds で判定し、欠けているエントリを追加。
     //   オフラインのセンサーには代表 1 件の "offline" アラートも生成（lastSeenAt + 24h を発生時刻とみなす）。
+    // Phase C: バッテリー残量アラートも併せて判定。機種が取得不可なら何もしない。
     if (Object.keys(devices).length > 0) {
       let acc = alertLogs
       for (const [sid, sensor] of Object.entries(nextSensors)) {
         const readings = devices[sid] ?? []
         const generated = judgeAllReadingsForSensor(sensor, readings)
         if (generated.length > 0) acc = appendAlertEntries(acc, generated)
+        // バッテリー残量アラート（Phase C）
+        const battEnabled = sensor.alertSettings?.batteryEnabled === true
+        const battThresh = sensor.alertSettings?.batteryThresholdPercent ?? 10
+        if (battEnabled && canReportBattery(sensor.model)) {
+          for (const r of readings) {
+            const e = judgeBatteryForAlerts(sensor, r, battThresh)
+            if (e.length > 0) acc = appendAlertEntries(acc, e)
+          }
+        }
         // 現在オフラインなら、最終受信から 24h 経過時点のオフラインアラートを 1 件作る
         if (sensor.online === false) {
           const offlineAt = new Date(
@@ -349,7 +361,7 @@ export default function App() {
       return pruned
     })
 
-    // Phase B (Phase 10): CSV 取り込み完了時にアラートログを再計算。
+    // Phase B/C (Phase 10): CSV 取り込み完了時にアラートログを再計算。
     //   既存ログとは appendAlertEntries 側で重複除去されるので、再取り込みでも安全。
     setAlertLogs((prev) => {
       let acc = prev
@@ -357,9 +369,18 @@ export default function App() {
         const sensor = synced.sensors[sid]
         if (!sensor) continue
         const readings = next[sid] ?? []
+        // 逸脱（危険・注意）
         const generated = judgeAllReadingsForSensor(sensor, readings)
-        if (generated.length === 0) continue
-        acc = appendAlertEntries(acc, generated)
+        if (generated.length > 0) acc = appendAlertEntries(acc, generated)
+        // バッテリー（Phase C）
+        const battEnabled = sensor.alertSettings?.batteryEnabled === true
+        const battThresh = sensor.alertSettings?.batteryThresholdPercent ?? 10
+        if (battEnabled && canReportBattery(sensor.model)) {
+          for (const r of readings) {
+            const e = judgeBatteryForAlerts(sensor, r, battThresh)
+            if (e.length > 0) acc = appendAlertEntries(acc, e)
+          }
+        }
       }
       return acc
     })
@@ -378,6 +399,26 @@ export default function App() {
       if (!cur) return prev
       return { ...prev, [sensorId]: { ...cur, alertSettings: next } }
     })
+    // Phase C: バッテリー設定が ON ならその場でログを再計算（OFF 時は何もしない）。
+    //   既存エントリは appendAlertEntries で重複除去される。
+    const sensor = sensors[sensorId]
+    if (
+      sensor &&
+      next.batteryEnabled === true &&
+      canReportBattery(sensor.model)
+    ) {
+      const readings = devices[sensorId] ?? []
+      const threshold = next.batteryThresholdPercent ?? 10
+      const updatedSensor = { ...sensor, alertSettings: next }
+      setAlertLogs((prev) => {
+        let acc = prev
+        for (const r of readings) {
+          const entries = judgeBatteryForAlerts(updatedSensor, r, threshold)
+          if (entries.length > 0) acc = appendAlertEntries(acc, entries)
+        }
+        return acc
+      })
+    }
   }
 
   function handleUpdateSensorNotificationGroup(sensorId: string, groupId: string | null) {

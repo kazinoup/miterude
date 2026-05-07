@@ -376,6 +376,12 @@ export type AlertSettings = {
   deviationConsecutiveCount: number
   /** 通知チャンネル */
   notifyChannels: NotifyChannels
+  /** Phase C: バッテリー残量低下アラート。
+   *  機種がバッテリーを取得できない場合は UI 自体が出ない（保存されてもよい）。
+   *  古いデータでは undefined → 既定値（OFF, 10%）にフォールバック。 */
+  batteryEnabled?: boolean
+  /** バッテリー残量の閾値 (%)。これを下回ったらアラートを送る。既定 10。 */
+  batteryThresholdPercent?: number
 }
 
 /** センサー（IoT デバイス）のメタデータ */

@@ -222,9 +222,23 @@ export function loadState(): PersistedState | null {
     for (const id of Object.keys(parsed.sensors)) {
       const s = parsed.sensors[id]
       if (s) {
+        // Phase C: 既存 alertSettings に batteryEnabled / batteryThresholdPercent
+        //   が無い場合は既定値で補う
+        const baseAlert = s.alertSettings ?? defaultAlertSettings()
+        const mergedAlert = {
+          ...baseAlert,
+          batteryEnabled:
+            typeof baseAlert.batteryEnabled === 'boolean'
+              ? baseAlert.batteryEnabled
+              : false,
+          batteryThresholdPercent:
+            typeof baseAlert.batteryThresholdPercent === 'number'
+              ? baseAlert.batteryThresholdPercent
+              : 10,
+        }
         parsed.sensors[id] = {
           ...s,
-          alertSettings: s.alertSettings ?? defaultAlertSettings(),
+          alertSettings: mergedAlert,
           kind: s.kind ?? 'temperature-humidity',
           notificationGroupId: s.notificationGroupId ?? null,
           groupId: s.groupId ?? null,

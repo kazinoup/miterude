@@ -40,6 +40,12 @@ export type SupportedDevice = {
   /** カードに表示する製品画像（任意）。public/devices/ 配下の URL を想定。
    *  例: "/devices/milesight-em320-th.png" */
   imageUrl?: string
+  /** Phase C: 機種が取得できる計測項目。設定 UI の表示制御で参照する。
+   *  例: バッテリー残量を取得できる機種にだけ「バッテリー残量アラート」UI を出す。 */
+  capabilities?: {
+    /** バッテリー残量を計測値として送信できるか */
+    battery?: boolean
+  }
 }
 
 export const MANUFACTURERS: Manufacturer[] = [
@@ -71,6 +77,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
       '冷蔵・冷凍庫や室内の温度と湿度を計測する LoRaWAN センサー。長寿命バッテリー駆動。',
     supported: true,
     imageUrl: '/devices/milesight-em320-th.png',
+    capabilities: { battery: true },
   },
   {
     id: 'milesight-am102',
@@ -82,6 +89,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
       '事務所・店舗・倉庫の室内環境向け LoRaWAN センサー。壁掛け設置で温度・湿度を計測する。',
     supported: false,
     imageUrl: '/devices/milesight-am102.png',
+    capabilities: { battery: true },
   },
   {
     id: 'milesight-ug65',
@@ -152,4 +160,22 @@ export function hasCategory(
   return SUPPORTED_DEVICES.some(
     (d) => d.manufacturerKey === manufacturerKey && d.category === category,
   )
+}
+
+/** model 文字列から SUPPORTED_DEVICES のエントリを引く（大文字小文字を無視）。
+ *  Sensor.model は CSV 取り込みやモック生成で "EM320-TH" のような英数表記で
+ *  入る前提で、マスタの SupportedDevice.model と完全一致を期待する。 */
+export function findSupportedDeviceByModel(
+  model: string,
+): SupportedDevice | undefined {
+  if (!model) return undefined
+  const lower = model.toLowerCase()
+  return SUPPORTED_DEVICES.find((d) => d.model.toLowerCase() === lower)
+}
+
+/** その機種がバッテリー残量を計測値として送信できるか（Phase C で利用）。
+ *  マスタに無い機種は "false（取得不可と仮定して UI を隠す）" を返す。 */
+export function canReportBattery(model: string): boolean {
+  const dev = findSupportedDeviceByModel(model)
+  return dev?.capabilities?.battery === true
 }

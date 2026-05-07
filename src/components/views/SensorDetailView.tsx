@@ -1040,6 +1040,7 @@ export function SensorDetailView({
       {activeTab === 'basic' && sensor && (
         <SensorAlertSettings
           sensorId={deviceId}
+          sensorModel={sensor.model}
           value={sensor.alertSettings}
           onChange={(next) => onUpdateAlertSettings(deviceId, next)}
           notificationGroups={notificationGroups}

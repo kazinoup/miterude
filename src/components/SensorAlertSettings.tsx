@@ -1,9 +1,12 @@
-import { Bell, Send } from 'lucide-react'
+import { Battery, Bell, Send } from 'lucide-react'
 import type { AlertSettings, NotificationGroupStore } from '../types'
 import { NOTIFICATION_TIMING_LABELS } from '../types'
+import { canReportBattery } from '../lib/supportedDevices'
 
 type Props = {
   sensorId: string
+  /** Phase C: バッテリーアラート UI の出し分けに使う */
+  sensorModel: string
   value: AlertSettings
   onChange: (next: AlertSettings) => void
   notificationGroups: NotificationGroupStore
@@ -18,6 +21,10 @@ const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
   { label: '24 時間', minutes: 1440 },
 ]
 
+/** Phase C: バッテリー残量しきい値プリセット（5% 刻み）。
+ *  自由入力もできるが、よく使う値はチップで選べるようにする。 */
+const BATTERY_PRESETS: number[] = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+
 /**
  * センサーごとのアラート設定 — Phase 9.12 でリアルタイム保存に統一。
  *
@@ -25,9 +32,11 @@ const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
  * 1. 通知グループ（送信先・送信タイミング）
  * 2. オフライン通知
  * 3. 連続逸脱通知
+ * 4. バッテリー残量通知（Phase C / 機種が取得可能な場合のみ）
  */
 export function SensorAlertSettings({
   sensorId: _sensorId,
+  sensorModel,
   value,
   onChange,
   notificationGroups,
@@ -37,6 +46,12 @@ export function SensorAlertSettings({
   function update<K extends keyof AlertSettings>(key: K, val: AlertSettings[K]) {
     onChange({ ...value, [key]: val })
   }
+
+  const showBatterySection = canReportBattery(sensorModel)
+
+  // 古いデータでは undefined → 既定値で表示
+  const batteryEnabled = value.batteryEnabled ?? false
+  const batteryThreshold = value.batteryThresholdPercent ?? 10
 
   return (
     <section className="panel-card alert-card">
@@ -140,6 +155,62 @@ export function SensorAlertSettings({
           </div>
         </fieldset>
 
+        {/* Phase C: バッテリー残量通知 — 機種が取得可能なときのみ表示 */}
+        {showBatterySection && (
+          <fieldset className="alert-fieldset">
+            <legend>
+              <Battery size={13} className="row-leading-icon" />
+              バッテリー残量通知
+            </legend>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={batteryEnabled}
+                onChange={(e) => update('batteryEnabled', e.target.checked)}
+              />
+              <span>バッテリー残量が一定値を下回ったら通知する</span>
+            </label>
+            <div className="alert-row">
+              <span className="row-label">通知のしきい値</span>
+              <div className="num-input-row">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  disabled={!batteryEnabled}
+                  value={batteryThreshold}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    update(
+                      'batteryThresholdPercent',
+                      Math.max(0, Math.min(100, Number.isFinite(n) ? n : 10)),
+                    )
+                  }}
+                />
+                <span className="num-input-suffix">% を下回ったら</span>
+              </div>
+            </div>
+            <div className="alert-row">
+              <span className="row-label">よく使う値</span>
+              <div className="chip-group">
+                {BATTERY_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    disabled={!batteryEnabled}
+                    className={`chip-toggle ${
+                      batteryThreshold === p ? 'is-active' : ''
+                    }`}
+                    onClick={() => update('batteryThresholdPercent', p)}
+                  >
+                    {p}%
+                  </button>
+                ))}
+              </div>
+            </div>
+          </fieldset>
+        )}
       </div>
     </section>
   )
