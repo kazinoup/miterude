@@ -3449,8 +3449,29 @@
 .dashboard-period-mode {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   font-size: 0.85rem;
+}
+
+/* Phase D-1: 期間指定モード時の日付入力 */
+.dashboard-period-custom-inputs {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.5rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+}
+
+.dashboard-period-custom-inputs .select {
+  padding: 0.18rem 0.4rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 4px;
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
 }
 
 .dashboard-period-current {
@@ -3717,6 +3738,18 @@
   gap: 0.4rem;
 }
 
+/* Phase D-3: デバイス全体メモは初期 2 行、改行で最大 3 行、それ以上はスクロール。
+ *   field-sizing: content は Chromium 123+ でサポートされ、入力に応じて
+ *   max-height まで自動的に高さが拡張される。未対応ブラウザでは rows 属性に
+ *   従う固定高さで表示される（min/max-height は効くため大きく崩れない）。 */
+.checkin-sensor-memo .form-textarea {
+  resize: none;
+  field-sizing: content;
+  min-height: calc(1.5em * 2 + 1rem);
+  max-height: calc(1.5em * 3 + 1rem);
+  overflow-y: auto;
+}
+
 .checkin-sensor-memo .link-btn {
   font-size: 0.78rem;
   align-self: flex-start;
@@ -3769,8 +3802,14 @@
   white-space: nowrap;
 }
 
+/* Phase D-3: 個別アラート展開時のメモは初期 1 行、改行で最大 3 行、それ以上はスクロール */
 .checkin-segment-memo {
   font-size: 0.84rem;
+  resize: none;
+  field-sizing: content;
+  min-height: calc(1.5em * 1 + 1rem);
+  max-height: calc(1.5em * 3 + 1rem);
+  overflow-y: auto;
 }
 
 /* 異常ありなしのトグル */
@@ -3789,12 +3828,14 @@
 .status-card {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
   padding: 0.7rem 0.85rem;
   background: #fff;
   border: 1.5px solid var(--gray-300);
   border-radius: 6px;
   cursor: pointer;
+  font-family: inherit;
   font-size: 0.9rem;
   font-weight: 600;
   color: var(--gray-700);
@@ -3805,6 +3846,7 @@
   border-color: var(--navy-500);
 }
 
+/* Phase D-2: ラジオを撤去したので不要になったが、互換のため残置（将来クリーンアップ可） */
 .status-card input[type='radio'] {
   margin: 0;
 }

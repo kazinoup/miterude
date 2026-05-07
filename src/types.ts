@@ -514,8 +514,11 @@ export type DashboardDefaultPeriod =
   | { type: 'week' }
   | { type: 'month' }
 
-/** ダッシュボード上で「いまどの期間モードを使っているか」 */
-export type DashboardPeriodMode = 'fixed' | 'since-last-checkin'
+/** ダッシュボード上で「いまどの期間モードを使っているか」
+ *  - fixed: defaultPeriod（1日/1週間/1ヶ月）を「今」基準で表示
+ *  - since-last-checkin: 前回確認時刻から「今」までを表示
+ *  - custom: 任意の開始日〜終了日を表示（Phase D-1） */
+export type DashboardPeriodMode = 'fixed' | 'since-last-checkin' | 'custom'
 
 export type Dashboard = {
   id: string

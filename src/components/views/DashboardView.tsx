@@ -17,6 +17,7 @@ import {
   History,
   Wrench,
   Check,
+  CalendarDays,
 } from 'lucide-react'
 import type {
   Dashboard,
@@ -46,6 +47,7 @@ import { EmptyState } from '../EmptyState'
 import { effectiveSensorIds as resolveEffective } from '../../lib/dashboard'
 import { findLatestCheckin } from '../../lib/records'
 import { formatRelativeAgo } from '../../lib/jp'
+import { fromDateInputValue, toDateInputValue } from '../../lib/period'
 
 type Props = {
   devices: DeviceStore
@@ -85,7 +87,7 @@ const PERIOD_MODE_KEY = 'miterude:dashboard:period-mode'
 function loadPreferredMode(): DashboardPeriodMode {
   try {
     const v = localStorage.getItem(PERIOD_MODE_KEY)
-    if (v === 'fixed' || v === 'since-last-checkin') return v
+    if (v === 'fixed' || v === 'since-last-checkin' || v === 'custom') return v
   } catch {
     /* noop */
   }
@@ -159,6 +161,19 @@ export function DashboardView({
   const [periodMode, setPeriodMode] = useState<DashboardPeriodMode>(() =>
     loadPreferredMode(),
   )
+  /** Phase D-1: 期間指定モードの開始日 / 終了日。
+   *   既定は「先週月曜〜先週日曜」相当。custom モード以外では未使用。 */
+  const [customStart, setCustomStart] = useState<Date>(() => {
+    const d = new Date()
+    d.setHours(0, 0, 0, 0)
+    d.setDate(d.getDate() - 7)
+    return d
+  })
+  const [customEnd, setCustomEnd] = useState<Date>(() => {
+    const d = new Date()
+    d.setHours(23, 59, 59, 999)
+    return d
+  })
   /** Phase 9.6: ダッシュボードのビュー / 編集モード */
   const [editMode, setEditMode] = useState(false)
 
@@ -230,6 +245,15 @@ export function DashboardView({
       effectiveRange = rangeFromDefault(dashboard.defaultPeriod, now)
       effectiveLabel = `${periodLabelFromDefault(dashboard.defaultPeriod)}（前回確認なし）`
     }
+  } else if (periodMode === 'custom') {
+    // Phase D-1: 任意の期間指定。終了 < 開始 のときは入れ替えて整合させる。
+    const startMs = customStart.getTime()
+    const endMs = customEnd.getTime()
+    const [s, e] = startMs <= endMs
+      ? [customStart, customEnd]
+      : [customEnd, customStart]
+    effectiveRange = { start: s, end: e }
+    effectiveLabel = '期間指定'
   } else {
     effectiveRange = rangeFromDefault(dashboard.defaultPeriod, now)
     effectiveLabel = periodLabelFromDefault(dashboard.defaultPeriod)
@@ -349,7 +373,49 @@ export function DashboardView({
               <History size={13} />
               前回確認から
             </button>
+            <button
+              type="button"
+              className={`seg-toggle-btn ${periodMode === 'custom' ? 'is-active' : ''}`}
+              onClick={() => setPeriodMode('custom')}
+              title="任意の期間を指定して表示"
+            >
+              <CalendarDays size={13} />
+              期間指定
+            </button>
           </div>
+
+          {/* Phase D-1: 期間指定モード時のみ開始/終了日入力を表示 */}
+          {periodMode === 'custom' && (
+            <div className="dashboard-period-custom-inputs">
+              <input
+                type="date"
+                className="select"
+                value={toDateInputValue(customStart)}
+                onChange={(e) => {
+                  const d = fromDateInputValue(e.target.value)
+                  if (d) {
+                    d.setHours(0, 0, 0, 0)
+                    setCustomStart(d)
+                  }
+                }}
+                aria-label="期間指定 開始日"
+              />
+              <span className="muted">〜</span>
+              <input
+                type="date"
+                className="select"
+                value={toDateInputValue(customEnd)}
+                onChange={(e) => {
+                  const d = fromDateInputValue(e.target.value)
+                  if (d) {
+                    d.setHours(23, 59, 59, 999)
+                    setCustomEnd(d)
+                  }
+                }}
+                aria-label="期間指定 終了日"
+              />
+            </div>
+          )}
         </div>
         <div className="dashboard-period-current">
           <strong>{effectiveLabel}</strong>

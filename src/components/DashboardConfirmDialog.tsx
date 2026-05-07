@@ -251,34 +251,29 @@ export function DashboardConfirmDialog({
             </div>
           </div>
 
-          {/* 異常の有無 */}
+          {/* 異常の有無 — Phase D-2: ラジオボタンは廃止し、ボタン化して
+              選択時の背景色だけで状態を表現する */}
           <div className="form-row">
             <label className="form-label">異常の有無</label>
             <div className="status-toggle">
-              <label
+              <button
+                type="button"
                 className={`status-card ${status === 'no-issue' ? 'is-active is-no-issue' : ''}`}
+                onClick={() => setStatus('no-issue')}
+                aria-pressed={status === 'no-issue'}
               >
-                <input
-                  type="radio"
-                  name="checkin-status"
-                  checked={status === 'no-issue'}
-                  onChange={() => setStatus('no-issue')}
-                />
                 <CheckCircle2 size={16} />
                 <span>異常なし</span>
-              </label>
-              <label
+              </button>
+              <button
+                type="button"
                 className={`status-card ${status === 'has-issue' ? 'is-active is-has-issue' : ''}`}
+                onClick={() => setStatus('has-issue')}
+                aria-pressed={status === 'has-issue'}
               >
-                <input
-                  type="radio"
-                  name="checkin-status"
-                  checked={status === 'has-issue'}
-                  onChange={() => setStatus('has-issue')}
-                />
                 <AlertTriangle size={16} />
                 <span>異常あり</span>
-              </label>
+              </button>
             </div>
           </div>
 
