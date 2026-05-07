@@ -44,6 +44,7 @@ import {
   getThresholdForMetric,
   isMetricDeviationEnabled,
 } from '../../lib/report'
+import type { ReactNode } from 'react'
 import {
   collectAllTags,
   isEmptyConditions,
@@ -52,10 +53,13 @@ import {
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import { formatRelativeAgo } from '../../lib/jp'
 import {
+  loadColumnOrder,
   loadColumnVisibility,
   loadWideMode,
+  saveColumnOrder,
   saveColumnVisibility,
   saveWideMode,
+  type SensorColumnKey,
   type SensorColumnVisibility,
 } from '../../lib/sensorColumns'
 import { SensorFilterPanel } from '../SensorFilterPanel'
@@ -246,6 +250,151 @@ function formatThresholdShort(
   if (min != null) return `${min.toFixed(0)}${unit}〜`
   if (max != null) return `〜${max.toFixed(0)}${unit}`
   return '—'
+}
+
+/* ---------- 列レンダリング（Phase 9.13: 並び替えに対応） ----------
+ *  各列の <th> ラベルと <td> セルを 1 箇所に集約。
+ *  SensorsView 本体では columnOrder 配列を順番に回しながら描画する。
+ */
+const COLUMN_LABEL: Record<SensorColumnKey, string> = {
+  deviceNumber: 'デバイス番号',
+  serialNumber: 'シリアル番号',
+  model: 'モデル',
+  manufacturer: 'メーカー',
+  category: '区分',
+  group: 'グループ',
+  gateway: 'ゲートウェイ',
+  tags: 'タグ',
+  status: '状態',
+  battery: 'バッテリー',
+  lastUpdated: '最終更新',
+  latestValue: '最新値',
+  threshold: '閾値',
+}
+
+/** ヘッダ <th> に当てる class（数値系の列は num を含む） */
+const COLUMN_HEAD_CLASS: Record<SensorColumnKey, string> = {
+  deviceNumber: 'col-deviceNumber',
+  serialNumber: 'col-serialNumber',
+  model: 'col-model',
+  manufacturer: 'col-manufacturer',
+  category: 'col-category',
+  group: 'col-group',
+  gateway: 'col-gateway',
+  tags: 'col-tags',
+  status: 'col-status',
+  battery: 'num col-battery',
+  lastUpdated: 'col-lastUpdated',
+  latestValue: 'num col-latestValue',
+  threshold: 'col-threshold',
+}
+
+/** 1 行 × 1 列の <td> を描画する */
+function renderCell(
+  key: SensorColumnKey,
+  r: SensorRow,
+  groups: Record<string, SensorGroup>,
+  categories: Record<string, SensorCategory>,
+): ReactNode {
+  const sensor = r.sensor
+  switch (key) {
+    case 'deviceNumber':
+      return (
+        <td key={key} className="cell-mono col-deviceNumber">
+          {sensor.deviceNumber}
+        </td>
+      )
+    case 'serialNumber':
+      return (
+        <td
+          key={key}
+          className="cell-mono cell-serial col-serialNumber"
+          title={sensor.serialNumber}
+        >
+          {sensor.serialNumber}
+        </td>
+      )
+    case 'model':
+      return (
+        <td key={key} className="col-model" title={sensor.model}>
+          {sensor.model}
+        </td>
+      )
+    case 'manufacturer':
+      return (
+        <td key={key} className="col-manufacturer" title={sensor.manufacturer}>
+          {sensor.manufacturer}
+        </td>
+      )
+    case 'category': {
+      const cat = sensor.categoryId ? categories[sensor.categoryId] : undefined
+      return (
+        <td key={key} className="col-category">
+          <CategoryBadge category={cat} />
+        </td>
+      )
+    }
+    case 'group': {
+      const grp = sensor.groupId ? groups[sensor.groupId] : undefined
+      return (
+        <td key={key} className="col-group">
+          <GroupBadge group={grp} />
+        </td>
+      )
+    }
+    case 'gateway':
+      return (
+        <td key={key} className="col-gateway" title={r.gateway?.name ?? ''}>
+          {r.gateway ? (
+            <span className="gateway-cell">{r.gateway.name}</span>
+          ) : (
+            <span className="muted">—</span>
+          )}
+        </td>
+      )
+    case 'tags':
+      return (
+        <td key={key} className="col-tags">
+          <TagPills tags={sensor.tags ?? []} max={3} />
+        </td>
+      )
+    case 'status':
+      return (
+        <td key={key} className="col-status">
+          <OnlineBadge online={sensor.online} />
+        </td>
+      )
+    case 'battery':
+      return (
+        <td key={key} className="num col-battery">
+          <BatteryIndicator pct={sensor.battery} />
+        </td>
+      )
+    case 'lastUpdated': {
+      const lastAt = r.last ?? sensor.lastSeenAt
+      return (
+        <td
+          key={key}
+          className="updated-cell col-lastUpdated"
+          title={fmtDateTime(lastAt)}
+        >
+          {formatRelativeAgo(lastAt)}
+        </td>
+      )
+    }
+    case 'latestValue':
+      return (
+        <td key={key} className="num col-latestValue">
+          <LatestValueCell row={r} />
+        </td>
+      )
+    case 'threshold':
+      return (
+        <td key={key} className="threshold-col col-threshold">
+          <ThresholdCell sensor={sensor} />
+        </td>
+      )
+  }
 }
 
 /** 件数表示 + ページ送りボタンのセット。上下のツールバーで共用する。 */
@@ -556,6 +705,14 @@ export function SensorsView({
     saveColumnVisibility(columnVisibility)
   }, [columnVisibility])
   const vis = columnVisibility
+
+  // 列の並び順 — localStorage に永続化（Phase 9.13）
+  const [columnOrder, setColumnOrder] = useState<SensorColumnKey[]>(
+    () => loadColumnOrder(),
+  )
+  useEffect(() => {
+    saveColumnOrder(columnOrder)
+  }, [columnOrder])
 
   // Phase B: ワイド表示モード
   const [wideMode, setWideMode] = useState<boolean>(() => loadWideMode())
@@ -884,28 +1041,19 @@ export function SensorsView({
                     />
                   </th>
                   <th className="col-name">名前</th>
-                  {vis.deviceNumber && <th className="col-deviceNumber">デバイス番号</th>}
-                  {vis.serialNumber && <th className="col-serialNumber">シリアル番号</th>}
-                  {vis.model && <th className="col-model">モデル</th>}
-                  {vis.manufacturer && <th className="col-manufacturer">メーカー</th>}
-                  {vis.category && <th className="col-category">区分</th>}
-                  {vis.group && <th className="col-group">グループ</th>}
-                  {vis.gateway && <th className="col-gateway">ゲートウェイ</th>}
-                  {vis.tags && <th className="col-tags">タグ</th>}
-                  {vis.status && <th className="col-status">状態</th>}
-                  {vis.battery && <th className="num col-battery">バッテリー</th>}
-                  {vis.lastUpdated && <th className="col-lastUpdated">最終更新</th>}
-                  {vis.latestValue && <th className="num col-latestValue">最新値</th>}
-                  {vis.threshold && <th className="col-threshold">閾値</th>}
+                  {columnOrder
+                    .filter((k) => vis[k])
+                    .map((k) => (
+                      <th key={k} className={COLUMN_HEAD_CLASS[k]}>
+                        {COLUMN_LABEL[k]}
+                      </th>
+                    ))}
                   <th aria-label="操作" className="col-action"></th>
                 </tr>
               </thead>
               <tbody>
                 {pagedRows.map((r) => {
                   const isChecked = selected.has(r.sensor.id)
-                  const grp = r.sensor.groupId ? groups[r.sensor.groupId] : undefined
-                  const cat = r.sensor.categoryId ? categories[r.sensor.categoryId] : undefined
-                  const lastAt = r.last ?? r.sensor.lastSeenAt
                   return (
                     <tr
                       key={r.sensor.id}
@@ -923,90 +1071,14 @@ export function SensorsView({
                           onChange={() => toggleSelected(r.sensor.id)}
                         />
                       </td>
-                      <td className="col-name" title={r.sensor.id}>
-                        <span className="device-id-name">{r.sensor.id}</span>
+                      <td className="col-name" title={r.sensor.name ?? r.sensor.id}>
+                        <span className="device-id-name">
+                          {r.sensor.name ?? r.sensor.id}
+                        </span>
                       </td>
-                      {vis.deviceNumber && (
-                        <td className="cell-mono col-deviceNumber">
-                          {r.sensor.deviceNumber}
-                        </td>
-                      )}
-                      {vis.serialNumber && (
-                        <td
-                          className="cell-mono cell-serial col-serialNumber"
-                          title={r.sensor.serialNumber}
-                        >
-                          {r.sensor.serialNumber}
-                        </td>
-                      )}
-                      {vis.model && (
-                        <td className="col-model" title={r.sensor.model}>
-                          {r.sensor.model}
-                        </td>
-                      )}
-                      {vis.manufacturer && (
-                        <td
-                          className="col-manufacturer"
-                          title={r.sensor.manufacturer}
-                        >
-                          {r.sensor.manufacturer}
-                        </td>
-                      )}
-                      {vis.category && (
-                        <td className="col-category">
-                          <CategoryBadge category={cat} />
-                        </td>
-                      )}
-                      {vis.group && (
-                        <td className="col-group">
-                          <GroupBadge group={grp} />
-                        </td>
-                      )}
-                      {vis.gateway && (
-                        <td
-                          className="col-gateway"
-                          title={r.gateway?.name ?? ''}
-                        >
-                          {r.gateway ? (
-                            <span className="gateway-cell">{r.gateway.name}</span>
-                          ) : (
-                            <span className="muted">—</span>
-                          )}
-                        </td>
-                      )}
-                      {vis.tags && (
-                        <td className="col-tags">
-                          <TagPills tags={r.sensor.tags ?? []} max={3} />
-                        </td>
-                      )}
-                      {vis.status && (
-                        <td className="col-status">
-                          <OnlineBadge online={r.sensor.online} />
-                        </td>
-                      )}
-                      {vis.battery && (
-                        <td className="num col-battery">
-                          <BatteryIndicator pct={r.sensor.battery} />
-                        </td>
-                      )}
-                      {vis.lastUpdated && (
-                        <td
-                          className="updated-cell col-lastUpdated"
-                          title={fmtDateTime(lastAt)}
-                        >
-                          {formatRelativeAgo(lastAt)}
-                        </td>
-                      )}
-                      {vis.latestValue && (
-                        <td className="num col-latestValue">
-                          <LatestValueCell row={r} />
-                        </td>
-                      )}
-                      {vis.threshold && (
-                        <td className="threshold-col col-threshold">
-                          <ThresholdCell sensor={r.sensor} />
-                        </td>
-                      )}
+                      {columnOrder
+                        .filter((k) => vis[k])
+                        .map((k) => renderCell(k, r, groups, categories))}
                       <td
                         className="row-actions col-action"
                         onClick={(e) => e.stopPropagation()}
@@ -1104,6 +1176,8 @@ export function SensorsView({
         onWideModeChange={setWideMode}
         pageSize={pageSize}
         onPageSizeChange={setPageSize}
+        order={columnOrder}
+        onOrderChange={setColumnOrder}
         onClose={() => setColumnSettingsOpen(false)}
       />
 

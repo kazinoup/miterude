@@ -6238,3 +6238,128 @@
 
 
 
+
+/* ---------- Phase 9.13: Column reorder (drag & drop) ---------- */
+
+/* グループ見出しの右端にリセットリンクを置く */
+.column-settings-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.35rem;
+}
+
+.column-settings-group-head .column-settings-group-title {
+  margin: 0;
+}
+
+.column-settings-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.74rem;
+  color: var(--gray-600);
+}
+
+.column-settings-reset:hover {
+  color: var(--navy-700);
+  text-decoration: underline;
+}
+
+/* 固定行（名前）にもグリップ風のアイコンを置いて視覚的に統一 */
+.column-settings-fixed-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--gray-300);
+}
+
+/* 並び替え対象のリスト */
+.column-settings-list-draggable {
+  gap: 0.3rem;
+}
+
+.column-settings-item-draggable {
+  display: flex;
+  align-items: stretch;
+  position: relative;
+  user-select: none;
+  transition:
+    box-shadow 100ms ease,
+    border-color 100ms ease,
+    opacity 100ms ease;
+}
+
+.column-settings-item-draggable:hover {
+  border-color: var(--gray-300);
+}
+
+/* ドラッグ中アイテム自身は半透明に */
+.column-settings-item-draggable.is-dragging {
+  opacity: 0.4;
+}
+
+/* ドロップ予告線（上端 / 下端に細いネイビーライン） */
+.column-settings-item-draggable.is-drop-before::before,
+.column-settings-item-draggable.is-drop-after::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--navy-700);
+  border-radius: 2px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.column-settings-item-draggable.is-drop-before::before {
+  top: -3px;
+}
+
+.column-settings-item-draggable.is-drop-after::after {
+  bottom: -3px;
+}
+
+/* 左端のグリップ（ハンドル） */
+.column-settings-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  flex-shrink: 0;
+  color: var(--gray-400);
+  cursor: grab;
+  border-right: 1px solid var(--gray-200);
+  background: var(--gray-50);
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.column-settings-grip:active {
+  cursor: grabbing;
+}
+
+.column-settings-item-draggable:hover .column-settings-grip {
+  color: var(--navy-700);
+  background: rgba(15, 39, 68, 0.04);
+}
+
+/* グリップ付き行のチェックボックス・ラベル領域 */
+.column-settings-row-compact {
+  flex: 1;
+  align-items: center;
+  padding: 0.5rem 0.55rem;
+}
+
+.column-settings-row-compact .column-settings-row-label {
+  font-size: 0.88rem;
+  color: var(--navy-800);
+  font-weight: 500;
+}
+
+.column-settings-row-compact input[type='checkbox'] {
+  margin-top: 0;
+}

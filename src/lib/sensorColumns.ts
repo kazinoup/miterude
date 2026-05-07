@@ -181,3 +181,48 @@ export function saveWideMode(v: boolean): void {
     /* noop */
   }
 }
+
+/* ---------- Phase 9.13: 列の並び順 ---------- */
+
+const ORDER_KEY = 'miterude:sensors:columnOrder:v1'
+
+/** 既定の列順序（SENSOR_COLUMN_DEFS の宣言順） */
+export function defaultColumnOrder(): SensorColumnKey[] {
+  return SENSOR_COLUMN_DEFS.map((d) => d.key)
+}
+
+/** 永続化された列順序を読み込む。
+ *  破損していれば既定値、未知のキーは無視、未含有のキーは末尾に追加（後方互換）。 */
+export function loadColumnOrder(): SensorColumnKey[] {
+  const def = defaultColumnOrder()
+  try {
+    const raw = localStorage.getItem(ORDER_KEY)
+    if (!raw) return def
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return def
+    const validSet = new Set<SensorColumnKey>(def)
+    const seen = new Set<SensorColumnKey>()
+    const valid: SensorColumnKey[] = []
+    for (const k of parsed) {
+      if (typeof k === 'string' && validSet.has(k as SensorColumnKey) && !seen.has(k as SensorColumnKey)) {
+        valid.push(k as SensorColumnKey)
+        seen.add(k as SensorColumnKey)
+      }
+    }
+    // 未含有のキー（新規追加された列など）を末尾に補完
+    for (const k of def) {
+      if (!seen.has(k)) valid.push(k)
+    }
+    return valid
+  } catch {
+    return def
+  }
+}
+
+export function saveColumnOrder(order: SensorColumnKey[]): void {
+  try {
+    localStorage.setItem(ORDER_KEY, JSON.stringify(order))
+  } catch {
+    /* noop */
+  }
+}
