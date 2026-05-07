@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Router as RouterIcon,
   ChevronRight,
   ArrowLeft,
   Cpu,
   MapPin,
+  Settings2,
   Trash2,
 } from 'lucide-react'
 import type {
@@ -15,6 +16,16 @@ import type {
   SensorStore,
 } from '../../types'
 import { sensorsOfGateway } from '../../lib/mock'
+import {
+  GATEWAY_COLUMN_DEFS,
+  loadColumnOrder,
+  loadColumnVisibility,
+  saveColumnOrder,
+  saveColumnVisibility,
+  type GatewayColumnKey,
+  type GatewayColumnVisibility,
+} from '../../lib/gatewayColumns'
+import { GatewayColumnSettingsDialog } from '../GatewayColumnSettingsDialog'
 
 type Props = {
   gateways: GatewayStore
@@ -64,6 +75,29 @@ export function GatewaysView({
     [gateways],
   )
 
+  /* Phase: 列の表示・並び順設定 */
+  const [columnVisibility, setColumnVisibility] =
+    useState<GatewayColumnVisibility>(() => loadColumnVisibility())
+  useEffect(() => {
+    saveColumnVisibility(columnVisibility)
+  }, [columnVisibility])
+
+  const [columnOrder, setColumnOrder] = useState<GatewayColumnKey[]>(() =>
+    loadColumnOrder(),
+  )
+  useEffect(() => {
+    saveColumnOrder(columnOrder)
+  }, [columnOrder])
+
+  const [columnSettingsOpen, setColumnSettingsOpen] = useState(false)
+
+  const DEFS_MAP = useMemo(
+    () => Object.fromEntries(GATEWAY_COLUMN_DEFS.map((d) => [d.key, d])),
+    [],
+  )
+  /** 表示する列 = 並び順 × 表示 ON のみ */
+  const visibleColumns = columnOrder.filter((k) => columnVisibility[k])
+
   if (list.length === 0) {
     return (
       <div className="dashboard-view">
@@ -90,6 +124,16 @@ export function GatewaysView({
           </h1>
           <p>センサーの親機となるゲートウェイの一覧です。</p>
         </div>
+        <div className="view-header-actions">
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setColumnSettingsOpen(true)}
+          >
+            <Settings2 size={14} />
+            <span>表示設定</span>
+          </button>
+        </div>
       </header>
 
       <section className="panel-card">
@@ -102,11 +146,15 @@ export function GatewaysView({
             <thead>
               <tr>
                 <th>名前</th>
-                <th>ID</th>
-                <th>モデル / メーカー</th>
-                <th>シリアル番号</th>
-                <th>設置場所</th>
-                <th className="num">接続センサー</th>
+                {visibleColumns.map((key) => {
+                  const def = DEFS_MAP[key]
+                  if (!def) return null
+                  return (
+                    <th key={key} className={def.numeric ? 'num' : ''}>
+                      {def.label}
+                    </th>
+                  )
+                })}
                 <th aria-label="操作"></th>
               </tr>
             </thead>
@@ -114,7 +162,11 @@ export function GatewaysView({
               {list.map((gw) => {
                 const linked = sensorsOfGateway(sensors, gw.id)
                 return (
-                  <tr key={gw.id} className="device-row" onClick={() => onOpenGateway(gw.id)}>
+                  <tr
+                    key={gw.id}
+                    className="device-row"
+                    onClick={() => onOpenGateway(gw.id)}
+                  >
                     <td>
                       <div className="device-id">
                         <span className="device-id-name">
@@ -123,26 +175,47 @@ export function GatewaysView({
                         </span>
                       </div>
                     </td>
-                    <td>
-                      <span className="mono">{gw.id}</span>
-                    </td>
-                    <td>
-                      <div className="device-id">
-                        <span className="device-id-name">{gw.model}</span>
-                        <span className="device-id-sub">{gw.manufacturer}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="mono">{gw.serialNumber}</span>
-                    </td>
-                    <td>
-                      <span className="location-cell">
-                        <MapPin size={12} />
-                        {gw.location}
-                      </span>
-                    </td>
-                    <td className="num">{linked.length} 台</td>
-                    <td className="row-actions" onClick={(e) => e.stopPropagation()}>
+                    {visibleColumns.map((key) => {
+                      switch (key) {
+                        case 'id':
+                          return (
+                            <td key={key}>
+                              <span className="mono">{gw.id}</span>
+                            </td>
+                          )
+                        case 'manufacturer':
+                          return <td key={key}>{gw.manufacturer}</td>
+                        case 'model':
+                          return <td key={key}>{gw.model}</td>
+                        case 'serialNumber':
+                          return (
+                            <td key={key}>
+                              <span className="mono">{gw.serialNumber}</span>
+                            </td>
+                          )
+                        case 'location':
+                          return (
+                            <td key={key}>
+                              <span className="location-cell">
+                                <MapPin size={12} />
+                                {gw.location}
+                              </span>
+                            </td>
+                          )
+                        case 'linkedCount':
+                          return (
+                            <td key={key} className="num">
+                              {linked.length} 台
+                            </td>
+                          )
+                        default:
+                          return null
+                      }
+                    })}
+                    <td
+                      className="row-actions"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <button
                         type="button"
                         className="icon-btn"
@@ -159,6 +232,15 @@ export function GatewaysView({
           </table>
         </div>
       </section>
+
+      <GatewayColumnSettingsDialog
+        open={columnSettingsOpen}
+        visibility={columnVisibility}
+        onChange={setColumnVisibility}
+        order={columnOrder}
+        onOrderChange={setColumnOrder}
+        onClose={() => setColumnSettingsOpen(false)}
+      />
     </div>
   )
 }
