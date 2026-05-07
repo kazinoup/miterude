@@ -182,6 +182,10 @@
   font-weight: 700;
   color: var(--navy-800);
   letter-spacing: 0.01em;
+  /* タイトルアイコンとテキストの間に共通の余白を確保 */
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .view-header-text p {
