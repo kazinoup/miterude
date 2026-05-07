@@ -6369,7 +6369,9 @@
  */
 .meta-edit-grid {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr;
+  /* センサー情報パネルと「分類」パネルの列幅を揃えるため、3 列均等割に。
+   * （以前は 1.4fr 1fr 1fr で名前列が広く、分類パネルとずれていた） */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem 1rem;
   margin: 0.5rem 0 0.6rem;
 }
