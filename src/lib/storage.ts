@@ -34,7 +34,15 @@ import {
 import { buildDefaultTemplates } from './thresholdTemplates'
 import { collectYearMonths, inferStorageKind } from './report'
 
+/** 旧グローバル単一テナント用キー（Phase A-1 でテナント別に移行済）。
+ *  ensureSeedData() で demo 組織の tenantStateKey() にコピーされる。 */
 const KEY = 'miterude:state:v3'
+
+/** テナント別の永続化キー。Phase A-1 から導入。
+ *  loadState / saveState がこの形式で読み書きする。 */
+function tenantKey(organizationId: string): string {
+  return `miterude:tenant:${organizationId}:state:v4`
+}
 
 /* ---------- thresholds マイグレーション (Phase 9.14) ----------
  *  旧形式: { kind: 'temperature-humidity',
@@ -164,17 +172,17 @@ function reviver(_key: string, value: unknown): unknown {
   return value
 }
 
-export function saveState(state: PersistedState): void {
+export function saveState(state: PersistedState, organizationId: string): void {
   try {
     const json = JSON.stringify(state, replacer)
-    localStorage.setItem(KEY, json)
+    localStorage.setItem(tenantKey(organizationId), json)
   } catch (e) {
     // QuotaExceededError などは握りつぶして警告のみ
     console.warn('[miterude] state save failed:', e)
   }
 }
 
-export function loadState(): PersistedState | null {
+export function loadState(organizationId: string): PersistedState | null {
   try {
     // v2 以前のキーは Phase 9 で互換性を切るため削除
     for (const lk of LEGACY_KEYS) {
@@ -186,7 +194,10 @@ export function loadState(): PersistedState | null {
         }
       }
     }
-    const raw = localStorage.getItem(KEY)
+    // テナント別キーを優先、なければ旧グローバルキー（フォールバック）
+    const raw =
+      localStorage.getItem(tenantKey(organizationId)) ??
+      localStorage.getItem(KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw, reviver) as PersistedState
     // 互換性チェック：必須フィールドが揃っているか

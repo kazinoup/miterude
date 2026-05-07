@@ -7748,3 +7748,111 @@
   color: var(--gray-700);
   font-variant-numeric: tabular-nums;
 }
+
+/* =====================================================
+   Phase A-1: 開発用セッション切替バー
+   ===================================================== */
+
+.dev-session-bar {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.4rem 1.2rem 0;
+  font-size: 0.78rem;
+}
+
+.dev-session-bar-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.65rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  color: var(--gray-700);
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.dev-session-bar-current:hover {
+  background: #fff;
+  border-color: var(--navy-500);
+}
+
+.dev-session-bar-text strong {
+  color: var(--navy-800);
+  margin-right: 0.15rem;
+}
+
+.dev-session-bar-role {
+  margin-left: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--navy-700);
+  font-weight: 600;
+}
+
+.dev-session-bar-current .is-open {
+  transform: rotate(180deg);
+  transition: transform 150ms ease;
+}
+
+.dev-session-bar-menu {
+  position: absolute;
+  top: 100%;
+  right: 1.2rem;
+  min-width: 22rem;
+  max-width: 28rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(15, 39, 68, 0.12);
+  margin-top: 0.3rem;
+  padding: 0.35rem 0;
+  z-index: 50;
+}
+
+.dev-session-bar-menu-head {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--gray-500);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.dev-session-bar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.5rem 0.85rem;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.82rem;
+  color: var(--gray-800);
+  border-top: 1px solid var(--gray-100, #f1f5f9);
+}
+
+.dev-session-bar-item:hover {
+  background: var(--gray-50);
+}
+
+.dev-session-bar-item-label {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.dev-session-bar-item-sub {
+  margin-top: 0.1rem;
+  font-size: 0.74rem;
+}
+
+.dev-session-bar-foot {
+  padding: 0.45rem 0.85rem;
+  font-size: 0.7rem;
+  color: var(--gray-500);
+  border-top: 1px solid var(--gray-200);
+}

@@ -754,3 +754,100 @@ export type DashboardReminder = {
 }
 
 export type DashboardReminderStore = Record<string, DashboardReminder>
+
+/* ---------- Phase A: マルチテナント基盤 ----------
+ * Supabase 移行前の localStorage モックでも、
+ * 将来のスキーマと同じ概念モデルを使えるよう型を整理。
+ *
+ * 詳細は docs/database-schema.md を参照。 */
+
+/** システム横断ロール（テナントを跨ぐ運営側のロール）。
+ *  null = 顧客ユーザー。 */
+export type SystemRole = 'super_admin' | 'support'
+
+/** テナント内ロール（顧客側でのロール）。 */
+export type TenantRole = 'editor' | 'dashboard_confirmer'
+
+/** ユーザー（Clerk と統合する想定。モック期は email + system_role のみ） */
+export type AppUser = {
+  id: string
+  /** Clerk 統合時に紐付け。モック期は null */
+  clerkUserId?: string
+  email: string
+  displayName: string
+  /** 運営側スタッフのロール。null = 顧客 */
+  systemRole?: SystemRole
+  createdAt: Date
+}
+
+export type AppUserStore = Record<string, AppUser>
+
+/** 組織（テナント） */
+export type Organization = {
+  id: string
+  name: string
+  slug: string
+  plan: 'demo' | 'standard' | 'enterprise'
+  createdAt: Date
+}
+
+export type OrganizationStore = Record<string, Organization>
+
+/** 組織メンバーシップ（多対多） */
+export type OrganizationMember = {
+  id: string
+  organizationId: string
+  userId: string
+  role: TenantRole
+  invitedAt: Date
+  joinedAt?: Date
+}
+
+export type OrganizationMemberStore = Record<string, OrganizationMember>
+
+/** スタッフアサインメント — サポートスタッフがテナントへ入る権限。
+ *  super_admin にはこのレコードは作らない（暗黙的に全テナント可）。 */
+export type StaffAssignment = {
+  id: string
+  staffUserId: string
+  organizationId: string
+  grantedByUserId: string
+  grantedAt: Date
+  expiresAt?: Date
+  revokedAt?: Date
+  notes?: string
+}
+
+export type StaffAssignmentStore = Record<string, StaffAssignment>
+
+/** スタッフ操作の監査ログ */
+export type StaffAuditLog = {
+  id: string
+  staffUserId: string
+  /** テナント外操作（テナント作成等）なら undefined */
+  organizationId?: string
+  action: string
+  targetTable?: string
+  targetId?: string
+  metadata?: Record<string, unknown>
+  occurredAt: Date
+}
+
+export type StaffAuditLogStore = Record<string, StaffAuditLog>
+
+/** 認証セッション。
+ *  - tenant: 顧客ユーザーが所属組織にいる
+ *  - admin:  スーパーアドミンが /admin にいる
+ *  - impersonation: スタッフが顧客 UI を見ている（監査ログ対象） */
+export type AuthSession =
+  | { kind: 'tenant'; userId: string; organizationId: string }
+  | { kind: 'admin'; userId: string }
+  | {
+      kind: 'impersonation'
+      userId: string
+      actingAsOrganizationId: string
+      reason: string
+      startedAt: Date
+      expiresAt: Date
+    }
+  | null

@@ -61,6 +61,14 @@ import {
   judgeOfflineTransitionAlert,
 } from './lib/alertLog'
 import { canReportBattery } from './lib/supportedDevices'
+import {
+  loadAuthSession,
+  loadOrganizations,
+  loadUsers,
+} from './admin/lib/adminStorage'
+import { ensureSeedData, DEMO_ORG_ID } from './admin/lib/adminSeed'
+import { DevSessionBar } from './admin/DevSessionBar'
+import type { AuthSession } from './types'
 import { loadState, saveState } from './lib/storage'
 import {
   addWidget,
@@ -110,20 +118,51 @@ import './App.css'
 import './styles/dashboard.css'
 import './styles/report.css'
 
-/** Clerk からの取得を想定したセッション情報のモック */
-const MOCK_SESSION: UserSession = {
-  organizationName: 'CanBright（デモ組織）',
-  userName: '井上 太郎',
-  email: 'inoue@canbright.co.jp',
-}
-
 function sortIds(ids: string[]): string[] {
   return [...ids].sort()
 }
 
+/** AuthSession から「いまアプリが対象とするテナント ID」を導出する。
+ *  - tenant:        organizationId
+ *  - impersonation: actingAsOrganizationId
+ *  - admin / null:  null（テナント表示が要らない状態）
+ *  null が返るときも現状はテナント UI を出さざるを得ないため、
+ *   呼び出し側で DEMO_ORG_ID にフォールバック（Phase A-2 以降で /admin 画面に切替予定）。 */
+function activeTenantIdFrom(session: AuthSession | null): string | null {
+  if (!session) return null
+  if (session.kind === 'tenant') return session.organizationId
+  if (session.kind === 'impersonation') return session.actingAsOrganizationId
+  return null
+}
+
 export default function App() {
+  // Phase A-1: マルチテナント基盤の初期化
+  //   - シードデータ投入（初回のみ）
+  //   - 既存 v3 ストアの demo テナントへの移行
+  //   - 認証セッション取得 → 対象テナント ID を確定
+  const session = useMemo(() => {
+    ensureSeedData()
+    return loadAuthSession()
+  }, [])
+  const activeOrgId = activeTenantIdFrom(session) ?? DEMO_ORG_ID
+
+  /** UI に渡すセッション情報（旧 MOCK_SESSION 互換）。
+   *  users / organizations から動的に構築する。 */
+  const MOCK_SESSION: UserSession = useMemo(() => {
+    const users = loadUsers()
+    const orgs = loadOrganizations()
+    const userId = session?.userId
+    const u = userId ? users[userId] : null
+    const o = orgs[activeOrgId]
+    return {
+      organizationName: o?.name ?? 'CanBright（デモ組織）',
+      userName: u?.displayName ?? '井上 太郎',
+      email: u?.email ?? 'inoue@canbright.co.jp',
+    }
+  }, [session, activeOrgId])
+
   // --- 永続化: マウント時にロード -----------------------------
-  const initial = useMemo(() => loadState(), [])
+  const initial = useMemo(() => loadState(activeOrgId), [activeOrgId])
 
   const [devices, setDevices] = useState<DeviceStore>(initial?.devices ?? {})
   const [sensors, setSensors] = useState<SensorStore>(initial?.sensors ?? {})
@@ -286,27 +325,31 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 永続化: 変更ごとに保存
+  // 永続化: 変更ごとに保存（テナント別キーへ）
   useEffect(() => {
-    saveState({
-      devices,
-      sensors,
-      gateways,
-      dashboards,
-      activeDashboardId,
-      notificationGroups,
-      manufacturerIntegrations,
-      checkins,
-      sensorNotes,
-      sensorGroups,
-      sensorCategories,
-      thresholdTemplates,
-      savedFilters,
-      alertLogs,
-      reportSchedules,
-      dashboardReminders,
-    })
+    saveState(
+      {
+        devices,
+        sensors,
+        gateways,
+        dashboards,
+        activeDashboardId,
+        notificationGroups,
+        manufacturerIntegrations,
+        checkins,
+        sensorNotes,
+        sensorGroups,
+        sensorCategories,
+        thresholdTemplates,
+        savedFilters,
+        alertLogs,
+        reportSchedules,
+        dashboardReminders,
+      },
+      activeOrgId,
+    )
   }, [
+    activeOrgId,
     devices,
     sensors,
     gateways,
@@ -1030,6 +1073,8 @@ export default function App() {
       />
 
       <main className="app-content">
+        {/* Phase A-1: 開発用セッション切替バー（後で正式なログイン画面に置換） */}
+        <DevSessionBar />
         <div className="app-content-inner no-print-shell">
           {view === 'dashboard' && (
             <DashboardView
