@@ -7,6 +7,7 @@ import {
   Bell,
   Plug,
   Cpu,
+  Router as RouterIcon,
   ShieldCheck,
   ShieldOff,
   Mail,
@@ -14,18 +15,25 @@ import {
   Webhook,
   Sliders,
   FileText,
+  CheckCircle2,
+  Clock,
+  Boxes,
 } from 'lucide-react'
 import type {
   ManufacturerIntegration,
   ManufacturerIntegrationStore,
   NotificationGroup,
   NotificationGroupStore,
-  SensorKind,
   SensorStore,
   ThresholdTemplate,
   ThresholdTemplateStore,
 } from '../../types'
 import { NOTIFICATION_TIMING_LABELS, SENSOR_KIND_DEFS } from '../../types'
+import {
+  DEVICE_CATEGORY_DEFS,
+  devicesByCategory,
+  type SupportedDevice,
+} from '../../lib/supportedDevices'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
 import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
 import { ThresholdTemplateEditDialog } from '../ThresholdTemplateEditDialog'
@@ -42,13 +50,13 @@ type Props = {
   onDeleteThresholdTemplate: (id: string) => void
 }
 
-type Tab = 'integrations' | 'notifications' | 'thresholds' | 'kinds'
+type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
   { key: 'integrations', label: 'デバイス連携', icon: Plug },
   { key: 'notifications', label: '通知グループ', icon: Bell },
   { key: 'thresholds', label: '閾値テンプレート', icon: Sliders },
-  { key: 'kinds', label: 'センサー種別', icon: Cpu },
+  { key: 'devices', label: '対応デバイス', icon: Boxes },
 ]
 
 function countByGroup(sensors: SensorStore, groupId: string): number {
@@ -84,6 +92,34 @@ function formatLevelSummary(
   if (min != null) return `${label} ${min}${unit}以上`
   if (max != null) return `${label} ${max}${unit}以下`
   return label
+}
+
+function DeviceCard({ device }: { device: SupportedDevice }) {
+  return (
+    <article
+      className={`supported-device-card ${device.supported ? '' : 'is-future'}`}
+    >
+      <header className="supported-device-card-head">
+        <span className="supported-device-manufacturer">
+          {device.manufacturer}
+        </span>
+        {device.supported ? (
+          <span className="supported-device-badge supported-device-badge-active">
+            <CheckCircle2 size={11} strokeWidth={2.4} />
+            対応中
+          </span>
+        ) : (
+          <span className="supported-device-badge supported-device-badge-future">
+            <Clock size={11} strokeWidth={2.4} />
+            対応予定
+          </span>
+        )}
+      </header>
+      <h4 className="supported-device-model">{device.model}</h4>
+      <p className="supported-device-type muted">{device.typeLabel}</p>
+      <p className="supported-device-desc">{device.description}</p>
+    </article>
+  )
 }
 
 function ChannelBadge({ channel }: { channel: NotificationGroup['channels'][number] }) {
@@ -452,38 +488,42 @@ export function SettingsView({
         </section>
       )}
 
-      {tab === 'kinds' && (
+      {tab === 'devices' && (
         <section className="panel-card">
           <div className="panel-card-head">
-            <h2>センサー種別</h2>
+            <h2>
+              <Boxes size={16} className="head-icon" />
+              対応デバイス
+            </h2>
             <span className="panel-card-meta">
-              共通のセンサーマスタに対し、種別ごとに固有のプロパティを持たせる構成です。
+              ミテルデで取り扱える対象デバイスの一覧です。今後随時追加していきます。
             </span>
           </div>
-          <div className="kind-grid">
-            {(Object.keys(SENSOR_KIND_DEFS) as SensorKind[]).map((k) => {
-              const def = SENSOR_KIND_DEFS[k]
-              return (
-                <div
-                  key={k}
-                  className={`kind-card kind-card-static ${
-                    !def.supported ? 'is-future' : ''
-                  }`}
-                >
-                  <div className="kind-card-text">
-                    <strong>
-                      {def.label}
-                      {def.supported && <span className="kind-supported-tag">対応中</span>}
-                      {!def.supported && (
-                        <span className="kind-future-tag">対応予定</span>
-                      )}
-                    </strong>
-                    <small>{def.description}</small>
-                  </div>
+
+          {DEVICE_CATEGORY_DEFS.map((cat) => {
+            const list = devicesByCategory(cat.key)
+            if (list.length === 0) return null
+            return (
+              <div key={cat.key} className="supported-device-section">
+                <h3 className="supported-device-section-title">
+                  {cat.key === 'sensor' ? (
+                    <Cpu size={14} />
+                  ) : (
+                    <RouterIcon size={14} />
+                  )}
+                  <span>{cat.label}</span>
+                  <span className="muted supported-device-section-desc">
+                    {cat.description}
+                  </span>
+                </h3>
+                <div className="supported-device-grid">
+                  {list.map((d) => (
+                    <DeviceCard key={d.id} device={d} />
+                  ))}
                 </div>
-              )
-            })}
-          </div>
+              </div>
+            )
+          })}
         </section>
       )}
 

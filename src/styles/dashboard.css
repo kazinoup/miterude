@@ -6759,3 +6759,120 @@
 .multiline-help > span {
   display: block;
 }
+
+/* ---------- Phase 9.17: 対応デバイス一覧 ---------- */
+
+.supported-device-section {
+  margin-top: 1rem;
+}
+
+.supported-device-section:first-of-type {
+  margin-top: 0.4rem;
+}
+
+.supported-device-section-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: var(--navy-800);
+  font-weight: 700;
+}
+
+.supported-device-section-title svg {
+  align-self: center;
+  color: var(--navy-700);
+}
+
+.supported-device-section-desc {
+  font-size: 0.78rem;
+  font-weight: 400;
+}
+
+.supported-device-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.7rem;
+}
+
+.supported-device-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+
+.supported-device-card:hover {
+  border-color: var(--gray-300);
+  box-shadow: 0 2px 8px rgba(15, 39, 68, 0.06);
+}
+
+.supported-device-card.is-future {
+  background: var(--gray-50);
+  opacity: 0.85;
+}
+
+.supported-device-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.supported-device-manufacturer {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  color: var(--gray-600);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.supported-device-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.18rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.supported-device-badge-active {
+  background: rgba(15, 39, 68, 0.06);
+  color: var(--navy-800);
+  border: 1px solid var(--navy-300);
+}
+
+.supported-device-badge-future {
+  background: var(--gray-50);
+  color: var(--gray-600);
+  border: 1px solid var(--gray-300);
+}
+
+.supported-device-model {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.01em;
+}
+
+.supported-device-type {
+  margin: 0;
+  font-size: 0.78rem;
+}
+
+.supported-device-desc {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--gray-700);
+}
