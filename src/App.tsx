@@ -914,8 +914,6 @@ export default function App() {
         current={view}
         onNavigate={navigate}
         sensorCount={sensorIds.length}
-        devices={devices}
-        onDevicesChange={handleDevicesChange}
         dashboards={dashboards}
         activeDashboardId={activeDashboardId}
         onSelectDashboard={selectDashboard}
@@ -949,6 +947,7 @@ export default function App() {
               onMoveWidget={handleMoveWidget}
               onCreateCheckin={handleCreateCheckin}
               onGoRecords={() => navigate('records')}
+              onGoSettings={() => navigate('settings')}
             />
           )}
 
@@ -1036,6 +1035,8 @@ export default function App() {
               onUpdateIntegration={handleUpdateIntegration}
               onUpsertThresholdTemplate={handleUpsertThresholdTemplate}
               onDeleteThresholdTemplate={handleDeleteThresholdTemplate}
+              devices={devices}
+              onDevicesChange={handleDevicesChange}
             />
           )}
 

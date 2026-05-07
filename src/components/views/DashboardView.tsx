@@ -80,6 +80,8 @@ type Props = {
   onMoveWidget: (dashboardId: string, widgetId: string, delta: -1 | 1) => void
   onCreateCheckin: (checkin: DashboardCheckin) => void
   onGoRecords: () => void
+  /** Phase E-1: 初期画面の「連携設定へ」リンクで使う */
+  onGoSettings: () => void
 }
 
 const PERIOD_MODE_KEY = 'miterude:dashboard:period-mode'
@@ -148,6 +150,7 @@ export function DashboardView({
   onMoveWidget,
   onCreateCheckin,
   onGoRecords,
+  onGoSettings,
 }: Props) {
   const sensorList = useMemo(() => Object.values(sensors), [sensors])
 
@@ -187,7 +190,13 @@ export function DashboardView({
   }, [periodMode])
 
   if (sensorList.length === 0) {
-    return <EmptyState devices={devices} onDevicesChange={onDevicesChange} />
+    return (
+      <EmptyState
+        devices={devices}
+        onDevicesChange={onDevicesChange}
+        onGoSettings={onGoSettings}
+      />
+    )
   }
 
   const dashboard: Dashboard | null = activeDashboardId

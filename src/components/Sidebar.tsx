@@ -11,19 +11,15 @@ import {
 import type {
   Dashboard,
   DashboardStore,
-  DeviceStore,
   UserSession,
   ViewKey,
 } from '../types'
-import { CsvImportButton } from './CsvImportButton'
 import { UserMenu } from './UserMenu'
 
 type Props = {
   current: ViewKey
   onNavigate: (view: ViewKey) => void
   sensorCount: number
-  devices: DeviceStore
-  onDevicesChange: (next: DeviceStore) => void
   dashboards: DashboardStore
   activeDashboardId: string | null
   onSelectDashboard: (id: string) => void
@@ -77,8 +73,6 @@ export function Sidebar({
   current,
   onNavigate,
   sensorCount,
-  devices,
-  onDevicesChange,
   dashboards,
   activeDashboardId,
   onSelectDashboard,
@@ -147,13 +141,6 @@ export function Sidebar({
         <div className="device-counter">
           <span className="counter-label">登録センサー</span>
           <span className="counter-value">{sensorCount}</span>
-          <CsvImportButton
-            devices={devices}
-            onDevicesChange={onDevicesChange}
-            iconOnly
-            className="sidebar-import-btn"
-            label="CSV をインポート"
-          />
         </div>
         <small className="sidebar-note">
           データはブラウザ内のみで保持され、サーバーに送信されません。

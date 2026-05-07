@@ -20,6 +20,7 @@ import {
   Boxes,
 } from 'lucide-react'
 import type {
+  DeviceStore,
   ManufacturerIntegration,
   ManufacturerIntegrationStore,
   NotificationGroup,
@@ -34,6 +35,7 @@ import {
   devicesByManufacturer,
   type SupportedDevice,
 } from '../../lib/supportedDevices'
+import { CsvImportButton } from '../CsvImportButton'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
 import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
 import { ThresholdTemplateEditDialog } from '../ThresholdTemplateEditDialog'
@@ -48,6 +50,9 @@ type Props = {
   onUpdateIntegration: (i: ManufacturerIntegration) => void
   onUpsertThresholdTemplate: (t: ThresholdTemplate) => void
   onDeleteThresholdTemplate: (id: string) => void
+  /** Phase E-3: 連携設定リストの各メーカー行から CSV を直接取り込めるようにする */
+  devices: DeviceStore
+  onDevicesChange: (next: DeviceStore) => void
 }
 
 type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
@@ -159,6 +164,8 @@ export function SettingsView({
   onUpdateIntegration,
   onUpsertThresholdTemplate,
   onDeleteThresholdTemplate,
+  devices,
+  onDevicesChange,
 }: Props) {
   const [tab, setTab] = useState<Tab>('integrations')
   const [thresholdEditDialog, setThresholdEditDialog] = useState<{
@@ -302,6 +309,16 @@ export function SettingsView({
                     </span>
                   </div>
                   <div className="template-list-actions">
+                    {/* Phase E-3: 連携 ON のメーカーは CSV を直接取り込めるアイコンを表示。
+                     *   メーカーごとにフォーマットが将来異なる場合に備えて、現状の汎用パーサに
+                     *   そのまま流す（差分はパーサ層で吸収する想定）。 */}
+                    <CsvImportButton
+                      devices={devices}
+                      onDevicesChange={onDevicesChange}
+                      iconOnly
+                      label={`${i.manufacturer} の CSV を取り込む`}
+                      className={i.enabled ? '' : 'is-muted'}
+                    />
                     <button
                       type="button"
                       className="icon-btn"

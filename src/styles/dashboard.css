@@ -542,6 +542,77 @@
   line-height: 1.9;
 }
 
+/* Phase E-1: 2 段構成の empty-state（連携設定 → CSV 取り込み） */
+.empty-state-stack {
+  text-align: left;
+  padding: 2rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.empty-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.empty-step-num {
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  background: var(--navy-700);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-step-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.empty-step-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.empty-step-icon {
+  color: var(--navy-700);
+}
+
+.empty-step-desc {
+  margin: 0 0 0.85rem;
+  color: var(--gray-600);
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+.empty-step-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.empty-step .empty-spec {
+  margin: 0;
+  display: block;
+}
+
+/* Phase E-3: 連携停止中のメーカーには CSV 取り込みアイコンを薄く出す */
+.icon-btn.is-muted {
+  opacity: 0.5;
+}
+
 .empty-spec code {
   background: var(--gray-100);
   border: 1px solid var(--gray-200);
