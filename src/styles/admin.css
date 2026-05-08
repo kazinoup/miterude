@@ -1,0 +1,666 @@
+/* =====================================================
+   Phase A-4: Admin Console (super_admin の /admin 画面)
+   ===================================================== */
+
+.admin-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: 100vh;
+  background: var(--gray-50);
+}
+
+/* ---------- Sidebar ---------- */
+
+.admin-sidebar {
+  background: var(--navy-800);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem 0.75rem 0.75rem;
+  /* admin が「テナント側じゃないこと」が分かるよう左に強調帯 */
+  border-right: 4px solid #c2410c;
+}
+
+.admin-sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.5rem 1.25rem;
+  color: #fff;
+}
+
+.admin-sidebar-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.admin-sidebar-brand-name {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.admin-sidebar-brand-sub {
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  color: #f97316;
+  text-transform: uppercase;
+  font-weight: 700;
+}
+
+.admin-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.78);
+  font-family: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.admin-nav-item:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.admin-nav-item.is-active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.admin-nav-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.admin-nav-badge {
+  margin-left: auto;
+  font-size: 0.62rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+}
+
+.admin-sidebar-foot {
+  margin-top: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* ---------- Main ---------- */
+
+.admin-main {
+  padding: 2rem 2.25rem;
+  overflow-x: auto;
+}
+
+.admin-view {
+  max-width: 1100px;
+}
+
+.admin-view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-view-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-view-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.admin-view-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--gray-600);
+}
+
+.admin-view-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.admin-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.admin-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  padding: 0.1rem 0.55rem;
+  color: var(--gray-500);
+}
+
+.admin-search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.86rem;
+  padding: 0.4rem 0;
+  width: 18rem;
+  color: var(--ink);
+}
+
+.admin-count {
+  font-size: 0.78rem;
+  color: var(--gray-600);
+}
+
+.admin-count strong {
+  color: var(--navy-800);
+  font-weight: 700;
+}
+
+/* ---------- Table ---------- */
+
+.admin-table-wrap {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+
+.admin-table thead {
+  background: var(--gray-50);
+}
+
+.admin-table th {
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  font-weight: 600;
+  font-size: 0.74rem;
+  color: var(--gray-600);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.admin-table td {
+  padding: 0.7rem 0.85rem;
+  border-bottom: 1px solid var(--gray-100, #f1f5f9);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.admin-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admin-table-row {
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.admin-table-row:hover {
+  background: var(--gray-50);
+}
+
+.admin-table-name {
+  font-weight: 600;
+  color: var(--navy-800);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.admin-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.admin-table .ellipsis {
+  max-width: 12rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-table-empty {
+  text-align: center;
+  color: var(--gray-500);
+  padding: 1.5rem 0.85rem !important;
+  font-size: 0.86rem;
+}
+
+.admin-table-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.66rem;
+  color: var(--navy-700);
+  background: #eef2f8;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.inline-icon {
+  vertical-align: -1px;
+  color: var(--gray-500);
+}
+
+/* ---------- Plan / Role pills ---------- */
+
+.plan-pill {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.plan-pill.plan-demo {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fed7aa;
+}
+
+.plan-pill.plan-standard {
+  background: #eef2f8;
+  color: var(--navy-700);
+  border-color: #c7d2fe;
+}
+
+.plan-pill.plan-enterprise {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.role-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.74rem;
+  color: var(--navy-700);
+  background: #eef2f8;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+}
+
+/* ---------- Section / form ---------- */
+
+.admin-section {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-top: 1rem;
+}
+
+.admin-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.admin-section-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.admin-section-note {
+  font-size: 0.74rem;
+  color: var(--gray-500);
+}
+
+.admin-grid-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1.25rem;
+}
+
+.admin-grid-form .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.admin-grid-form .form-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--gray-700);
+  letter-spacing: 0.02em;
+}
+
+.admin-meta-row {
+  margin-top: 0.85rem;
+}
+
+.admin-placeholder {
+  background: #fff;
+  border: 1px dashed var(--gray-300);
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  color: var(--gray-600);
+}
+
+.admin-placeholder h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: var(--navy-800);
+}
+
+/* btn-sm: 既存に無ければここで定義 */
+.btn-sm {
+  padding: 0.3rem 0.65rem;
+  font-size: 0.78rem;
+}
+
+/* form-help は dashboard.css と重複しない短いヘルプ用 */
+.form-help {
+  font-size: 0.72rem;
+  color: var(--gray-500);
+  margin: 0.2rem 0 0;
+}
+
+/* =====================================================
+   Phase A-5: スタッフ管理 / 割り当て / impersonation
+   ===================================================== */
+
+/* 割り当てステータスのピル */
+.asg-status {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.asg-status-active {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.asg-status-expired {
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-600);
+  border-color: var(--gray-300);
+}
+
+.asg-status-revoked {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+/* notes セルを 2 行で省略 */
+.admin-table .ellipsis-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  max-width: 18rem;
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  line-height: 1.3;
+}
+
+/* アクションセル：ボタンを右寄せで並べる */
+.admin-table .actions-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.admin-table .actions-cell .btn {
+  margin-left: 0.3rem;
+}
+
+.asg-revoke {
+  color: var(--danger);
+}
+
+.asg-revoke:hover {
+  background: #fef2f2 !important;
+  color: #b91c1c !important;
+}
+
+/* form-checkbox: dialog 内のチェックボックスラベル */
+.form-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.form-checkbox input[type='checkbox'] {
+  width: 14px;
+  height: 14px;
+}
+
+/* =====================================================
+   Phase A-6: テナント UI 上の「サポート閲覧中」警告バー
+   ===================================================== */
+
+.impersonation-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(90deg, #c2410c 0%, #ea580c 100%);
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  font-size: 0.85rem;
+}
+
+.impersonation-banner.is-expired {
+  background: linear-gradient(90deg, #991b1b 0%, #b91c1c 100%);
+}
+
+.app-shell.has-impersonation-banner {
+  /* バナー高（約 56px）を確保するため上にマージン */
+  padding-top: 56px;
+}
+
+.impersonation-banner-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.impersonation-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.impersonation-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.impersonation-banner-meta {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.impersonation-banner-detail {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.74rem;
+  color: rgba(255, 255, 255, 0.88);
+  flex-wrap: wrap;
+}
+
+.impersonation-banner-reason {
+  max-width: 32rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.impersonation-banner-remaining {
+  font-weight: 600;
+  color: #fff;
+}
+
+.impersonation-banner-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  padding: 0.35rem 0.7rem;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: background 120ms ease;
+  flex-shrink: 0;
+}
+
+.impersonation-banner-end:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* =====================================================
+   Phase A-7: 監査ログ閲覧
+   ===================================================== */
+
+.audit-toolbar {
+  flex-wrap: wrap;
+}
+
+.audit-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--gray-500);
+}
+
+.audit-filter .select {
+  font-size: 0.82rem;
+  padding: 0.3rem 0.55rem;
+}
+
+.audit-pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.audit-pill-info {
+  background: #eef2f8;
+  color: var(--navy-700);
+  border-color: #c7d2fe;
+}
+
+.audit-pill-success {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.audit-pill-warn {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fed7aa;
+}
+
+.audit-pill-danger {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.audit-actor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+
+.audit-actor-name {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.audit-actor-email {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+}
+
+.audit-summary {
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  max-width: 28rem;
+  word-break: break-word;
+}
+
+.audit-table th:first-child,
+.audit-table td:first-child {
+  white-space: nowrap;
+}

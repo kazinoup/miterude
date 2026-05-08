@@ -33,9 +33,13 @@ export const DEMO_ORG_ID = 'org-demo-001'
 export const DEMO_SUPER_ADMIN_ID = 'user-super-admin-001'
 export const DEMO_EDITOR_ID = 'user-editor-001'
 export const DEMO_CONFIRMER_ID = 'user-confirmer-001'
+export const DEMO_SUPPORT_ID = 'user-support-001'
 
 const LEGACY_STATE_KEY = 'miterude:state:v3'
-const SEED_FLAG_KEY = 'miterude:admin:seeded:v1'
+/** Phase A-5 で support スタッフのシードを追加するため v2 に bump。
+ *  既存ユーザーの localStorage は idempotent な if-not-exists マージのみ走るため、
+ *  以前作ったテナント / メンバー / アサインメントは保持される。 */
+const SEED_FLAG_KEY = 'miterude:admin:seeded:v2'
 
 function nowFloor(): Date {
   // 日付だけ揃える（テストの差分が出にくいよう）
@@ -65,6 +69,13 @@ function buildDefaultUsers(): AppUser[] {
       id: DEMO_CONFIRMER_ID,
       email: 'confirmer-demo@example.com',
       displayName: '佐藤 次郎',
+      createdAt: now,
+    },
+    {
+      id: DEMO_SUPPORT_ID,
+      email: 'support-demo@canbright.co.jp',
+      displayName: '鈴木 サポート',
+      systemRole: 'support',
       createdAt: now,
     },
   ]

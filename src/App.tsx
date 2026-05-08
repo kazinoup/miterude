@@ -13,6 +13,7 @@ import { ReportPreview } from './components/ReportPreview'
 import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
 import { ContextSelectView } from './components/ContextSelectView'
+import { ImpersonationBanner } from './components/ImpersonationBanner'
 import { DashboardEditDialog } from './components/DashboardEditDialog'
 import type {
   AlertLogStore,
@@ -67,7 +68,12 @@ import {
   loadOrganizations,
   loadUsers,
 } from './admin/lib/adminStorage'
-import { ensureSeedData, DEMO_ORG_ID } from './admin/lib/adminSeed'
+import {
+  ensureSeedData,
+  DEMO_ORG_ID,
+  DEMO_SUPER_ADMIN_ID,
+} from './admin/lib/adminSeed'
+import { AdminApp } from './admin/AdminApp'
 import { getEffectiveRole } from './lib/permissions'
 import type { AuthSession } from './types'
 import { loadState, saveState } from './lib/storage'
@@ -118,6 +124,7 @@ import { toast } from './lib/toast'
 import './App.css'
 import './styles/dashboard.css'
 import './styles/report.css'
+import './styles/admin.css'
 
 function sortIds(ids: string[]): string[] {
   return [...ids].sort()
@@ -145,6 +152,12 @@ export default function App() {
     ensureSeedData()
     return loadAuthSession()
   }, [])
+
+  // Phase A-4: super_admin が /admin にいる場合は専用シェルに分岐
+  if (session?.kind === 'admin') {
+    return <AdminApp session={session} />
+  }
+
   const activeOrgId = activeTenantIdFrom(session) ?? DEMO_ORG_ID
 
   /** UI に渡すセッション情報（旧 MOCK_SESSION 互換）。
@@ -1065,7 +1078,15 @@ export default function App() {
   ])
 
   return (
-    <div className="app-shell">
+    <div
+      className={`app-shell ${session?.kind === 'impersonation' ? 'has-impersonation-banner' : ''}`}
+    >
+      {session?.kind === 'impersonation' && (
+        <ImpersonationBanner
+          session={session}
+          fallbackAdminUserId={DEMO_SUPER_ADMIN_ID}
+        />
+      )}
       <Sidebar
         current={view}
         onNavigate={navigate}
