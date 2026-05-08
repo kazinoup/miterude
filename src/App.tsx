@@ -12,6 +12,7 @@ import { AlertsView } from './components/views/AlertsView'
 import { ReportPreview } from './components/ReportPreview'
 import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
+import { ContextSelectView } from './components/ContextSelectView'
 import { DashboardEditDialog } from './components/DashboardEditDialog'
 import type {
   AlertLogStore,
@@ -67,7 +68,7 @@ import {
   loadUsers,
 } from './admin/lib/adminStorage'
 import { ensureSeedData, DEMO_ORG_ID } from './admin/lib/adminSeed'
-import { DevSessionBar } from './admin/DevSessionBar'
+import { getEffectiveRole } from './lib/permissions'
 import type { AuthSession } from './types'
 import { loadState, saveState } from './lib/storage'
 import {
@@ -158,8 +159,12 @@ export default function App() {
       organizationName: o?.name ?? 'CanBright（デモ組織）',
       userName: u?.displayName ?? '井上 太郎',
       email: u?.email ?? 'inoue@canbright.co.jp',
+      effectiveRole: getEffectiveRole(),
     }
   }, [session, activeOrgId])
+
+  // Phase A-2: コンテキスト選択画面の表示状態（ユーザーメニューの「切り替え」から起動）
+  const [contextSelectOpen, setContextSelectOpen] = useState(false)
 
   // --- 永続化: マウント時にロード -----------------------------
   const initial = useMemo(() => loadState(activeOrgId), [activeOrgId])
@@ -1070,11 +1075,10 @@ export default function App() {
         onSelectDashboard={selectDashboard}
         onCreateDashboard={openCreateDashboard}
         session={MOCK_SESSION}
+        onSwitchContext={() => setContextSelectOpen(true)}
       />
 
       <main className="app-content">
-        {/* Phase A-1: 開発用セッション切替バー（後で正式なログイン画面に置換） */}
-        <DevSessionBar />
         <div className="app-content-inner no-print-shell">
           {view === 'dashboard' && (
             <DashboardView
@@ -1319,6 +1323,10 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {contextSelectOpen && (
+        <ContextSelectView onCancel={() => setContextSelectOpen(false)} />
+      )}
     </div>
   )
 }

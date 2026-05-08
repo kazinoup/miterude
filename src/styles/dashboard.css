@@ -3291,47 +3291,67 @@
   /* サイドバー下部に置くので popover は上方向に開く */
   bottom: calc(100% + 0.4rem);
   left: 0;
-  right: 0;
+  /* サイドバー幅に縛られず、文字が改行で潰れないよう広めに確保 */
+  min-width: 17rem;
+  max-width: 22rem;
   background: #fff;
   border: 1px solid var(--gray-300);
   border-radius: 8px;
   box-shadow: 0 -8px 24px rgba(15, 39, 68, 0.22);
-  padding: 0.6rem;
+  padding: 0.55rem 0.6rem;
   z-index: 30;
   color: var(--ink);
 }
 
 .user-menu-head {
   display: flex;
-  gap: 0.55rem;
-  align-items: center;
-  padding: 0.2rem 0.2rem 0.45rem;
-}
-
-.user-menu-head .user-avatar-lg {
-  background: var(--navy-800);
-}
-
-.user-menu-meta {
-  display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.4rem 0.2rem 0.55rem;
+  text-align: center;
+}
+
+.user-avatar-xl {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--navy-800);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1.05rem;
+  margin-bottom: 0.15rem;
 }
 
 .user-menu-name {
-  font-size: 0.88rem;
+  font-size: 0.95rem;
   font-weight: 700;
   color: var(--navy-800);
 }
 
-.user-menu-email,
-.user-menu-org {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  font-size: 0.72rem;
+.user-menu-email {
+  font-size: 0.74rem;
   color: var(--gray-600);
+  word-break: break-all;
+}
+
+.user-menu-org {
+  font-size: 0.74rem;
+  color: var(--gray-700);
+}
+
+.user-menu-role-pill {
+  margin-top: 0.25rem;
+  display: inline-block;
+  padding: 0.1rem 0.55rem;
+  background: var(--navy-50, #eef2f8);
+  color: var(--navy-700);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
 }
 
 .user-menu-divider {
@@ -7750,109 +7770,249 @@
 }
 
 /* =====================================================
-   Phase A-1: 開発用セッション切替バー
+   Phase A-1: UserMenu 内のモック「ログインを切り替え」セクション
+   （Phase A-2 で正式ログイン画面に置換時に削除）
    ===================================================== */
 
-.dev-session-bar {
-  position: relative;
-  display: flex;
-  justify-content: flex-end;
-  padding: 0.4rem 1.2rem 0;
-  font-size: 0.78rem;
-}
-
-.dev-session-bar-current {
+.user-menu-section-head {
   display: inline-flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.3rem 0.65rem;
-  background: var(--gray-50);
-  border: 1px solid var(--gray-200);
-  border-radius: 6px;
-  color: var(--gray-700);
-  font-family: inherit;
-  font-size: 0.78rem;
-  cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease;
-}
-
-.dev-session-bar-current:hover {
-  background: #fff;
-  border-color: var(--navy-500);
-}
-
-.dev-session-bar-text strong {
-  color: var(--navy-800);
-  margin-right: 0.15rem;
-}
-
-.dev-session-bar-role {
-  margin-left: 0.3rem;
+  gap: 0.35rem;
+  padding: 0.45rem 0.5rem 0.25rem;
   font-size: 0.7rem;
-  color: var(--navy-700);
-  font-weight: 600;
-}
-
-.dev-session-bar-current .is-open {
-  transform: rotate(180deg);
-  transition: transform 150ms ease;
-}
-
-.dev-session-bar-menu {
-  position: absolute;
-  top: 100%;
-  right: 1.2rem;
-  min-width: 22rem;
-  max-width: 28rem;
-  background: #fff;
-  border: 1px solid var(--gray-200);
-  border-radius: 8px;
-  box-shadow: 0 12px 32px rgba(15, 39, 68, 0.12);
-  margin-top: 0.3rem;
-  padding: 0.35rem 0;
-  z-index: 50;
-}
-
-.dev-session-bar-menu-head {
-  padding: 0.45rem 0.85rem;
-  font-size: 0.72rem;
   font-weight: 700;
   color: var(--gray-500);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
-.dev-session-bar-item {
-  display: block;
+.user-menu-switch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.user-menu-switch-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
   width: 100%;
-  text-align: left;
-  padding: 0.5rem 0.85rem;
+  padding: 0.4rem 0.5rem;
   background: transparent;
   border: none;
+  border-radius: 5px;
   cursor: pointer;
+  text-align: left;
   font-family: inherit;
-  font-size: 0.82rem;
-  color: var(--gray-800);
-  border-top: 1px solid var(--gray-100, #f1f5f9);
 }
 
-.dev-session-bar-item:hover {
-  background: var(--gray-50);
+.user-menu-switch-item:hover {
+  background: var(--gray-100);
 }
 
-.dev-session-bar-item-label {
+.user-menu-switch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.1rem;
+  color: var(--navy-700);
+  flex-shrink: 0;
+}
+
+.user-menu-switch-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.user-menu-switch-label {
+  font-size: 0.78rem;
   font-weight: 600;
   color: var(--navy-800);
 }
 
-.dev-session-bar-item-sub {
-  margin-top: 0.1rem;
-  font-size: 0.74rem;
+.user-menu-switch-sub {
+  font-size: 0.7rem;
+  color: var(--gray-600);
 }
 
-.dev-session-bar-foot {
-  padding: 0.45rem 0.85rem;
+/* =====================================================
+   Phase A-2: コンテキスト選択画面（フルスクリーンオーバーレイ）
+   ===================================================== */
+
+.ctx-select-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: linear-gradient(180deg, var(--navy-800) 0%, var(--navy-700) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+}
+
+.ctx-select-card {
+  position: relative;
+  width: 100%;
+  max-width: 28rem;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
+  padding: 2rem 1.75rem 1.5rem;
+}
+
+.ctx-select-close {
+  position: absolute;
+  top: 0.6rem;
+  right: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.ctx-select-close:hover {
+  background: var(--gray-100);
+  color: var(--navy-800);
+}
+
+.ctx-select-brand {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--navy-700);
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+
+.ctx-select-heading {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  margin: 0 0 0.4rem;
+}
+
+.ctx-select-sub {
+  font-size: 0.84rem;
+  color: var(--gray-600);
+  margin: 0 0 1.25rem;
+  line-height: 1.5;
+}
+
+.ctx-select-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.ctx-select-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  background: #fff;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease, transform 80ms ease;
+}
+
+.ctx-select-item:hover:not(:disabled) {
+  border-color: var(--navy-700);
+  background: #f8fbff;
+}
+
+.ctx-select-item:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ctx-select-item:disabled {
+  cursor: default;
+  background: var(--gray-50);
+}
+
+.ctx-select-item.is-active {
+  border-color: var(--navy-700);
+  background: var(--gray-50);
+}
+
+.ctx-select-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  background: var(--navy-700);
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.ctx-select-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.ctx-select-item-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.ctx-select-item-sub {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+}
+
+.ctx-select-item-chev {
+  color: var(--gray-400);
+  flex-shrink: 0;
+}
+
+.ctx-select-item-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--navy-700);
+  background: #eef2f8;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.ctx-select-empty {
+  padding: 1rem;
+  font-size: 0.84rem;
+  color: var(--gray-600);
+  background: var(--gray-50);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.ctx-select-foot {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--gray-200);
   font-size: 0.7rem;
   color: var(--gray-500);
-  border-top: 1px solid var(--gray-200);
+  text-align: center;
 }

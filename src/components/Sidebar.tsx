@@ -15,6 +15,7 @@ import type {
   ViewKey,
 } from '../types'
 import { UserMenu } from './UserMenu'
+import { canEdit } from '../lib/permissions'
 
 type Props = {
   current: ViewKey
@@ -25,6 +26,8 @@ type Props = {
   onSelectDashboard: (id: string) => void
   onCreateDashboard: () => void
   session: UserSession
+  /** Phase A-2: コンテキスト選択画面を開く */
+  onSwitchContext: () => void
 }
 
 type NavItem = {
@@ -32,6 +35,9 @@ type NavItem = {
   label: string
   icon: React.ComponentType<{ size?: number; strokeWidth?: number }>
   alsoActiveFor?: ViewKey[]
+  /** Phase A-3: true ならマスタ編集権限のあるロールにのみ表示。
+   *  dashboard_confirmer は閲覧専用なので、デバイス管理 / 設定からは除外する。 */
+  editorOnly?: boolean
 }
 
 const NAV: NavItem[] = [
@@ -41,17 +47,19 @@ const NAV: NavItem[] = [
     label: 'センサー',
     icon: Cpu,
     alsoActiveFor: ['sensor-detail'],
+    editorOnly: true,
   },
   {
     key: 'gateways',
     label: 'ゲートウェイ',
     icon: Router,
     alsoActiveFor: ['gateway-detail'],
+    editorOnly: true,
   },
   { key: 'report', label: 'レポート', icon: FileBarChart2 },
   { key: 'records', label: '記録履歴', icon: ClipboardCheck },
   { key: 'alerts', label: 'アラート', icon: AlertTriangle },
-  { key: 'settings', label: '設定', icon: Settings },
+  { key: 'settings', label: '設定', icon: Settings, editorOnly: true },
 ]
 
 function dashTime(v: Dashboard['createdAt']): number {
@@ -78,8 +86,11 @@ export function Sidebar({
   onSelectDashboard,
   onCreateDashboard,
   session,
+  onSwitchContext,
 }: Props) {
   const dashList = sortedDashboards(dashboards)
+  const allowEdit = canEdit(session.effectiveRole)
+  const visibleNav = NAV.filter((n) => !n.editorOnly || allowEdit)
 
   return (
     <aside className="sidebar">
@@ -88,7 +99,7 @@ export function Sidebar({
       </div>
 
       <nav className="sidebar-nav">
-        {NAV.map(({ key, label, icon: Icon, alsoActiveFor }) => {
+        {visibleNav.map(({ key, label, icon: Icon, alsoActiveFor }) => {
           const active =
             current === key || (alsoActiveFor?.includes(current) ?? false)
           const isDashboard = key === 'dashboard'
@@ -122,14 +133,16 @@ export function Sidebar({
                       </button>
                     )
                   })}
-                  <button
-                    type="button"
-                    className="sub-nav-item sub-nav-new"
-                    onClick={onCreateDashboard}
-                  >
-                    <Plus size={13} strokeWidth={2.4} />
-                    <span>新しいダッシュボード</span>
-                  </button>
+                  {allowEdit && (
+                    <button
+                      type="button"
+                      className="sub-nav-item sub-nav-new"
+                      onClick={onCreateDashboard}
+                    >
+                      <Plus size={13} strokeWidth={2.4} />
+                      <span>新しいダッシュボード</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -145,7 +158,7 @@ export function Sidebar({
         <small className="sidebar-note">
           データはブラウザ内のみで保持され、サーバーに送信されません。
         </small>
-        <UserMenu session={session} />
+        <UserMenu session={session} onSwitchContext={onSwitchContext} />
       </div>
     </aside>
   )

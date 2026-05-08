@@ -247,10 +247,22 @@ export type ManufacturerIntegration = {
 export type ManufacturerIntegrationStore = Record<string, ManufacturerIntegration>
 
 /* ---------- ユーザーセッション（Clerk モック） ---------- */
+
+/** 表示・権限判定用に集約した「実効ロール」。
+ *  Phase A-3 から UI 出し分けに使う。 */
+export type EffectiveRole =
+  | 'super_admin'
+  | 'support'
+  | 'editor'
+  | 'dashboard_confirmer'
+  | 'guest'
+
 export type UserSession = {
   organizationName: string
   userName: string
   email: string
+  /** Phase A-3: 実効ロール。UI の出し分けに使う */
+  effectiveRole: EffectiveRole
 }
 
 /* ---------- 記録（Phase 8） ---------- */

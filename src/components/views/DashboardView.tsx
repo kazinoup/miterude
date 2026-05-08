@@ -48,6 +48,7 @@ import { effectiveSensorIds as resolveEffective } from '../../lib/dashboard'
 import { findLatestCheckin } from '../../lib/records'
 import { formatRelativeAgo } from '../../lib/jp'
 import { fromDateInputValue, toDateInputValue } from '../../lib/period'
+import { canEdit } from '../../lib/permissions'
 
 type Props = {
   devices: DeviceStore
@@ -156,6 +157,7 @@ export function DashboardView({
   dashboardReminders,
 }: Props) {
   const sensorList = useMemo(() => Object.values(sensors), [sensors])
+  const allowEdit = canEdit(session.effectiveRole)
 
   const [widgetDialog, setWidgetDialog] = useState<{
     open: boolean
@@ -224,10 +226,12 @@ export function DashboardView({
             </p>
           </div>
           <div className="view-header-actions">
-            <button type="button" className="btn btn-primary" onClick={onCreateDashboard}>
-              <Plus size={16} />
-              <span>新しいダッシュボード</span>
-            </button>
+            {allowEdit && (
+              <button type="button" className="btn btn-primary" onClick={onCreateDashboard}>
+                <Plus size={16} />
+                <span>新しいダッシュボード</span>
+              </button>
+            )}
           </div>
         </header>
         <div className="empty-state">
@@ -335,15 +339,17 @@ export function DashboardView({
             </>
           ) : (
             <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setEditMode(true)}
-                title="ウィジェットの追加・編集・並び替え・削除を行う"
-              >
-                <Wrench size={16} />
-                <span>編集する</span>
-              </button>
+              {allowEdit && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setEditMode(true)}
+                  title="ウィジェットの追加・編集・並び替え・削除を行う"
+                >
+                  <Wrench size={16} />
+                  <span>編集する</span>
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-primary"
