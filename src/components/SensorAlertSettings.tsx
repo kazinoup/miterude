@@ -1,7 +1,15 @@
-import { AlertTriangle, Battery, Bell, Send } from 'lucide-react'
-import type { AlertSettings, NotificationGroupStore } from '../types'
+import { AlertTriangle, Battery, Bell, CalendarOff, Clock, Send } from 'lucide-react'
+import type {
+  AlertSettings,
+  NotificationGroupStore,
+} from '../types'
 import { NOTIFICATION_TIMING_LABELS } from '../types'
 import { canReportBattery } from '../lib/supportedDevices'
+import {
+  ExclusionDatesEditor,
+  ExclusionWindowsEditor,
+} from './AlertExclusionEditors'
+import type { DeviationStreak } from '../lib/alertLog'
 
 type Props = {
   sensorId: string
@@ -12,6 +20,9 @@ type Props = {
   notificationGroups: NotificationGroupStore
   notificationGroupId: string | null
   onNotificationGroupChange: (id: string | null) => void
+  /** いま連続で何回逸脱しているか（直近 readings から計算）。
+   *  「あと N 回でアラート発動」を表示するために使う。 */
+  deviationStreak?: DeviationStreak
 }
 
 const OFFLINE_PRESETS: { label: string; minutes: number }[] = [
@@ -44,6 +55,7 @@ export function SensorAlertSettings({
   notificationGroups,
   notificationGroupId,
   onNotificationGroupChange,
+  deviationStreak,
 }: Props) {
   function update<K extends keyof AlertSettings>(key: K, val: AlertSettings[K]) {
     onChange({ ...value, [key]: val })
@@ -133,6 +145,15 @@ export function SensorAlertSettings({
                 <span className="num-input-suffix">回</span>
               </div>
             </div>
+            {/* 「いまどうなってるか」をリアルタイムに表示。
+                逸脱判定が無効でも参考表示する（見えるだけで何もしない）。 */}
+            {deviationStreak && (
+              <DeviationStreakIndicator
+                streak={deviationStreak}
+                threshold={value.deviationConsecutiveCount}
+                enabled={value.deviationEnabled}
+              />
+            )}
           </fieldset>
 
           {/* Phase C: バッテリー残量アラート — 機種が取得可能なときのみ表示 */}
@@ -197,6 +218,51 @@ export function SensorAlertSettings({
       </section>
 
       {/* ========================================
+          1.5. 除外時間帯（営業時間外などアラートを止める時間）
+          ======================================== */}
+      <section className="panel-card alert-card">
+        <div className="panel-card-head">
+          <h2>
+            <Clock size={16} className="head-icon" />
+            アラートを止める時間帯
+          </h2>
+        </div>
+        <p className="muted in-panel small-hint">
+          ここで指定した時間帯は、選んだ種類のアラートを発生させません。
+          例: 飲食店の閉店中（22:00–08:00）の温度逸脱、食品工場の夜間の電波切れ
+          オフラインアラートなど。<strong>過去に発生したアラートは消えません</strong>
+          が、今後その時間帯に当てはまる事象では発火しなくなります。
+        </p>
+        <ExclusionWindowsEditor
+          windows={value.exclusionWindows ?? []}
+          onChange={(next) => update('exclusionWindows', next)}
+          showHeader={true}
+        />
+      </section>
+
+      {/* ========================================
+          1.6. 除外日（連休・修理期間などアラートを止める日付）
+          ======================================== */}
+      <section className="panel-card alert-card">
+        <div className="panel-card-head">
+          <h2>
+            <CalendarOff size={16} className="head-icon" />
+            アラートを止める日
+          </h2>
+        </div>
+        <p className="muted in-panel small-hint">
+          指定した日付範囲はアラートを発生させません。例: 年末年始の大型連休（12/29 〜 1/3）に
+          冷凍庫を停止、故障修理で 2〜3 日センサーを止める、棚卸しなど一時休止期間など。
+          範囲は <strong>両端の日付を含みます</strong>（1 日だけ止める場合は同じ日付を選ぶ）。
+        </p>
+        <ExclusionDatesEditor
+          dates={value.exclusionDates ?? []}
+          onChange={(next) => update('exclusionDates', next)}
+          showHeader={true}
+        />
+      </section>
+
+      {/* ========================================
           2. 通知設定（アラートログをどう通知するか）
           ======================================== */}
       <section className="panel-card alert-card">
@@ -244,5 +310,91 @@ export function SensorAlertSettings({
         </div>
       </section>
     </>
+  )
+}
+
+
+/* ====================================================================
+   現在の連続逸脱状態インジケータ
+   --------------------------------------------------------------------
+   「いま 2 回連続で逸脱しています。あと 1 回で発動します」のように、
+   設定値（deviationConsecutiveCount）と直近サンプルの実状を結びつけて
+   見せる。除外時間中は「除外時間中のため抑制中」も合わせて出す。
+   ==================================================================== */
+function DeviationStreakIndicator({
+  streak,
+  threshold,
+  enabled,
+}: {
+  streak: DeviationStreak
+  threshold: number
+  enabled: boolean
+}) {
+  // データなし
+  if (streak.latestLevel === null) {
+    return (
+      <div className="streak-indicator streak-empty">
+        まだ計測データがないため、現状を判定できません。
+      </div>
+    )
+  }
+  // 直近サンプルは正常
+  if (streak.count === 0) {
+    return (
+      <div className="streak-indicator streak-ok">
+        <span className="streak-icon">✓</span>
+        <span>直近のサンプルは正常範囲内です。</span>
+      </div>
+    )
+  }
+  const remaining = Math.max(0, threshold - streak.count)
+  const reached = streak.count >= threshold
+
+  // 除外時間中の場合のラベル
+  const suppressedSuffix = streak.suppressedByExclusion ? (
+    <span className="streak-suppressed">
+      （除外時間中のためこの連続はアラートを発動しません）
+    </span>
+  ) : null
+
+  if (reached) {
+    return (
+      <div
+        className={`streak-indicator streak-fired ${
+          streak.latestLevel === 'alert' ? 'is-alert' : 'is-warn'
+        }`}
+      >
+        <span className="streak-icon">●</span>
+        <span>
+          現在 <strong>{streak.count}</strong> 回連続で逸脱しています。
+          {enabled
+            ? '基準（' +
+              threshold +
+              ' 回）を満たしているためアラートが発動しています。'
+            : '（連続逸脱アラート OFF：ログには残りません）'}
+        </span>
+        {suppressedSuffix}
+      </div>
+    )
+  }
+  return (
+    <div
+      className={`streak-indicator streak-warn-up ${
+        streak.latestLevel === 'alert' ? 'is-alert' : 'is-warn'
+      }`}
+    >
+      <span className="streak-icon">▲</span>
+      <span>
+        現在 <strong>{streak.count}</strong> 回連続で逸脱中。
+        {enabled ? (
+          <>
+            あと <strong>{remaining}</strong> 回でアラートが発動します。
+          </>
+        ) : (
+          <>（連続逸脱アラート OFF）</>
+        )}
+      </span>
+      {suppressedSuffix}
+    </div>
   )
 }

@@ -42,6 +42,8 @@ type Props = {
   /** Phase 9.9: ユーザー定義区分（あれば「区分」コンボを表示） */
   categories?: SensorCategoryStore
   gateways?: GatewayStore
+  /** ゲートウェイの絞り込み欄を非表示にしたいビューで使う（例: アラート一覧） */
+  hideGatewayFilter?: boolean
 }
 
 export function SensorFilterPanel({
@@ -55,6 +57,7 @@ export function SensorFilterPanel({
   onDeleteSavedFilter,
   categories,
   gateways,
+  hideGatewayFilter = false,
 }: Props) {
   const [pendingDelete, setPendingDelete] = useState<SavedFilter | null>(null)
 
@@ -149,10 +152,10 @@ export function SensorFilterPanel({
     }
     return Object.values(gateways)
       .filter((g) => (counts.get(g.id) ?? 0) > 0)
-      .sort((a, b) => a.name.localeCompare(b.name))
+      .sort((a, b) => (a.name ?? a.id).localeCompare(b.name ?? b.id))
       .map((g) => ({
         value: g.id,
-        label: g.name,
+        label: g.name ?? g.id,
         count: counts.get(g.id) ?? 0,
       }))
   }, [gateways, sensors])
@@ -295,14 +298,16 @@ export function SensorFilterPanel({
           hideIfEmpty
         />
 
-        <MultiSelectCombo
-          label="ゲートウェイ"
-          leadingIcon={<RouterIcon size={12} />}
-          options={gatewayOptions}
-          selected={conditions.gatewayIds ?? []}
-          onChange={setGateways}
-          hideIfEmpty
-        />
+        {!hideGatewayFilter && (
+          <MultiSelectCombo
+            label="ゲートウェイ"
+            leadingIcon={<RouterIcon size={12} />}
+            options={gatewayOptions}
+            selected={conditions.gatewayIds ?? []}
+            onChange={setGateways}
+            hideIfEmpty
+          />
+        )}
 
         <MultiSelectCombo
           label="タグ"

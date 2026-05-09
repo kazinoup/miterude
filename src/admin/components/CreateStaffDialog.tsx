@@ -14,7 +14,7 @@ import {
   upsertUser,
 } from '../lib/adminStorage'
 import { toast } from '../../lib/toast'
-import type { AppUser } from '../../types'
+import type { AppUser, StaffCategory } from '../../types'
 
 type Props = {
   onClose: () => void
@@ -25,6 +25,7 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const [displayName, setDisplayName] = useState('')
   const [email, setEmail] = useState('')
+  const [staffCategory, setStaffCategory] = useState<StaffCategory>('support')
 
   useEffect(() => {
     const dlg = ref.current
@@ -65,6 +66,7 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
       email: trimmedEmail,
       displayName: trimmedName,
       systemRole: 'support',
+      staffCategory,
       createdAt: new Date(),
     }
     saveUsers(upsertUser(users, u))
@@ -125,6 +127,27 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
             />
             <p className="form-help">
               ロールは <code>support</code> 固定です。Clerk 統合後は招待メールでアカウントが発行されます。
+            </p>
+          </div>
+
+          <div className="form-row">
+            <label className="form-label" htmlFor="staff-category">
+              区分
+            </label>
+            <select
+              id="staff-category"
+              className="select"
+              value={staffCategory}
+              onChange={(e) =>
+                setStaffCategory(e.target.value as StaffCategory)
+              }
+            >
+              <option value="support">サポート</option>
+              <option value="sales">営業</option>
+            </select>
+            <p className="form-help">
+              権限はどちらも同じ（テナントへの impersonation 可）。
+              請求書事前通知の宛先候補や一覧表示の見分けに使います。
             </p>
           </div>
         </div>

@@ -30,6 +30,10 @@ type Props = {
   onChange: (next: TempHumidityThresholds | undefined) => void
   /** Phase 9.14: 適用候補にできる閾値テンプレート集 */
   templates: ThresholdTemplateStore
+  /** テンプレ「ピッカー UI（ボタン）」を隠す。
+   *  センサー詳細では上位のセンサー全体テンプレ読み込みカードがあるため、
+   *  閾値内の「テンプレートから読み込み」ボタンは出さない運用。 */
+  hideTemplatePicker?: boolean
 }
 
 /** ThresholdMetric が「ユーザの編集意図」（チェック ON）を持つか */
@@ -44,7 +48,12 @@ function buildPayload(
   return v
 }
 
-export function SensorThresholdSettings({ sensor, onChange, templates }: Props) {
+export function SensorThresholdSettings({
+  sensor,
+  onChange,
+  templates,
+  hideTemplatePicker,
+}: Props) {
   const isTempHumidity =
     sensor.kind === 'temperature-humidity' || sensor.kind === undefined
 
@@ -70,6 +79,9 @@ export function SensorThresholdSettings({ sensor, onChange, templates }: Props) 
   }
 
   function applyTemplate(t: ThresholdTemplate) {
+    // ボタンに出ているのはここでは「閾値だけ」を適用するルート。
+    // テンプレートに thresholds が含まれていなければ何もしない（UI 側でも非表示にしている）。
+    if (!t.thresholds) return
     if (t.thresholds.kind !== 'temperature-humidity') return
     // スナップショット適用: テンプレの値を deep clone してから保存
     const snapshot = cloneThresholds(t.thresholds) as TempHumidityThresholds
@@ -80,19 +92,28 @@ export function SensorThresholdSettings({ sensor, onChange, templates }: Props) 
     onChange(undefined)
   }
 
-  const applicableTemplates = Object.values(templates).filter((t) =>
-    isTemplateApplicableToKind(t, sensor.kind),
+  // 「閾値テンプレート」適用ボタンには、scope に thresholds を含んで
+  //  実際に値が入っているテンプレートだけを出す。
+  const applicableTemplates = Object.values(templates).filter(
+    (t) =>
+      isTemplateApplicableToKind(t, sensor.kind) &&
+      t.scope.thresholds &&
+      !!t.thresholds,
   )
 
   return (
     <div className="threshold-settings">
-      {/* 上部ツールバー: テンプレート適用 / クリア */}
-      <div className="threshold-settings-toolbar">
-        <TemplatePickerButton
-          templates={applicableTemplates}
-          onPick={applyTemplate}
-        />
-      </div>
+      {/* 上部ツールバー: テンプレート適用 / クリア。
+          hideTemplatePicker のときは外側にテンプレ読み込みカードがある前提で
+          このボタンは出さない（センサー詳細画面のレイアウト効率化のため）。 */}
+      {!hideTemplatePicker && (
+        <div className="threshold-settings-toolbar">
+          <TemplatePickerButton
+            templates={applicableTemplates}
+            onPick={applyTemplate}
+          />
+        </div>
+      )}
 
       <TempHumidityThresholdsEditor
         value={value}

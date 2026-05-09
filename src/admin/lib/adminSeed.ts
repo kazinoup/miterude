@@ -34,12 +34,17 @@ export const DEMO_SUPER_ADMIN_ID = 'user-super-admin-001'
 export const DEMO_EDITOR_ID = 'user-editor-001'
 export const DEMO_CONFIRMER_ID = 'user-confirmer-001'
 export const DEMO_SUPPORT_ID = 'user-support-001'
+export const DEMO_SALES_ID = 'user-sales-001'
 
 const LEGACY_STATE_KEY = 'miterude:state:v3'
-/** Phase A-5 で support スタッフのシードを追加するため v2 に bump。
- *  既存ユーザーの localStorage は idempotent な if-not-exists マージのみ走るため、
+/** Phase A-5 で support スタッフのシードを追加 → v2、
+ *  契約期限・決済手段・メンバーログイン項目を追加 → v3、
+ *  契約種別（買取 / サブスク）と ツクルデAI 連携フラグを追加 → v4、
+ *  contractType に 'demo' を追加し plan===demo を contractType===demo にマッピング → v5、
+ *  staffCategory(support/sales) と請求書事前通知設定を追加 → v6。
+ *  既存ユーザーの localStorage は idempotent マージ + 不足フィールドの補完のみ走るため、
  *  以前作ったテナント / メンバー / アサインメントは保持される。 */
-const SEED_FLAG_KEY = 'miterude:admin:seeded:v2'
+const SEED_FLAG_KEY = 'miterude:admin:seeded:v6'
 
 function nowFloor(): Date {
   // 日付だけ揃える（テストの差分が出にくいよう）
@@ -76,6 +81,15 @@ function buildDefaultUsers(): AppUser[] {
       email: 'support-demo@canbright.co.jp',
       displayName: '鈴木 サポート',
       systemRole: 'support',
+      staffCategory: 'support',
+      createdAt: now,
+    },
+    {
+      id: DEMO_SALES_ID,
+      email: 'sales-demo@canbright.co.jp',
+      displayName: '田中 営業',
+      systemRole: 'support',
+      staffCategory: 'sales',
       createdAt: now,
     },
   ]
@@ -83,13 +97,29 @@ function buildDefaultUsers(): AppUser[] {
 
 /** 既定のテナント（demo） */
 function buildDefaultOrgs(): Organization[] {
+  const now = nowFloor()
+  // 契約は今日開始 → 1 年後を期限の既定とする
+  const contractStartedAt = new Date(now)
+  const contractExpiresAt = new Date(now)
+  contractExpiresAt.setFullYear(contractExpiresAt.getFullYear() + 1)
   return [
     {
       id: DEMO_ORG_ID,
       name: 'CanBright（デモ組織）',
       slug: 'canbright-demo',
-      plan: 'demo',
-      createdAt: nowFloor(),
+      createdAt: now,
+      billingCycle: 'annual',
+      contractStartedAt,
+      contractExpiresAt,
+      paymentMethod: 'bank_transfer',
+      billingEmail: 'inoue@canbright.co.jp',
+      autoInvoice: true,
+      contractType: 'demo',
+      tsukurudeAiEnabled: false,
+      preNotifyDaysBefore: 3,
+      preNotifyRecipients: [
+        { kind: 'staff', userId: DEMO_SALES_ID },
+      ],
     },
   ]
 }
@@ -97,30 +127,41 @@ function buildDefaultOrgs(): Organization[] {
 /** 既定のメンバーシップ */
 function buildDefaultMembers(): OrganizationMember[] {
   const now = nowFloor()
+  // 招待 → 初回ログイン → 最終ログイン の典型的なタイムスタンプを擬似生成
+  const invited = new Date(now)
+  invited.setDate(invited.getDate() - 14)
+  const firstLogin = new Date(now)
+  firstLogin.setDate(firstLogin.getDate() - 12)
+  const lastLogin = new Date(now)
+  lastLogin.setHours(lastLogin.getHours() - 2)
   return [
     {
       id: 'member-demo-001',
       organizationId: DEMO_ORG_ID,
       userId: DEMO_SUPER_ADMIN_ID,
       role: 'editor',
-      invitedAt: now,
-      joinedAt: now,
+      invitedAt: invited,
+      firstLoginAt: firstLogin,
+      lastLoginAt: lastLogin,
     },
     {
       id: 'member-demo-002',
       organizationId: DEMO_ORG_ID,
       userId: DEMO_EDITOR_ID,
       role: 'editor',
-      invitedAt: now,
-      joinedAt: now,
+      invitedAt: invited,
+      firstLoginAt: firstLogin,
+      lastLoginAt: new Date(now.getTime() - 24 * 60 * 60 * 1000),
     },
     {
       id: 'member-demo-003',
       organizationId: DEMO_ORG_ID,
       userId: DEMO_CONFIRMER_ID,
       role: 'dashboard_confirmer',
-      invitedAt: now,
-      joinedAt: now,
+      invitedAt: invited,
+      // 確認者はまだ初回ログイン前を演出
+      firstLoginAt: undefined,
+      lastLoginAt: undefined,
     },
   ]
 }
@@ -149,21 +190,76 @@ export function ensureSeedData(): void {
   // 1) Users
   let users = loadUsers()
   for (const u of buildDefaultUsers()) {
-    if (!users[u.id]) users = upsertUser(users, u)
+    if (!users[u.id]) {
+      users = upsertUser(users, u)
+    } else {
+      // v5 → v6: 既存スタッフに staffCategory が無ければ補完
+      const existing = users[u.id]
+      if (u.staffCategory && !existing.staffCategory) {
+        users = upsertUser(users, {
+          ...existing,
+          staffCategory: u.staffCategory,
+        })
+      }
+    }
   }
   saveUsers(users)
 
   // 2) Organizations
   let orgs = loadOrganizations()
   for (const o of buildDefaultOrgs()) {
-    if (!orgs[o.id]) orgs = upsertOrganization(orgs, o)
+    if (!orgs[o.id]) {
+      orgs = upsertOrganization(orgs, o)
+    } else {
+      // v2 → v3: 契約系フィールドを補完。
+      // v3 → v4: 契約種別 / ツクルデAI フラグも補完。
+      // v4 → v5: 旧 plan === 'demo' は contractType === 'demo' に上書き（プラン統合）。
+      const existing = orgs[o.id]
+      const promoteDemo = existing.plan === 'demo'
+      const merged: Organization = {
+        ...existing,
+        billingCycle: existing.billingCycle ?? o.billingCycle,
+        contractStartedAt: existing.contractStartedAt ?? o.contractStartedAt,
+        contractExpiresAt: existing.contractExpiresAt ?? o.contractExpiresAt,
+        paymentMethod: existing.paymentMethod ?? o.paymentMethod,
+        billingEmail: existing.billingEmail ?? o.billingEmail,
+        autoInvoice: existing.autoInvoice ?? o.autoInvoice,
+        contractType: promoteDemo
+          ? 'demo'
+          : existing.contractType ?? o.contractType,
+        tsukurudeAiEnabled:
+          existing.tsukurudeAiEnabled ?? o.tsukurudeAiEnabled,
+        preNotifyDaysBefore:
+          existing.preNotifyDaysBefore ?? o.preNotifyDaysBefore,
+        preNotifyRecipients:
+          existing.preNotifyRecipients ?? o.preNotifyRecipients,
+      }
+      // 旧 plan は今後参照しないが、互換のため値は残しておく（型は deprecated）
+      orgs = upsertOrganization(orgs, merged)
+    }
   }
   saveOrganizations(orgs)
 
   // 3) Organization members
   let members = loadOrganizationMembers()
   for (const m of buildDefaultMembers()) {
-    if (!members[m.id]) members = upsertOrganizationMember(members, m)
+    if (!members[m.id]) {
+      members = upsertOrganizationMember(members, m)
+    } else {
+      // v2 → v3: joinedAt 廃止に伴い、firstLoginAt / lastLoginAt が無いメンバーへ既定値を補完。
+      // joinedAt が入っていた既存メンバーには、それを firstLoginAt と lastLoginAt の初期値として流用する
+      // （joinedAt 自体は型から消えても、未知フィールドとして localStorage 上には残る → 触らない）。
+      const existing = members[m.id] as OrganizationMember & { joinedAt?: Date | string }
+      const legacyJoined = existing.joinedAt ? new Date(existing.joinedAt) : undefined
+      const merged: OrganizationMember = {
+        ...existing,
+        firstLoginAt: existing.firstLoginAt ?? legacyJoined ?? m.firstLoginAt,
+        lastLoginAt: existing.lastLoginAt ?? legacyJoined ?? m.lastLoginAt,
+      }
+      // joinedAt キーは型から無くなったので明示的に削除
+      delete (merged as Record<string, unknown>).joinedAt
+      members = upsertOrganizationMember(members, merged)
+    }
   }
   saveOrganizationMembers(members)
 

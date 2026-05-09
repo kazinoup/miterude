@@ -1,15 +1,15 @@
 /**
  * アラートログ一覧画面 — Phase B / Phase 10 + 改訂
  *
- * 上部: 対象デバイス（SensorPicker）— レポート画面と同じ仕様
- * 下部: 絞り込みフィルタ（センサー画面と同じ FilterConditions ベース） +
- *       期間フィルタ + 種別フィルタ
+ * 絞り込みフィルタ（センサー画面と同じ FilterConditions ベース）+ 期間 + 種別。
  *
  * フィルタはすべて AND で評価される:
- *   - 対象デバイスに含まれる targetId のエントリのみ
  *   - そのエントリに紐付くセンサー / ゲートウェイが FilterConditions にマッチ
  *   - occurredAt が期間範囲内
  *   - kind が選択された種別に含まれる
+ *
+ * 「対象デバイス」を絞り込みたい場合は、下段の絞り込みパネル（センサー名／番号
+ * 検索 + 区分 / 状態 / グループ / タグ）で対応する。
  */
 import { useEffect, useMemo, useState } from 'react'
 import {
@@ -17,12 +17,12 @@ import {
   AlertOctagon,
   WifiOff,
   Battery,
-  ChevronLeft,
-  ChevronRight,
+  Cpu,
   Filter as FilterIcon,
-  CheckSquare,
+  Router as RouterIcon,
   Settings2,
 } from 'lucide-react'
+import { PaginationControls } from '../PaginationControls'
 import type {
   AlertLogEntry,
   AlertLogKind,
@@ -35,9 +35,8 @@ import type {
   SensorStore,
 } from '../../types'
 import { ALERT_LOG_KIND_LABELS } from '../../types'
-import { fromDateInputValue, toDateInputValue } from '../../lib/period'
+import { fromDateInputValue } from '../../lib/period'
 import { isEmptyConditions, sensorMatches } from '../../lib/groups'
-import { SensorPicker } from '../SensorPicker'
 import { SensorFilterPanel } from '../SensorFilterPanel'
 import { AlertColumnSettingsDialog } from '../AlertColumnSettingsDialog'
 import {
@@ -108,9 +107,6 @@ export function AlertsView({
   sensorCategories,
   savedFilters,
 }: Props) {
-  /** 対象デバイス（SensorPicker による明示選択）。空なら全件対象。 */
-  const [selectedDeviceIds, setSelectedDeviceIds] = useState<string[]>([])
-
   /** 下段フィルタ（センサー一覧と同じパターン） */
   const [conditions, setConditions] = useState<FilterConditions>({})
 
@@ -123,7 +119,8 @@ export function AlertsView({
   const [fromDate, setFromDate] = useState<string>('')
   const [toDate, setToDate] = useState<string>('')
 
-  const [page, setPage] = useState(0)
+  /** 1-based の現在ページ。PaginationControls が 1-based を期待するため。 */
+  const [page, setPage] = useState(1)
 
   /** 列の表示・並び順設定 */
   const [columnVisibility, setColumnVisibility] =
@@ -145,10 +142,24 @@ export function AlertsView({
   )
   const visibleColumns = columnOrder.filter((k) => columnVisibility[k])
 
+  /** 各列に当てる CSS クラス（列幅・nowrap 制御は CSS 側に集約）。 */
+  const columnClass: Partial<Record<AlertColumnKey, string>> = {
+    kind: 'col-kind',
+    deviceName: 'col-device-name',
+    deviceNumber: 'col-device-number',
+    message: 'col-message',
+    confirmComment: 'col-confirm',
+    category: 'col-category',
+    group: 'col-group',
+    tags: 'col-tags',
+    manufacturer: 'col-manufacturer',
+    model: 'col-model',
+  }
+
   // フィルタ条件が変わったら 1 ページ目に戻す
   useEffect(() => {
-    setPage(0)
-  }, [selectedDeviceIds, conditions, selectedKinds, fromDate, toDate])
+    setPage(1)
+  }, [conditions, selectedKinds, fromDate, toDate])
 
   // ワイド表示固定
   useEffect(() => {
@@ -159,14 +170,6 @@ export function AlertsView({
       el.classList.remove('is-wide')
     }
   }, [])
-
-  /** SensorPicker で「明示選択」されているデバイスの集合。
-   *  空なら全件（フィルタ条件のみ適用）。 */
-  const explicitTargetSet = useMemo(
-    () =>
-      selectedDeviceIds.length === 0 ? null : new Set(selectedDeviceIds),
-    [selectedDeviceIds],
-  )
 
   /** 下段フィルタ（センサー側の属性条件）にマッチするセンサー ID 集合。
    *  空条件なら null（すべて通す）。
@@ -195,9 +198,7 @@ export function AlertsView({
     const all = Object.values(alertLogs)
     return all
       .filter((e) => {
-        // 1) 対象デバイス（明示選択）
-        if (explicitTargetSet && !explicitTargetSet.has(e.targetId)) return false
-        // 2) センサー属性フィルタ（センサーターゲットのみ。ゲートウェイは
+        // 1) センサー属性フィルタ（センサーターゲットのみ。ゲートウェイは
         //    フィルタ条件に該当する属性が無いため、属性フィルタが空でない限り
         //    ゲートウェイエントリは除外する）
         if (conditionMatchedSensorIds) {
@@ -207,9 +208,9 @@ export function AlertsView({
             return false
           }
         }
-        // 3) 種別
+        // 2) 種別
         if (!selectedKinds.has(e.kind)) return false
-        // 4) 期間
+        // 3) 期間
         const t = entryTime(e)
         if (fromTs != null && t < fromTs) return false
         if (toTs != null && t >= toTs) return false
@@ -218,7 +219,6 @@ export function AlertsView({
       .sort((a, b) => entryTime(b) - entryTime(a))
   }, [
     alertLogs,
-    explicitTargetSet,
     conditionMatchedSensorIds,
     selectedKinds,
     fromDate,
@@ -226,10 +226,10 @@ export function AlertsView({
   ])
 
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
-  const pageIdx = Math.min(page, totalPages - 1)
+  const currentPage = Math.min(Math.max(1, page), totalPages)
   const pageEntries = filteredEntries.slice(
-    pageIdx * PAGE_SIZE,
-    (pageIdx + 1) * PAGE_SIZE,
+    (currentPage - 1) * PAGE_SIZE,
+    currentPage * PAGE_SIZE,
   )
 
   function toggleKind(k: AlertLogKind) {
@@ -242,7 +242,6 @@ export function AlertsView({
   }
 
   function clearAllFilters() {
-    setSelectedDeviceIds([])
     setConditions({})
     setSelectedKinds(new Set(KIND_ORDER))
     setFromDate('')
@@ -251,7 +250,6 @@ export function AlertsView({
 
   const totalCount = Object.keys(alertLogs).length
   const filterActive =
-    selectedDeviceIds.length > 0 ||
     !isEmptyConditions(conditions) ||
     selectedKinds.size < KIND_ORDER.length ||
     !!fromDate ||
@@ -281,30 +279,7 @@ export function AlertsView({
         </div>
       </header>
 
-      {/* ===== 上段: 対象デバイス（SensorPicker = レポート画面と同じ） ===== */}
-      <section className="panel-card">
-        <div className="panel-card-head">
-          <h2>
-            <CheckSquare size={16} className="head-icon" />
-            対象デバイス
-          </h2>
-          <span className="panel-card-meta">
-            {selectedDeviceIds.length === 0
-              ? 'すべてのデバイスを対象'
-              : `${selectedDeviceIds.length} 台選択中`}
-          </span>
-        </div>
-        <SensorPicker
-          candidateSensors={sensors}
-          selected={selectedDeviceIds}
-          onChange={setSelectedDeviceIds}
-          groups={sensorGroups}
-          categories={sensorCategories}
-          savedFilters={savedFilters}
-        />
-      </section>
-
-      {/* ===== 下段: 絞り込みフィルタ ===== */}
+      {/* ===== 絞り込みフィルタ ===== */}
       <section className="panel-card alerts-filter-card">
         <div className="panel-card-head">
           <h2>
@@ -336,11 +311,13 @@ export function AlertsView({
           savedFilters={savedFilters}
           conditions={conditions}
           onChange={setConditions}
+          hideGatewayFilter
         />
 
-        {/* 期間 + 種別 — アラートログ専用のフィルタ */}
-        <div className="alerts-extra-filters">
-          <div className="alerts-filter-block">
+        {/* 期間 + 種別 — アラートログ専用のフィルタ。
+            横並びで表示してスペースを有効活用する。 */}
+        <div className="alerts-extra-filters alerts-extra-filters-row">
+          <div className="alerts-filter-block alerts-filter-block-period">
             <h3 className="alerts-filter-label">期間</h3>
             <div className="alerts-period-row">
               <input
@@ -358,38 +335,10 @@ export function AlertsView({
                 onChange={(e) => setToDate(e.target.value)}
                 aria-label="期間 終了日"
               />
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  const today = new Date()
-                  const past = new Date(today)
-                  past.setDate(today.getDate() - 7)
-                  setFromDate(toDateInputValue(past))
-                  setToDate(toDateInputValue(today))
-                }}
-                title="直近 7 日"
-              >
-                7日
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => {
-                  const today = new Date()
-                  const past = new Date(today)
-                  past.setDate(today.getDate() - 30)
-                  setFromDate(toDateInputValue(past))
-                  setToDate(toDateInputValue(today))
-                }}
-                title="直近 30 日"
-              >
-                30日
-              </button>
             </div>
           </div>
 
-          <div className="alerts-filter-block">
+          <div className="alerts-filter-block alerts-filter-block-kinds">
             <h3 className="alerts-filter-label">種別（複数選択可）</h3>
             <div className="alerts-kind-chips">
               {KIND_ORDER.map((k) => {
@@ -415,6 +364,17 @@ export function AlertsView({
 
       {/* ===== グリッド（列カスタマイズ対応） ===== */}
       <section className="panel-card alerts-grid-card">
+        <div className="alerts-pagination-bar alerts-pagination-bar-top">
+          <PaginationControls
+            page={currentPage}
+            totalPages={totalPages}
+            pageSize={PAGE_SIZE}
+            filteredCount={filteredEntries.length}
+            totalCount={totalCount}
+            onSetPage={setPage}
+          />
+        </div>
+
         {pageEntries.length === 0 ? (
           <p className="muted in-panel">
             条件に一致するアラートはありません。
@@ -427,7 +387,11 @@ export function AlertsView({
                 {visibleColumns.map((key) => {
                   const def = ALERT_DEFS_MAP[key]
                   if (!def) return null
-                  return <th key={key}>{def.label}</th>
+                  return (
+                    <th key={key} className={columnClass[key]}>
+                      {def.label}
+                    </th>
+                  )
                 })}
               </tr>
             </thead>
@@ -442,80 +406,103 @@ export function AlertsView({
                     : undefined
                 const group =
                   sensor?.groupId ? sensorGroups[sensor.groupId] : undefined
+                const deviceName =
+                  sensors[e.targetId]?.name ??
+                  gateways[e.targetId]?.name ??
+                  e.targetId
+                const deviceNumber =
+                  e.sensorNumber ?? e.serialNumber ?? '—'
+                const TargetIcon = e.targetKind === 'sensor' ? Cpu : RouterIcon
+                const targetTitle =
+                  e.targetKind === 'sensor' ? 'センサー' : 'ゲートウェイ'
                 return (
                   <tr key={e.id}>
                     <td className="col-time">{formatDateTime(e.occurredAt)}</td>
                     {visibleColumns.map((key) => {
+                      const cls = columnClass[key]
                       switch (key) {
-                        case 'targetDevice':
-                          return (
-                            <td key={key}>
-                              <div className="alerts-target-cell">
-                                <span
-                                  className={`alerts-target-kind alerts-target-kind-${e.targetKind}`}
-                                >
-                                  {e.targetKind === 'sensor'
-                                    ? 'センサー'
-                                    : 'ゲートウェイ'}
-                                </span>
-                                <span className="alerts-target-cell-name">
-                                  {sensors[e.targetId]?.name ??
-                                    gateways[e.targetId]?.name ??
-                                    e.targetId}
-                                </span>
-                              </div>
-                            </td>
-                          )
                         case 'kind':
                           return (
-                            <td key={key}>
-                              <span
-                                className={`alert-kind-badge alert-kind-badge-${e.kind}`}
-                              >
+                            <td key={key} className={cls}>
+                              <span className="alert-kind-badge">
                                 <Icon size={11} strokeWidth={2.4} />
                                 {ALERT_LOG_KIND_LABELS[e.kind]}
                               </span>
                             </td>
                           )
+                        case 'deviceName':
+                          return (
+                            <td key={key} className={cls}>
+                              <div className="alerts-target-cell">
+                                <span
+                                  className="alerts-target-kind-icon"
+                                  title={targetTitle}
+                                  aria-label={targetTitle}
+                                >
+                                  <TargetIcon size={12} strokeWidth={2.2} />
+                                </span>
+                                <span
+                                  className="alerts-target-cell-name"
+                                  title={deviceName}
+                                >
+                                  {deviceName}
+                                </span>
+                              </div>
+                            </td>
+                          )
+                        case 'deviceNumber':
+                          return (
+                            <td key={key} className={cls}>
+                              <span className="mono">{deviceNumber}</span>
+                            </td>
+                          )
                         case 'message':
-                          return <td key={key}>{e.message}</td>
+                          return (
+                            <td key={key} className={cls} title={e.message}>
+                              {e.message}
+                            </td>
+                          )
+                        case 'confirmComment':
+                          return (
+                            <td
+                              key={key}
+                              className={`${cls ?? ''} cell-memo`}
+                              title={e.confirmComment || ''}
+                            >
+                              {e.confirmComment || '—'}
+                            </td>
+                          )
                         case 'category':
                           return (
-                            <td key={key}>
+                            <td key={key} className={cls}>
                               {category ? category.name : '—'}
                             </td>
                           )
                         case 'group':
                           return (
-                            <td key={key}>{group ? group.name : '—'}</td>
+                            <td key={key} className={cls}>
+                              {group ? group.name : '—'}
+                            </td>
                           )
                         case 'tags':
                           return (
-                            <td key={key}>
+                            <td key={key} className={cls}>
                               {sensor?.tags && sensor.tags.length > 0
                                 ? sensor.tags.join(', ')
                                 : '—'}
                             </td>
                           )
-                        case 'confirmComment':
-                          return (
-                            <td key={key} className="cell-memo">
-                              {e.confirmComment || '—'}
-                            </td>
-                          )
                         case 'manufacturer':
-                          return <td key={key}>{e.manufacturer}</td>
-                        case 'model':
-                          return <td key={key}>{e.model}</td>
-                        case 'serialNumber':
                           return (
-                            <td key={key}>
-                              <span className="mono">{e.serialNumber}</span>
+                            <td key={key} className={cls}>
+                              {e.manufacturer}
                             </td>
                           )
-                        case 'sensorNumber':
+                        case 'model':
                           return (
-                            <td key={key}>{e.sensorNumber ?? '—'}</td>
+                            <td key={key} className={cls}>
+                              {e.model}
+                            </td>
                           )
                         default:
                           return null
@@ -528,31 +515,16 @@ export function AlertsView({
           </table>
         )}
 
-        {filteredEntries.length > PAGE_SIZE && (
-          <div className="alerts-pagination">
-            <button
-              type="button"
-              className="icon-btn"
-              disabled={pageIdx === 0}
-              onClick={() => setPage((p) => Math.max(0, p - 1))}
-              aria-label="前のページ"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span className="alerts-pagination-info">
-              {pageIdx + 1} / {totalPages} ページ
-            </span>
-            <button
-              type="button"
-              className="icon-btn"
-              disabled={pageIdx >= totalPages - 1}
-              onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-              aria-label="次のページ"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        )}
+        <div className="alerts-pagination-bar alerts-pagination-bar-bottom">
+          <PaginationControls
+            page={currentPage}
+            totalPages={totalPages}
+            pageSize={PAGE_SIZE}
+            filteredCount={filteredEntries.length}
+            totalCount={totalCount}
+            onSetPage={setPage}
+          />
+        </div>
       </section>
 
       <AlertColumnSettingsDialog

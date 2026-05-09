@@ -84,7 +84,10 @@ export const LEGACY_DROPPED_INTEGRATION_IDS = [
   'mfr-elsys',
 ] as const
 
-/** 既知メーカーで初期エントリを生成（連携 OFF）。Milesight だけ初期 ON。 */
+/** 既知メーカーで初期エントリを生成。
+ *  「連携中 / 停止中」は `webhookSecret` の有無で判定する設計のため、
+ *  デモ表示として Milesight にだけシード Secret を入れる。
+ *  実運用では admin が MDP 上で発行された値を貼り付けて保存する。 */
 export function buildDefaultIntegrations(): ManufacturerIntegrationStore {
   const out: ManufacturerIntegrationStore = {}
   for (const m of DEFAULT_MANUFACTURERS) {
@@ -92,7 +95,6 @@ export function buildDefaultIntegrations(): ManufacturerIntegrationStore {
     out[id] = {
       id,
       manufacturer: m,
-      enabled: m === 'Milesight',
       webhookSecret:
         m === 'Milesight' ? hash16(`mfr-secret:${m}`).toLowerCase() : undefined,
       sensorKinds: ['temperature-humidity'],

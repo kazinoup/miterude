@@ -20,7 +20,6 @@ import { canEdit } from '../lib/permissions'
 type Props = {
   current: ViewKey
   onNavigate: (view: ViewKey) => void
-  sensorCount: number
   dashboards: DashboardStore
   activeDashboardId: string | null
   onSelectDashboard: (id: string) => void
@@ -80,7 +79,6 @@ function sortedDashboards(store: DashboardStore): Dashboard[] {
 export function Sidebar({
   current,
   onNavigate,
-  sensorCount,
   dashboards,
   activeDashboardId,
   onSelectDashboard,
@@ -150,14 +148,9 @@ export function Sidebar({
         })}
       </nav>
 
+      {/* sidebar-foot は flex 親で常に画面下端に固定（CSS 側で margin-top:auto +
+         position: sticky 相当の挙動。スクロールするのは sidebar-nav のみ）。 */}
       <div className="sidebar-foot">
-        <div className="device-counter">
-          <span className="counter-label">登録センサー</span>
-          <span className="counter-value">{sensorCount}</span>
-        </div>
-        <small className="sidebar-note">
-          データはブラウザ内のみで保持され、サーバーに送信されません。
-        </small>
         <UserMenu session={session} onSwitchContext={onSwitchContext} />
       </div>
     </aside>

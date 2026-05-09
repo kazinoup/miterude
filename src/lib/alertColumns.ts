@@ -5,17 +5,16 @@
  */
 
 export type AlertColumnKey =
-  | 'targetDevice' // 対象デバイス（名前 + 種別バッジ）
   | 'kind' // アラート種別（バッジ）
+  | 'deviceName' // デバイス名
+  | 'deviceNumber' // デバイス番号（センサー番号 or シリアル）
   | 'message' // 内容（説明文）
-  | 'category' // 区分（センサーターゲットのみ）
-  | 'group' // グループ（センサーターゲットのみ）
-  | 'tags' // タグ（センサーターゲットのみ）
   | 'confirmComment' // 確認メモ（ダッシュボード確認時に記録されるメモ）
+  | 'category' // 区分（センサーターゲットのみ）
+  | 'group' // グループ / 設置場所（センサーターゲットのみ）
+  | 'tags' // タグ（センサーターゲットのみ）
   | 'manufacturer' // メーカー
   | 'model' // モデル
-  | 'serialNumber' // シリアル番号
-  | 'sensorNumber' // センサー番号
 
 export type AlertColumnVisibility = Record<AlertColumnKey, boolean>
 
@@ -26,17 +25,24 @@ export type AlertColumnDef = {
   defaultVisible: boolean
 }
 
+/** 列の並びと既定の表示状態。「発生日時」は左端固定なのでこの配列には含めない。 */
 export const ALERT_COLUMN_DEFS: AlertColumnDef[] = [
   {
-    key: 'targetDevice',
-    label: '対象デバイス',
-    hint: 'センサー / ゲートウェイの名称と種別',
+    key: 'kind',
+    label: 'アラート種別',
+    hint: '逸脱（危険）/ 逸脱（注意）/ オフライン / バッテリー残量',
     defaultVisible: true,
   },
   {
-    key: 'kind',
-    label: '種別',
-    hint: '逸脱（危険）/ 逸脱（注意）/ オフライン / バッテリー残量',
+    key: 'deviceName',
+    label: 'デバイス名',
+    hint: 'センサー / ゲートウェイの名称',
+    defaultVisible: true,
+  },
+  {
+    key: 'deviceNumber',
+    label: 'デバイス番号',
+    hint: 'センサー番号 / シリアル番号',
     defaultVisible: true,
   },
   {
@@ -46,28 +52,28 @@ export const ALERT_COLUMN_DEFS: AlertColumnDef[] = [
     defaultVisible: true,
   },
   {
-    key: 'category',
-    label: '区分',
-    hint: 'センサー個別の区分（ターゲットがセンサー時のみ）',
+    key: 'confirmComment',
+    label: '確認メモ',
+    hint: 'ダッシュボード確認記録から連携されたメモ',
     defaultVisible: true,
   },
   {
+    key: 'category',
+    label: '区分',
+    hint: 'センサー個別の区分（ターゲットがセンサー時のみ）',
+    defaultVisible: false,
+  },
+  {
     key: 'group',
-    label: 'グループ',
-    hint: 'センサーが属するグループ',
-    defaultVisible: true,
+    label: 'グループ / 設置場所',
+    hint: 'センサーが属するグループ / 設置場所',
+    defaultVisible: false,
   },
   {
     key: 'tags',
     label: 'タグ',
     hint: 'センサーに付与されたタグ',
-    defaultVisible: true,
-  },
-  {
-    key: 'confirmComment',
-    label: '確認メモ',
-    hint: 'ダッシュボード確認記録から連携されたメモ',
-    defaultVisible: true,
+    defaultVisible: false,
   },
   {
     key: 'manufacturer',
@@ -79,20 +85,13 @@ export const ALERT_COLUMN_DEFS: AlertColumnDef[] = [
     label: 'モデル',
     defaultVisible: false,
   },
-  {
-    key: 'serialNumber',
-    label: 'シリアル番号',
-    defaultVisible: false,
-  },
-  {
-    key: 'sensorNumber',
-    label: 'センサー番号',
-    defaultVisible: false,
-  },
 ]
 
-const STORAGE_KEY = 'miterude:alerts:columns:v1'
-const ORDER_KEY = 'miterude:alerts:columnOrder:v1'
+/* v2: 列キー再編成（targetDevice → deviceName + deviceNumber、sensorNumber/serialNumber 廃止）に
+   伴い、旧キーが localStorage に残っていても読み込み側でフィルタされるよう
+   ストレージキーを更新。 */
+const STORAGE_KEY = 'miterude:alerts:columns:v2'
+const ORDER_KEY = 'miterude:alerts:columnOrder:v2'
 
 export function defaultColumnVisibility(): AlertColumnVisibility {
   const out = {} as AlertColumnVisibility

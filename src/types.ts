@@ -93,26 +93,67 @@ export type SensorThresholds =
  */
 export type DeviationLevel = 'alert' | 'warn' | 'normal' | null
 
-/* ---------- 閾値テンプレート (Phase 9.14) ----------
- *  「冷蔵 標準」「冷凍 標準」など、よく使う閾値の組み合わせを保存しておき、
- *  センサー一覧 / 詳細から呼び出して適用する。
+/* ---------- センサー設定テンプレート (Phase 9.14 → 拡張) ----------
+ *  「冷蔵 標準」「冷凍 標準」のような閾値プリセットから始まり、
+ *  4 種類の設定項目をまとめてパッケージ化できる仕組みに進化したもの。
+ *
+ *  パッケージ化対象（scope で個別に ON/OFF できる）:
+ *   1. thresholds       — 閾値判定（温度・湿度の上下限）
+ *   2. alertSettings    — アラート発生条件（オフライン / 連続逸脱 / バッテリー）
+ *   3. exclusions       — 除外時間帯 + 除外日（営業時間外、年末年始など）
+ *   4. notification     — 通知グループの紐付け
  *
  *  スナップショット方式: テンプレを適用すると値がコピーされ、その後
  *  テンプレを編集してもセンサー側には伝搬しない。再適用が必要。
- */
-export type ThresholdTemplate = {
+ *
+ *  古い `ThresholdTemplate` は `SensorSettingsTemplate` のエイリアスとして
+ *  残っているので、既存のコード（インポート / 画面構成）は壊れない。
+ *  load 時に scope が無いものは「scope = 閾値のみ」で読み込む（移行）。 */
+
+/** テンプレートで何を上書きするかの選択。ON のフィールドだけが適用される。 */
+export type SensorSettingsTemplateScope = {
+  thresholds: boolean
+  alertSettings: boolean
+  exclusions: boolean
+  notification: boolean
+}
+
+/** テンプレートが保持する「アラート発生条件」の値。
+ *  exclusion は別フィールドで持つので AlertSettings から除外する。 */
+export type AlertSettingsForTemplate = Omit<
+  AlertSettings,
+  'exclusionWindows' | 'exclusionDates'
+>
+
+/** センサー設定テンプレート本体。 */
+export type SensorSettingsTemplate = {
   id: string
   name: string
   description?: string
   /** 対象センサー種別（誤適用防止のために記録） */
   targetKind: SensorKind
-  /** スナップショット元の閾値。targetKind と整合する kind を持つ */
-  thresholds: SensorThresholds
+  /** どの項目を実際に適用するか。false の項目は対応する値があっても無視される。 */
+  scope: SensorSettingsTemplateScope
+  /** 閾値スナップショット（scope.thresholds=true のとき意味を持つ） */
+  thresholds?: SensorThresholds
+  /** アラート発生条件（scope.alertSettings=true のとき） */
+  alertSettings?: AlertSettingsForTemplate
+  /** 除外時間帯（scope.exclusions=true のとき）。時間帯と日付は同時に管理。 */
+  exclusionWindows?: AlertExclusionWindow[]
+  /** 除外日（scope.exclusions=true のとき） */
+  exclusionDates?: AlertExclusionDate[]
+  /** 通知グループ ID（scope.notification=true のとき）。null は「通知しない」 */
+  notificationGroupId?: string | null
   createdAt: Date
   updatedAt: Date
 }
 
-export type ThresholdTemplateStore = Record<string, ThresholdTemplate>
+export type SensorSettingsTemplateStore = Record<string, SensorSettingsTemplate>
+
+/** 後方互換用エイリアス。既存のインポート（ThresholdTemplate / ThresholdTemplateStore）を
+ *  そのまま動かすために残してある。新規コードでは SensorSettingsTemplate を使う。 */
+export type ThresholdTemplate = SensorSettingsTemplate
+export type ThresholdTemplateStore = SensorSettingsTemplateStore
 
 export type YearMonth = { year: number; month: number }
 
@@ -236,9 +277,14 @@ export type NotificationGroupStore = Record<string, NotificationGroup>
 export type ManufacturerIntegration = {
   id: string
   manufacturer: string
-  enabled: boolean
-  /** Webhook 受信用シークレット（モック表示用） */
+  /** Milesight 等の Webhook 受信ヘッダ `X-Webhook-Secret` と照合する値。
+   *  MDP 上で発行したものを admin が手で入力する（ミテルデ側で自動生成しない）。
+   *  この値の有無で「連携中 / 停止中」を判定する（独立した enabled フラグは持たない）。 */
   webhookSecret?: string
+  /** Milesight Application の Webhook UUID（例 `665e05dd-...`）。
+   *  受信検証の三段目（URL の org_id + secret + UUID 一致）と監査表示に使う。
+   *  MDP 上で自動発行されたものを admin が手で入力する。 */
+  webhookUuid?: string
   /** 取り扱うセンサー種別 */
   sensorKinds: SensorKind[]
   updatedAt: Date
@@ -376,6 +422,72 @@ export type NotifyChannels = {
   push: boolean
 }
 
+/** 曜日: 0=日曜 ... 6=土曜（JavaScript の `Date.prototype.getDay()` と同じ規約）。 */
+export type DayOfWeek = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+/** 除外時間帯で「どの種類のアラートを止めるか」。
+ *  空配列なら **全種別** を抑制（除外時間中は何も鳴らさない）。 */
+export type AlertExclusionTarget = 'deviation' | 'offline' | 'battery'
+
+/** アラート発火を抑制する時間窓。
+ *
+ *  ユースケース:
+ *   - 飲食店: 営業時間外（夜間〜早朝）は冷蔵庫の電源を切るため、温度逸脱で
+ *     毎晩アラートが鳴ってしまう。閉店中は鳴らしたくない。
+ *   - 食品工場: 夜間は鉄扉を閉める運用で電波が通らないことがあり、
+ *     その時間帯のオフラインアラートを抑制したい。
+ *
+ *  仕様:
+ *   - `startTime` / `endTime` は "HH:MM"（24h）。
+ *   - `startTime > endTime` のときは **日跨ぎ**（例: 22:00 → 08:00）として扱う。
+ *   - `daysOfWeek` が空配列なら毎日適用。
+ *   - 日跨ぎ時の曜日判定は **窓の開始日** を基準にする
+ *     （22:00→08:00 で月曜日チェック → 月曜の 22:00 から火曜の 08:00 まで抑制）。
+ *   - `targets` が空配列なら全アラート種別を抑制。
+ */
+export type AlertExclusionWindow = {
+  id: string
+  /** 表示用ラベル（任意。例: "営業時間外", "夜間メンテ" 等） */
+  label?: string
+  /** 有効化トグル。一時的に止めたいときに OFF にできる。 */
+  enabled: boolean
+  /** "HH:MM" 24h */
+  startTime: string
+  /** "HH:MM" 24h */
+  endTime: string
+  /** 適用する曜日。空配列なら毎日。 */
+  daysOfWeek: DayOfWeek[]
+  /** 抑制対象のアラート種別。空配列なら全種別。 */
+  targets: AlertExclusionTarget[]
+}
+
+/** 特定の日付範囲でアラートを止める設定。
+ *
+ *  ユースケース:
+ *   - 年末年始の大型連休中に冷蔵庫・冷凍庫を停止
+ *   - 故障修理のため数日センサー停止予定
+ *   - 棚卸しなどで一時的にデバイスを動かさない期間
+ *
+ *  仕様:
+ *   - `startDate` / `endDate` は "YYYY-MM-DD"。
+ *   - `endDate >= startDate` を要求。1 日だけの場合は両方同じ日。
+ *   - 範囲は **両端を含む**（startDate 00:00:00 〜 endDate 23:59:59）。
+ *   - `targets` が空配列なら全アラート種別を抑制。
+ */
+export type AlertExclusionDate = {
+  id: string
+  /** 表示用ラベル（任意。例: "年末年始", "メンテナンス" 等） */
+  label?: string
+  /** 有効化トグル */
+  enabled: boolean
+  /** "YYYY-MM-DD" */
+  startDate: string
+  /** "YYYY-MM-DD"（startDate 以上） */
+  endDate: string
+  /** 抑制対象のアラート種別。空配列なら全種別。 */
+  targets: AlertExclusionTarget[]
+}
+
 /** アラート設定（センサーごとに保持） */
 export type AlertSettings = {
   /** オフライン通知の有効化 */
@@ -394,61 +506,168 @@ export type AlertSettings = {
   batteryEnabled?: boolean
   /** バッテリー残量の閾値 (%)。これを下回ったらアラートを送る。既定 10。 */
   batteryThresholdPercent?: number
+  /** Phase: 除外時間帯。指定範囲内ではアラートを発火しない。
+   *  古いデータでは undefined → 除外なし。 */
+  exclusionWindows?: AlertExclusionWindow[]
+  /** Phase: 除外日（年末年始や故障修理期間など、特定日付の抑制）。
+   *  古いデータでは undefined → 除外なし。 */
+  exclusionDates?: AlertExclusionDate[]
 }
 
-/** センサー（IoT デバイス）のメタデータ */
-export type Sensor = {
-  /** CSV ファイル名（拡張子除く）= デバイスID（不変。表示名は name を優先） */
+/* ============================================================
+   Phase F-4 (Block D): デバイステーブル統合
+   --------------------------------------------------------------
+   センサーとゲートウェイを 1 つの「Device」マスターに統合し、
+   それぞれの固有プロパティは別テーブル（SensorProps / GatewayProps）に
+   分離する Class Table Inheritance パターン。
+
+   永続化は 3 つのマップで行う（lib/storage.ts）:
+     - DeviceStore        : 共通プロパティ（マスター）
+     - SensorPropsStore   : センサー固有
+     - GatewayPropsStore  : ゲートウェイ固有
+
+   UI 側は JOIN 済みの Sensor / Gateway 型をそのまま受け取る
+   （生成は lib/devices.ts の selector で行う）。
+   ============================================================ */
+
+/** デバイスの大区分。model から決定し、ユーザーは変更できない。 */
+export type DeviceType = 'sensor' | 'gateway'
+
+/** センサーの具体的な役割（model から決定）。 */
+export type SensorRole =
+  | 'temperature-humidity'
+  | 'temperature'
+  | 'current'
+  | 'co2'
+  | 'pressure'
+  | 'door'
+  | 'other'
+
+/** ゲートウェイの具体的な役割。 */
+export type GatewayRole = 'master' | 'relay'
+
+export type DeviceRole = SensorRole | GatewayRole
+
+export const SENSOR_ROLE_LABELS: Record<SensorRole, string> = {
+  'temperature-humidity': '温湿度',
+  temperature: '温度',
+  current: '電流',
+  co2: 'CO2',
+  pressure: '圧力',
+  door: '扉開閉',
+  other: 'その他',
+}
+
+export const GATEWAY_ROLE_LABELS: Record<GatewayRole, string> = {
+  master: '親機',
+  relay: '中継機',
+}
+
+/** デバイスマスター（共通プロパティ）。
+ *  外部識別（メーカー決定・不変）と表示・分類（ユーザー編集可）と
+ *  システム管理情報を持つ。固有のセンサー値や閾値などは
+ *  SensorProps / GatewayProps に格納する。 */
+export type DeviceBase = {
+  /** システムが採番する内部 PK（不変） */
   id: string
-  /** 表示名（任意。未設定なら id を表示。基本情報画面で編集可） */
-  name?: string
-  /** 一覧表示用の連番（DV-001 形式） */
-  deviceNumber: string
-  /** 16桁 HEX 大文字（例: 6785F03951170020） */
-  serialNumber: string
-  /** モデル名（例: EM320-TH） */
-  model: string
-  /** メーカー名（例: Milesight） */
+
+  /* ---------- 外部識別（メーカー決定、不変） ---------- */
+  /** 大区分。model から決定 */
+  deviceType: DeviceType
+  /** 具体的な役割（温湿度 / 電流 / 親機 / 中継機 など）。model から決定 */
+  role: DeviceRole
+  /** メーカー名（例: 'Milesight'） */
   manufacturer: string
-  /** 接続先ゲートウェイID */
-  gatewayId: string
+  /** モデル名（例: 'EM320-TH', 'AM102'） */
+  model: string
+  /** メーカー発行の一意キー。Webhook 受信時の照合に使う。
+   *  値の中身はメーカーごとに異なる（Milesight: devEUI、その他: serialNumber 等）。
+   *  一意性は (manufacturer, externalKey) で保証する想定。 */
+  externalKey: string
+  /** 製造シリアル（参考表示用） */
+  serialNumber: string
+  /** LoRaWAN 識別子（参考表示用、無いメーカーもある） */
+  devEUI?: string
+
+  /* ---------- 表示・分類（ユーザー運用上設定） ---------- */
+  /** 表示名 */
+  name?: string
+  /** 運用ラベル（例: 'DV-001', '厨房-冷凍-01'） */
+  deviceNumber: string
+  /** 運用区分（冷凍 / 冷蔵 / 室温 など）。役割（role）とは別概念。 */
+  categoryId?: string | null
+  /** 物理グループ / 設置場所 */
+  groupId?: string | null
+  /** 自由タグ */
+  tags?: string[]
+  /** 通知グループID */
+  notificationGroupId?: string | null
+
+  /* ---------- システム管理（自動更新） ---------- */
+  online: boolean
+  lastSeenAt?: Date
+  registeredAt: Date
+}
+
+/** センサー固有プロパティ。マップキー = device.id。 */
+export type SensorProps = {
+  /** 個別の逸脱判定閾値 */
+  thresholds?: SensorThresholds
   /** バッテリー残量（0-100） */
   battery: number
-  /** オンライン状態（最終受信から24時間以内なら true） */
-  online: boolean
-  /** 最終受信日時 */
-  lastSeenAt: Date
-  /** 登録日時（モック上での「初回認識日時」） */
-  registeredAt: Date
-  /** アラート設定 */
+  /** 接続先ゲートウェイの device.id */
+  gatewayId: string
+  /** アラート設定（deviation/offline/battery） */
   alertSettings: AlertSettings
-  /** センサー種別（既存データは 'temperature-humidity' とみなす） */
-  kind?: SensorKind
-  /** 通知グループID（紐付けがあれば、その設定で通知を行う） */
-  notificationGroupId?: string | null
-  /** Phase 9.5: 物理グループID（1階層、未所属は null）*/
-  groupId?: string | null
-  /** Phase 9.5: 自由タグ（小文字正規化、複数付与可）*/
-  tags?: string[]
-  /** Phase 9.9: ユーザー定義区分ID（1:1、未設定は null） */
-  categoryId?: string | null
-  /** Phase 9.11: センサー個別の逸脱判定閾値。未設定なら判定なし。 */
-  thresholds?: SensorThresholds
 }
+
+/** デバイスマスターのストア。
+ *  既存の `DeviceStore`（= センサー読み取り値のストア）との混同を避けるため
+ *  `DeviceBaseStore` という名前にしている。 */
+export type DeviceBaseStore = Record<string, DeviceBase>
+export type SensorPropsStore = Record<string, SensorProps>
+
+/** UI 用の JOIN ビュー。
+ *  既存コードはこの型を受け取り続ける。生成は lib/devices.ts の selector。
+ *  後方互換のため `kind` は role と同義のエイリアスとして併設。 */
+export type Sensor = DeviceBase &
+  SensorProps & {
+    deviceType: 'sensor'
+    role: SensorRole
+    /** @deprecated role と同義。徐々に role に置換。 */
+    kind?: SensorKind
+  }
 
 export type SensorStore = Record<string, Sensor>
 
-/** ゲートウェイ（親機） */
-export type Gateway = {
-  id: string
-  name: string
-  serialNumber: string
-  model: string
-  manufacturer: string
-  /** 設置場所のメモ（例: 1F、厨房など） */
-  location: string
-  registeredAt: Date
+/** ゲートウェイ専用のアラート設定。
+ *  ゲートウェイには温湿度の閾値判定もバッテリー残量もないため、
+ *  オフライン通知だけが発火条件として有効。 */
+export type GatewayAlertSettings = {
+  offlineEnabled: boolean
+  offlineThresholdMinutes: number
+  notifyChannels: NotifyChannels
+  exclusionWindows?: AlertExclusionWindow[]
+  exclusionDates?: AlertExclusionDate[]
 }
+
+/** ゲートウェイ固有プロパティ。マップキー = device.id。 */
+export type GatewayProps = {
+  /** アラート設定（offline のみ） */
+  alertSettings: GatewayAlertSettings
+}
+
+export type GatewayPropsStore = Record<string, GatewayProps>
+
+/** UI 用の JOIN ビュー。生成は lib/devices.ts の selector。
+ *  後方互換のため `location` を残す（旧 location は groupId に移行する想定）。 */
+export type Gateway = DeviceBase &
+  GatewayProps & {
+    deviceType: 'gateway'
+    role: GatewayRole
+    /** @deprecated 旧 location フィールド。groupId に移行予定。 */
+    location?: string
+  }
 
 export type GatewayStore = Record<string, Gateway>
 
@@ -669,7 +888,7 @@ export const ALERT_LOG_KIND_LABELS: Record<AlertLogKind, string> = {
   'deviation-alert': '逸脱（危険）',
   'deviation-warn': '逸脱（注意）',
   offline: 'オフライン',
-  battery: 'バッテリー残量',
+  battery: 'バッテリー',
 }
 
 export type AlertLogTargetKind = 'sensor' | 'gateway'
@@ -777,6 +996,11 @@ export type DashboardReminderStore = Record<string, DashboardReminder>
  *  null = 顧客ユーザー。 */
 export type SystemRole = 'super_admin' | 'support'
 
+/** スタッフ区分（systemRole='support' のユーザを表示上だけ細分化）。
+ *  権限は両方ともテナントへの impersonation 可だが、表示と請求事前通知の
+ *  運用区別のために使う。未設定 = 'support' として扱う。 */
+export type StaffCategory = 'support' | 'sales'
+
 /** テナント内ロール（顧客側でのロール）。 */
 export type TenantRole = 'editor' | 'dashboard_confirmer'
 
@@ -789,21 +1013,142 @@ export type AppUser = {
   displayName: string
   /** 運営側スタッフのロール。null = 顧客 */
   systemRole?: SystemRole
+  /** systemRole='support' のときの細分化（'support' or 'sales'）。
+   *  営業担当 = 'sales' を選んでおくと、請求書の事前通知の宛先候補に出やすくなる。 */
+  staffCategory?: StaffCategory
   createdAt: Date
 }
 
 export type AppUserStore = Record<string, AppUser>
 
-/** 組織（テナント） */
+/** 請求サイクル（年契約 / 月契約） */
+export type BillingCycle = 'monthly' | 'annual'
+
+/** 決済手段 */
+export type PaymentMethod = 'bank_transfer' | 'credit_card'
+
+/** 契約種別:
+ *  - demo         デモ: 検証用テナント（料金は発生しない）
+ *  - subscription サブスクプラン: デバイス代込みの月額継続プラン
+ *  - purchase     買取プラン: デバイス代を初回一括、その後はランニング費のみ
+ *  - typeless     タイプレス: 既存「タイプレス」サービスからの移行・統合契約 */
+export type ContractType = 'demo' | 'subscription' | 'purchase' | 'typeless'
+
+/** 請求書事前通知の宛先（営業担当・サポート・任意メールを混在可）。 */
+export type InvoiceNotifyRecipient =
+  | { kind: 'staff'; userId: string }
+  | { kind: 'email'; email: string }
+
+/** 組織（テナント）
+ *
+ *  注: `plan` は旧フィールド（demo/standard/enterprise）。Phase A-4 後半で
+ *  `contractType` に統合したため、新規 UI では参照しない。互換性のため
+ *  optional + 残存（既存 localStorage を読み出すときに型エラーを起こさない）。 */
 export type Organization = {
   id: string
   name: string
   slug: string
-  plan: 'demo' | 'standard' | 'enterprise'
+  /** @deprecated Phase A-4 後半: contractType に統合。新規 UI では参照しない。 */
+  plan?: 'demo' | 'standard' | 'enterprise'
   createdAt: Date
+
+  /** 請求サイクル（既定: annual）。Phase A-4 後半で追加。 */
+  billingCycle?: BillingCycle
+  /** 契約開始日 */
+  contractStartedAt?: Date
+  /** 契約終了日（次の更新日でもある）。
+   *  monthly なら契約日の 1 ヶ月後、annual なら 1 年後を既定値とする運用。 */
+  contractExpiresAt?: Date
+
+  /** 決済手段（既定: bank_transfer）。実決済は Phase D 以降で Stripe 等を統合。 */
+  paymentMethod?: PaymentMethod
+  /** 請求書送付先メール（bank_transfer の請求書自動送信に使う） */
+  billingEmail?: string
+  /** bank_transfer のとき請求書を自動でメール送信するか */
+  autoInvoice?: boolean
+
+  /** 契約種別（デモ / サブスク / 買取）。既定: subscription */
+  contractType?: ContractType
+  /** ツクルデAI 連携の有無 */
+  tsukurudeAiEnabled?: boolean
+  /** 移行モード（既存システムからの一括 CSV インポート用）。
+   *  startedAt がセットされ、finishedAt が未セットの間だけ
+   *  Admin Console の移行 CSV インポートパネルが表示される。 */
+  migrationMode?: {
+    startedAt: Date
+    finishedAt?: Date
+  }
+
+  /** 請求書を顧客へ送る何日前に営業担当へ事前通知するか（既定 3）。
+   *  paymentMethod='bank_transfer' かつ autoInvoice=true のときだけ意味を持つ。 */
+  preNotifyDaysBefore?: number
+  /** 事前通知の宛先（営業担当 / サポート / 任意メール）。複数可。 */
+  preNotifyRecipients?: InvoiceNotifyRecipient[]
+
+  /* ---------- Stripe 連携（クレジット決済用） ----------
+   * カード情報の保管・課金実行は Stripe 側に完全委譲する設計。
+   * ミテルデが持つのは Stripe 上の顧客 ID（cus_xxx）のみで、表示用に
+   * カードのブランド / 末尾 4 桁などをキャッシュする（Webhook で同期）。
+   * 顧客のカード番号 / CVC は当方サーバを 1 度も通さない（PCI scope 外）。 */
+  /** Stripe Customer ID（例: `cus_PAB123...`）。クレジット契約時のみ */
+  stripeCustomerId?: string
+  /** 既定の支払い方法 ID（pm_xxx）。Stripe Customer Portal で変更されると Webhook で同期 */
+  stripePaymentMethodId?: string
+  /** 表示用キャッシュ: 'visa' / 'mastercard' / 'amex' / 'jcb' 等 */
+  cardBrand?: string
+  /** 表示用キャッシュ: カード末尾 4 桁 */
+  cardLast4?: string
+  /** 表示用キャッシュ: 有効期限 */
+  cardExpMonth?: number
+  cardExpYear?: number
 }
 
 export type OrganizationStore = Record<string, Organization>
+
+/* ---------- 請求書 / 領収書 (Phase: 銀行振込フロー) ----------
+ * 銀行振込テナント向けの請求書管理。クレジット決済の領収書は Stripe Customer
+ * Portal 側で確認できるため、ここには載せない。
+ *
+ * フロー:
+ *   1. 自動生成（請求月 1 日の N 日前）→ status='confirming' で営業担当へ事前通知
+ *   2. 営業担当が確認して「OK」→ status='sent' に遷移、顧客 PDF 送付
+ *   3. 入金確認 → status='paid'（領収書 PDF 発行）
+ */
+export type InvoiceStatus =
+  | 'confirming'  // 営業担当の確認待ち（顧客には未送付）
+  | 'sent'        // 顧客に発行済み（入金待ち）
+  | 'paid'        // 入金完了 / 領収書あり
+  | 'overdue'     // 期日超過（未入金）
+  | 'cancelled'
+
+export type Invoice = {
+  id: string
+  organizationId: string
+  /** 表示用の番号（"INV-2026-05-001" 等） */
+  invoiceNumber: string
+  /** 対象期間（"2026-05" or "2026-05 〜 2027-04"） */
+  periodLabel: string
+  /** 発行日（status='sent' に遷移した日時） */
+  issuedAt?: Date
+  /** 支払期日 */
+  dueAt?: Date
+  /** 入金完了日（領収書発行日） */
+  paidAt?: Date
+  /** 金額（税込・JPY） */
+  amountJpy: number
+  /** 内訳の人間読み出し（"年間サブスク + センサー × 30 台" 等） */
+  description?: string
+  status: InvoiceStatus
+  /** 請求書 PDF（status='sent' 以降で生成）。実際は S3 等の署名 URL */
+  invoicePdfUrl?: string
+  /** 領収書 PDF（status='paid' 以降で生成） */
+  receiptPdfUrl?: string
+  /** モック用: 営業担当の OK アクション履歴 */
+  approvedByUserId?: string
+  approvedAt?: Date
+}
+
+export type InvoiceStore = Record<string, Invoice>
 
 /** 組織メンバーシップ（多対多） */
 export type OrganizationMember = {
@@ -811,8 +1156,12 @@ export type OrganizationMember = {
   organizationId: string
   userId: string
   role: TenantRole
+  /** 招待日（招待を出した日時） */
   invitedAt: Date
-  joinedAt?: Date
+  /** 初回ログイン日時。未ログイン時は undefined */
+  firstLoginAt?: Date
+  /** 最終ログイン日時。未ログイン時は undefined */
+  lastLoginAt?: Date
 }
 
 export type OrganizationMemberStore = Record<string, OrganizationMember>

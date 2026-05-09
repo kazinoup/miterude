@@ -9,8 +9,12 @@ import type {
   DashboardCheckinStore,
   DashboardReminderStore,
   DashboardStore,
+  DeviceBaseStore,
   DeviceStore,
+  GatewayPropsStore,
   GatewayStore,
+  InvoiceStore,
+  ManufacturerIntegration,
   ManufacturerIntegrationStore,
   NotificationGroupStore,
   ReportScheduleStore,
@@ -18,10 +22,11 @@ import type {
   SensorCategoryStore,
   SensorGroupStore,
   SensorNoteStore,
+  SensorPropsStore,
   SensorStore,
   ThresholdTemplateStore,
 } from '../types'
-import { defaultAlertSettings, ensureDate } from './mock'
+import { defaultAlertSettings, defaultGatewayAlertSettings, ensureDate } from './mock'
 import {
   buildDefaultIntegrations,
   LEGACY_DROPPED_INTEGRATION_IDS,
@@ -30,17 +35,41 @@ import {
 import {
   buildDefaultCategories,
   defaultCategoryIdForKind,
+  LEGACY_GATEWAY_CATEGORY_IDS,
 } from './categories'
-import { buildDefaultTemplates } from './thresholdTemplates'
+import { buildDefaultTemplates, migrateTemplate } from './thresholdTemplates'
 import { collectYearMonths, inferStorageKind } from './report'
+import {
+  externalKeyFieldFor,
+  inferDeviceRoleFromModel,
+} from './supportedDevices'
+import type { DeviceBase, GatewayRole, SensorRole } from '../types'
+import {
+  selectGateways,
+  selectSensors,
+  splitGateway,
+  splitSensor,
+} from './devices'
 
 /** 旧グローバル単一テナント用キー（Phase A-1 でテナント別に移行済）。
  *  ensureSeedData() で demo 組織の tenantStateKey() にコピーされる。 */
 const KEY = 'miterude:state:v3'
 
-/** テナント別の永続化キー。Phase A-1 から導入。
- *  loadState / saveState がこの形式で読み書きする。 */
+/** テナント別の永続化キー。
+ *  v5 → v6 (Phase F-4 D-2) で sensors / gateways を 3 ストア
+ *  (deviceMaster / sensorProps / gatewayProps) に物理分離した。 */
 function tenantKey(organizationId: string): string {
+  return `miterude:tenant:${organizationId}:state:v6`
+}
+
+/** v5 以前のテナントキー（読み込み時にあれば移行して削除）。 */
+function legacyTenantKeyV5(organizationId: string): string {
+  return `miterude:tenant:${organizationId}:state:v5`
+}
+
+/** v4 以前のテナントキー。v5 時代の loadState で吸収済みだが、
+ *  v6 直行ケースでも一応見ておく（最後の保険）。 */
+function legacyTenantKeyV4(organizationId: string): string {
   return `miterude:tenant:${organizationId}:state:v4`
 }
 
@@ -120,10 +149,38 @@ function migrateThresholds(
 /** v2 以前のキー（読み込み時に存在すれば破棄して v3 に切り替え） */
 const LEGACY_KEYS = ['miterude:state:v2', 'miterude:state:v1']
 
-export type PersistedState = {
+/** v5 までの古いシェイプ。loadState の中だけで使う中間型。
+ *  v5 → v6 の変換が終われば不要になる。 */
+type PersistedStateV5 = {
   devices: DeviceStore
   sensors: SensorStore
   gateways: GatewayStore
+  dashboards?: DashboardStore
+  activeDashboardId?: string | null
+  notificationGroups?: NotificationGroupStore
+  manufacturerIntegrations?: ManufacturerIntegrationStore
+  checkins?: DashboardCheckinStore
+  sensorNotes?: SensorNoteStore
+  sensorGroups?: SensorGroupStore
+  savedFilters?: SavedFilterStore
+  sensorCategories?: SensorCategoryStore
+  thresholdTemplates?: ThresholdTemplateStore
+  alertLogs?: AlertLogStore
+  reportSchedules?: ReportScheduleStore
+  dashboardReminders?: DashboardReminderStore
+  invoices?: InvoiceStore
+}
+
+/** v6 以降の正式シェイプ。デバイスマスター + 固有プロパティを物理分離。 */
+export type PersistedState = {
+  /** 計測値ストア（旧名 DeviceStore のまま、Record<deviceId, SensorReading[]>） */
+  devices: DeviceStore
+  /** Phase F-4 D-2: デバイスマスター（共通プロパティ） */
+  deviceMaster: DeviceBaseStore
+  /** Phase F-4 D-2: センサー固有プロパティ */
+  sensorProps: SensorPropsStore
+  /** Phase F-4 D-2: ゲートウェイ固有プロパティ */
+  gatewayProps: GatewayPropsStore
   /** Phase 5 で追加。古いデータでは undefined */
   dashboards?: DashboardStore
   /** 現在表示中のダッシュボードID */
@@ -147,6 +204,8 @@ export type PersistedState = {
   reportSchedules?: ReportScheduleStore
   /** Phase G: ダッシュボード確認リマインド */
   dashboardReminders?: DashboardReminderStore
+  /** 銀行振込テナント向けの請求書履歴。クレジット決済の請求は Stripe 側で管理。 */
+  invoices?: InvoiceStore
 }
 
 const DATE_MARKER = '__d'
@@ -182,6 +241,131 @@ export function saveState(state: PersistedState, organizationId: string): void {
   }
 }
 
+/* ---------- Phase F-4 D-2: v5 ⇔ v6 形式変換 ---------- */
+
+/** v5 (sensors+gateways の 1 マップ) → v6 (deviceMaster + sensorProps + gatewayProps) に展開。
+ *  既存の Sensor / Gateway が JOIN 済みフィールドを持っているので、
+ *  splitSensor / splitGateway でマスター + 固有プロパティに分解する。 */
+function convertV5ToV6(v5: PersistedStateV5): PersistedState {
+  const deviceMaster: DeviceBaseStore = {}
+  const sensorProps: SensorPropsStore = {}
+  const gatewayProps: GatewayPropsStore = {}
+
+  for (const id of Object.keys(v5.sensors ?? {})) {
+    const s = v5.sensors[id]
+    if (!s) continue
+    const { base, props } = splitSensor(s)
+    deviceMaster[id] = base
+    sensorProps[id] = props
+  }
+  for (const id of Object.keys(v5.gateways ?? {})) {
+    const g = v5.gateways[id]
+    if (!g) continue
+    const { base, props } = splitGateway(g)
+    deviceMaster[id] = base
+    gatewayProps[id] = props
+  }
+
+  // sensors / gateways 以外のフィールドはそのまま引き継ぐ
+  const {
+    // 旧シェイプ専用フィールドは捨てる
+    sensors: _sensors,
+    gateways: _gateways,
+    ...rest
+  } = v5
+  void _sensors
+  void _gateways
+  return { ...rest, deviceMaster, sensorProps, gatewayProps }
+}
+
+/** v6 → v5 形式（loadState の中で旧マイグレーションパイプラインに通すための内部変換）。
+ *  loadState は内部的に v5 シェイプで処理してから convertV5ToV6 で出力する。 */
+function v6ToV5InternalShape(v6: PersistedState): PersistedStateV5 {
+  const sensors = selectSensors(v6.deviceMaster, v6.sensorProps)
+  const gateways = selectGateways(v6.deviceMaster, v6.gatewayProps)
+  const {
+    deviceMaster: _dm,
+    sensorProps: _sp,
+    gatewayProps: _gp,
+    ...rest
+  } = v6
+  void _dm
+  void _sp
+  void _gp
+  return { ...rest, sensors, gateways }
+}
+
+/** v6 シェイプかどうかを判定する型ガード。 */
+function isV6Shape(parsed: unknown): parsed is PersistedState {
+  if (!parsed || typeof parsed !== 'object') return false
+  const p = parsed as Record<string, unknown>
+  return typeof p.deviceMaster === 'object' && p.deviceMaster !== null
+}
+
+/* ---------- Backward-compat: 旧 state.sensors / state.gateways ヘルパ ----------
+ *  既存の admin / webhook 受信コードは state.sensors / state.gateways を直接参照
+ *  していたため、3-store 化後の PersistedState に対しても同じ感覚で扱える
+ *  「ビュー取得 + 一括書き戻し」のヘルパを提供する。 */
+
+/** PersistedState からセンサーの JOIN ビューを取得 */
+export function sensorsFromState(state: PersistedState): SensorStore {
+  return selectSensors(state.deviceMaster, state.sensorProps)
+}
+
+/** PersistedState からゲートウェイの JOIN ビューを取得 */
+export function gatewaysFromState(state: PersistedState): GatewayStore {
+  return selectGateways(state.deviceMaster, state.gatewayProps)
+}
+
+/** 新しい SensorStore を PersistedState に書き戻す。
+ *  （旧コードの `saveState({ ...state, sensors: newSensors })` の置き換え） */
+export function withSensors(
+  state: PersistedState,
+  nextSensors: SensorStore,
+): PersistedState {
+  const deviceMaster: DeviceBaseStore = { ...state.deviceMaster }
+  const sensorProps: SensorPropsStore = { ...state.sensorProps }
+  // 削除されたセンサーを deviceMaster / sensorProps から落とす
+  for (const id of Object.keys(deviceMaster)) {
+    const base = deviceMaster[id] as DeviceBase | undefined
+    if (base?.deviceType === 'sensor' && !nextSensors[id]) {
+      delete deviceMaster[id]
+      delete sensorProps[id]
+    }
+  }
+  // 追加・更新されたセンサーを反映
+  for (const id of Object.keys(nextSensors)) {
+    const s = nextSensors[id]
+    const { base, props } = splitSensor(s)
+    deviceMaster[id] = base
+    sensorProps[id] = props
+  }
+  return { ...state, deviceMaster, sensorProps }
+}
+
+/** 新しい GatewayStore を PersistedState に書き戻す */
+export function withGateways(
+  state: PersistedState,
+  nextGateways: GatewayStore,
+): PersistedState {
+  const deviceMaster: DeviceBaseStore = { ...state.deviceMaster }
+  const gatewayProps: GatewayPropsStore = { ...state.gatewayProps }
+  for (const id of Object.keys(deviceMaster)) {
+    const base = deviceMaster[id] as DeviceBase | undefined
+    if (base?.deviceType === 'gateway' && !nextGateways[id]) {
+      delete deviceMaster[id]
+      delete gatewayProps[id]
+    }
+  }
+  for (const id of Object.keys(nextGateways)) {
+    const g = nextGateways[id]
+    const { base, props } = splitGateway(g)
+    deviceMaster[id] = base
+    gatewayProps[id] = props
+  }
+  return { ...state, deviceMaster, gatewayProps }
+}
+
 export function loadState(organizationId: string): PersistedState | null {
   try {
     // v2 以前のキーは Phase 9 で互換性を切るため削除
@@ -194,12 +378,31 @@ export function loadState(organizationId: string): PersistedState | null {
         }
       }
     }
-    // テナント別キーを優先、なければ旧グローバルキー（フォールバック）
-    const raw =
-      localStorage.getItem(tenantKey(organizationId)) ??
-      localStorage.getItem(KEY)
+    // テナント別キー（v6）を優先、なければ v5 → v4 → グローバル旧キーの順でフォールバック
+    const v6Key = tenantKey(organizationId)
+    const v5Key = legacyTenantKeyV5(organizationId)
+    const v4Key = legacyTenantKeyV4(organizationId)
+    let raw = localStorage.getItem(v6Key)
+    let needsLegacyMigration = false
+    if (!raw) {
+      raw = localStorage.getItem(v5Key)
+      if (raw) needsLegacyMigration = true
+    }
+    if (!raw) {
+      raw = localStorage.getItem(v4Key)
+      if (raw) needsLegacyMigration = true
+    }
+    if (!raw) raw = localStorage.getItem(KEY)
     if (!raw) return null
-    const parsed = JSON.parse(raw, reviver) as PersistedState
+    const parsedRaw = JSON.parse(raw, reviver) as unknown
+    // v6 シェイプで保存されていれば、内部処理用に v5 シェイプへ展開してから
+    // 既存マイグレーションパイプラインに通す（最終的に v6 で返す）。
+    let parsed: PersistedStateV5
+    if (isV6Shape(parsedRaw)) {
+      parsed = v6ToV5InternalShape(parsedRaw)
+    } else {
+      parsed = parsedRaw as PersistedStateV5
+    }
     // 互換性チェック：必須フィールドが揃っているか
     if (
       !parsed ||
@@ -228,7 +431,57 @@ export function loadState(organizationId: string): PersistedState | null {
     }
     for (const id of Object.keys(parsed.gateways)) {
       const g = parsed.gateways[id]
-      if (g) g.registeredAt = ensureDate(g.registeredAt)
+      if (!g) continue
+      g.registeredAt = ensureDate(g.registeredAt)
+      // Phase F-3: Gateway 拡張フィールドの補完
+      if (g.lastSeenAt) g.lastSeenAt = ensureDate(g.lastSeenAt)
+      if (typeof g.online !== 'boolean') g.online = true
+      if (g.deviceNumber == null) g.deviceNumber = g.id
+      if (!('groupId' in g)) g.groupId = null
+      if (!Array.isArray(g.tags)) g.tags = []
+      if (!('notificationGroupId' in g)) g.notificationGroupId = null
+
+      // Phase F-4: deviceType / role / externalKey を補完
+      g.deviceType = 'gateway'
+
+      // role: 旧 categoryId（親機 / 中継機）があればそれを優先、なければモデルから推定
+      let role: GatewayRole | undefined
+      if (g.categoryId === LEGACY_GATEWAY_CATEGORY_IDS.master) role = 'master'
+      else if (g.categoryId === LEGACY_GATEWAY_CATEGORY_IDS.relay) role = 'relay'
+      if (!role) {
+        role = (inferDeviceRoleFromModel(g.model ?? '') as GatewayRole | undefined) ?? 'master'
+      }
+      g.role = role
+
+      // 旧 親機/中継機 categoryId はもう role に格納したのでクリア
+      if (
+        g.categoryId === LEGACY_GATEWAY_CATEGORY_IDS.master ||
+        g.categoryId === LEGACY_GATEWAY_CATEGORY_IDS.relay
+      ) {
+        g.categoryId = null
+      }
+
+      // externalKey: メーカーごとの規約に従う（Milesight: devEUI, それ以外: serialNumber）
+      if (!g.externalKey) {
+        const keyField = externalKeyFieldFor(g.manufacturer ?? '')
+        g.externalKey =
+          keyField === 'devEUI'
+            ? g.devEUI || g.serialNumber || g.id
+            : g.serialNumber || g.id
+      }
+
+      // alertSettings は既定（オフラインのみ）で補う
+      if (!g.alertSettings) {
+        g.alertSettings = defaultGatewayAlertSettings()
+      } else {
+        if (!g.alertSettings.notifyChannels) {
+          g.alertSettings.notifyChannels = {
+            email: true,
+            slack: false,
+            push: false,
+          }
+        }
+      }
     }
 
     // マイグレーション: alertSettings が無い古いセンサーに既定値を補う
@@ -253,8 +506,23 @@ export function loadState(organizationId: string): PersistedState | null {
               ? baseAlert.batteryThresholdPercent
               : 10,
         }
+        // Phase F-4: deviceType / role / externalKey を補完
+        const inferredRole =
+          (inferDeviceRoleFromModel(s.model ?? '') as SensorRole | undefined) ??
+          (s.kind as SensorRole | undefined) ??
+          'temperature-humidity'
+        const keyField = externalKeyFieldFor(s.manufacturer ?? '')
+        const externalKey =
+          s.externalKey ??
+          (keyField === 'devEUI'
+            ? s.devEUI || s.serialNumber || s.id
+            : s.serialNumber || s.id)
+
         parsed.sensors[id] = {
           ...s,
+          deviceType: 'sensor',
+          role: inferredRole,
+          externalKey,
           alertSettings: mergedAlert,
           kind: s.kind ?? 'temperature-humidity',
           notificationGroupId: s.notificationGroupId ?? null,
@@ -296,23 +564,29 @@ export function loadState(organizationId: string): PersistedState | null {
         if (m) m.updatedAt = ensureDate(m.updatedAt)
       }
       // 旧バージョンの既定エントリ（Dragino, SenseCAP, Elsys）を片付ける。
-      // ユーザーが触っていなければ（OFF かつシークレット無し）削除。
+      // ユーザーが触っていなければ（シークレット無し）削除。
       for (const id of LEGACY_DROPPED_INTEGRATION_IDS) {
         const i = parsed.manufacturerIntegrations[id]
-        if (i && !i.enabled && !i.webhookSecret) {
+        if (i && !i.webhookSecret) {
           delete parsed.manufacturerIntegrations[id]
         }
       }
-      // IoT Mobile が無ければ追加
+      // IoT Mobile が無ければ追加（連携状態は webhookSecret の有無で判定する設計）
       const iotId = manufacturerIntegrationId('IoT Mobile')
       if (!parsed.manufacturerIntegrations[iotId]) {
         parsed.manufacturerIntegrations[iotId] = {
           id: iotId,
           manufacturer: 'IoT Mobile',
-          enabled: false,
           sensorKinds: ['temperature-humidity'],
           updatedAt: new Date(),
         }
+      }
+      // 旧データの enabled フィールドが残っていたら除去（型から消えたため）
+      for (const id of Object.keys(parsed.manufacturerIntegrations)) {
+        const m = parsed.manufacturerIntegrations[id] as
+          | (ManufacturerIntegration & { enabled?: unknown })
+          | undefined
+        if (m && 'enabled' in m) delete (m as { enabled?: unknown }).enabled
       }
     }
     // ダッシュボードフィールド未設定なら空オブジェクト
@@ -415,6 +689,10 @@ export function loadState(organizationId: string): PersistedState | null {
           c.updatedAt = ensureDate(c.updatedAt)
         }
       }
+      // Phase F-4: 旧「親機 / 中継機」区分は role に移行したので削除する。
+      // システム配置の擬似カテゴリだったので、ユーザー編集とは見なさず安全に消せる。
+      delete parsed.sensorCategories[LEGACY_GATEWAY_CATEGORY_IDS.master]
+      delete parsed.sensorCategories[LEGACY_GATEWAY_CATEGORY_IDS.relay]
       // ストアが空ならデフォルトを投入
       if (Object.keys(parsed.sensorCategories).length === 0) {
         parsed.sensorCategories = buildDefaultCategories()
@@ -461,13 +739,23 @@ export function loadState(organizationId: string): PersistedState | null {
           t.createdAt = ensureDate(t.createdAt)
           t.updatedAt = ensureDate(t.updatedAt)
           // テンプレート内の thresholds も旧形式→新形式に変換。
-          //  変換不能（破損）なら、テンプレ自体を破棄する。
-          const migrated = migrateThresholds(t.thresholds)
-          if (!migrated) {
-            delete parsed.thresholdTemplates[id]
-            continue
+          //  変換不能（破損）でも、scope.thresholds=true でなければ続行する。
+          if (t.thresholds) {
+            const migrated = migrateThresholds(t.thresholds)
+            if (migrated) {
+              t.thresholds = migrated
+            } else {
+              // 閾値が破損していて scope.thresholds=true なら、
+              //  そのテンプレ全体は使い物にならないので破棄。
+              if (!t.scope || t.scope.thresholds) {
+                delete parsed.thresholdTemplates[id]
+                continue
+              }
+              t.thresholds = undefined
+            }
           }
-          t.thresholds = migrated
+          // scope なし（旧データ）→ scope = { thresholds: true } を補完
+          parsed.thresholdTemplates[id] = migrateTemplate(t)
         }
       }
       // ストアが空ならデフォルトを投入（後方互換）
@@ -514,7 +802,21 @@ export function loadState(organizationId: string): PersistedState | null {
       }
     }
 
-    return parsed
+    // Phase F-4 D-2: 全マイグレーション完了後、内部 v5 シェイプを v6 シェイプに変換して返す
+    const result = convertV5ToV6(parsed)
+
+    // 旧キー（v5/v4）から読み込んだ場合は v6 シェイプで保存し直し、旧キーを削除
+    if (needsLegacyMigration) {
+      try {
+        saveState(result, organizationId)
+        localStorage.removeItem(v5Key)
+        localStorage.removeItem(v4Key)
+      } catch (e) {
+        console.warn('[miterude] legacy → v6 migration save failed:', e)
+      }
+    }
+
+    return result
   } catch (e) {
     console.warn('[miterude] state load failed:', e)
     return null

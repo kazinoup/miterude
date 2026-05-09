@@ -25,6 +25,7 @@ import {
   getThresholdForMetric,
   isMetricDeviationEnabled,
 } from './report'
+import { isAlertSuppressed } from './alertExclusion'
 
 /** 同一日時 (秒精度) × ターゲット × 種別 × metric は重複と見做す。 */
 function entryDedupKey(e: AlertLogEntry): string {
@@ -110,7 +111,9 @@ function describeDeviation(
 }
 
 /** センサーの 1 サンプルから、逸脱（危険／注意）のアラートを 0〜2 件生成。
- *  温度・湿度それぞれを判定する。 */
+ *  温度・湿度それぞれを判定する。
+ *  測定時刻が `alertSettings.exclusionWindows` のいずれかに該当する場合は
+ *  抑制（飲食店の閉店中、工場の夜間扉閉めなどに使う）。 */
 export function judgeReadingForAlerts(
   sensor: Sensor,
   reading: SensorReading,
@@ -118,6 +121,10 @@ export function judgeReadingForAlerts(
   const entries: AlertLogEntry[] = []
   const t = sensor.thresholds
   if (!t) return entries
+
+  // 除外時間帯チェック（逸脱アラートのみ）
+  if (isAlertSuppressed(reading.measuredAt, sensor.alertSettings, 'deviation'))
+    return entries
 
   const target = snapshotSensorTarget(sensor)
 
@@ -143,7 +150,8 @@ export function judgeReadingForAlerts(
 }
 
 /** バッテリー残量低下を判定（Phase C 用）。
- *  reading.battery が threshold% を下回ったら battery アラートを 1 件返す。 */
+ *  reading.battery が threshold% を下回ったら battery アラートを 1 件返す。
+ *  測定時刻が除外時間帯に該当する場合は抑制。 */
 export function judgeBatteryForAlerts(
   sensor: Sensor,
   reading: SensorReading,
@@ -151,6 +159,8 @@ export function judgeBatteryForAlerts(
 ): AlertLogEntry[] {
   if (typeof reading.battery !== 'number') return []
   if (reading.battery >= thresholdPercent) return []
+  if (isAlertSuppressed(reading.measuredAt, sensor.alertSettings, 'battery'))
+    return []
   return [
     {
       id: nextEntryId(),
@@ -164,7 +174,8 @@ export function judgeBatteryForAlerts(
   ]
 }
 
-/** オンライン→オフラインへの遷移を 1 件のオフラインアラートとして記録。 */
+/** オンライン→オフラインへの遷移を 1 件のオフラインアラートとして記録。
+ *  発生時刻が除外時間帯に該当する場合は抑制（夜間扉閉めなど）。 */
 export function judgeOfflineTransitionAlert(
   sensor: Sensor,
   prevOnline: boolean,
@@ -172,6 +183,7 @@ export function judgeOfflineTransitionAlert(
 ): AlertLogEntry[] {
   if (prevOnline === sensor.online) return []
   if (sensor.online) return [] // online → offline のみ記録
+  if (isAlertSuppressed(now, sensor.alertSettings, 'offline')) return []
   return [
     {
       id: nextEntryId(),
@@ -209,6 +221,98 @@ function formatDateTimeJp(d: Date | string | null | undefined): string {
   const hh = String(dd.getHours()).padStart(2, '0')
   const mm = String(dd.getMinutes()).padStart(2, '0')
   return `${y}/${m}/${day} ${hh}:${mm}`
+}
+
+/* ---------- 連続逸脱の "今" を可視化するヘルパ ---------- */
+
+/** 「いまこのセンサーは連続で何回逸脱しているか」を表す状態。
+ *  センサー詳細のアラート設定パネルで「あと何回でアラート発動か」を
+ *  即時表示するために使う。 */
+export type DeviationStreak = {
+  /** 直近サンプルから何回連続で逸脱しているか。0 = 直近サンプルは正常 */
+  count: number
+  /** 連続逸脱の起点 measuredAt（count > 0 のとき）*/
+  since?: Date
+  /** 直近サンプルの逸脱レベル */
+  latestLevel: 'alert' | 'warn' | 'normal' | null
+  /** 直近サンプルの時刻が除外時間帯に当たっている */
+  suppressedByExclusion: boolean
+  /** 直近サンプル時刻 */
+  latestAt?: Date
+}
+
+/** 直近のサンプルから遡って連続逸脱回数を数える。
+ *
+ *  `readings` は時系列順（古い順 or 新しい順どちらでも構わない、内部でソート）。
+ *  thresholds 未設定や readings が空の場合は count=0 を返す。 */
+export function computeCurrentDeviationStreak(
+  sensor: Sensor,
+  readings: SensorReading[],
+): DeviationStreak {
+  const empty: DeviationStreak = {
+    count: 0,
+    latestLevel: null,
+    suppressedByExclusion: false,
+  }
+  const t = sensor.thresholds
+  if (!t || readings.length === 0) return empty
+  // 新しい順に並べる
+  const sorted = [...readings].sort((a, b) => {
+    const ta =
+      a.measuredAt instanceof Date
+        ? a.measuredAt.getTime()
+        : new Date(a.measuredAt as unknown as string).getTime()
+    const tb =
+      b.measuredAt instanceof Date
+        ? b.measuredAt.getTime()
+        : new Date(b.measuredAt as unknown as string).getTime()
+    return tb - ta
+  })
+
+  let count = 0
+  let since: Date | undefined
+  let latestLevel: DeviationStreak['latestLevel'] = null
+  let suppressedByExclusion = false
+  const latestAt =
+    sorted[0].measuredAt instanceof Date
+      ? sorted[0].measuredAt
+      : new Date(sorted[0].measuredAt as unknown as string)
+
+  for (let i = 0; i < sorted.length; i++) {
+    const r = sorted[i]
+    const tempDev = cellIsDeviation(r.temperature, 'temperature', t)
+    const humDev = cellIsDeviation(r.humidity, 'humidity', t)
+    const isDev = tempDev || humDev
+
+    if (i === 0) {
+      if (!isDev) {
+        return { ...empty, latestLevel: 'normal', latestAt }
+      }
+      // alert（赤）優先で判定。どちらか alert なら alert。
+      const tempLevel = evaluateMetricLevel(r.temperature, 'temperature', t)
+      const humLevel = evaluateMetricLevel(r.humidity, 'humidity', t)
+      latestLevel =
+        tempLevel === 'alert' || humLevel === 'alert' ? 'alert' : 'warn'
+      const measuredAt =
+        r.measuredAt instanceof Date
+          ? r.measuredAt
+          : new Date(r.measuredAt as unknown as string)
+      suppressedByExclusion = isAlertSuppressed(
+        measuredAt,
+        sensor.alertSettings,
+        'deviation',
+      )
+    }
+
+    if (!isDev) break
+    count++
+    since =
+      r.measuredAt instanceof Date
+        ? r.measuredAt
+        : new Date(r.measuredAt as unknown as string)
+  }
+
+  return { count, since, latestLevel, suppressedByExclusion, latestAt }
 }
 
 /** Sensor の readings 配列を一括判定して、逸脱アラートをまとめて返す。 */

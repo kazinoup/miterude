@@ -17,7 +17,12 @@ import {
   upsertOrganization,
 } from '../lib/adminStorage'
 import { toast } from '../../lib/toast'
-import type { Organization } from '../../types'
+import type {
+  BillingCycle,
+  ContractType,
+  Organization,
+  PaymentMethod,
+} from '../../types'
 
 type Props = {
   onClose: () => void
@@ -42,7 +47,12 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState('')
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
-  const [plan, setPlan] = useState<Organization['plan']>('demo')
+  const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual')
+  const [paymentMethod, setPaymentMethod] =
+    useState<PaymentMethod>('bank_transfer')
+  const [contractType, setContractType] =
+    useState<ContractType>('subscription')
+  const [tsukurudeAi, setTsukurudeAi] = useState(false)
 
   useEffect(() => {
     const dlg = ref.current
@@ -81,13 +91,28 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
       return
     }
 
+    // 契約期間の既定: 開始 = 今日、終了 = サイクルに応じて 1 ヶ月 / 1 年後
+    const startedAt = new Date()
+    const expiresAt = new Date(startedAt)
+    if (billingCycle === 'annual') {
+      expiresAt.setFullYear(expiresAt.getFullYear() + 1)
+    } else {
+      expiresAt.setMonth(expiresAt.getMonth() + 1)
+    }
+
     const id = newId('org')
     const org: Organization = {
       id,
       name: trimmedName,
       slug: trimmedSlug,
-      plan,
-      createdAt: new Date(),
+      createdAt: startedAt,
+      billingCycle,
+      contractStartedAt: startedAt,
+      contractExpiresAt: expiresAt,
+      paymentMethod,
+      autoInvoice: paymentMethod === 'bank_transfer',
+      contractType,
+      tsukurudeAiEnabled: tsukurudeAi,
     }
     saveOrganizations(upsertOrganization(orgs, org))
     toast(`テナント「${trimmedName}」を作成しました`, 'success')
@@ -155,19 +180,78 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
           </div>
 
           <div className="form-row">
-            <label className="form-label" htmlFor="tenant-plan">
-              プラン
+            <label className="form-label" htmlFor="tenant-contract-type">
+              契約種別
             </label>
             <select
-              id="tenant-plan"
+              id="tenant-contract-type"
               className="select"
-              value={plan}
-              onChange={(e) => setPlan(e.target.value as Organization['plan'])}
+              value={contractType}
+              onChange={(e) =>
+                setContractType(e.target.value as ContractType)
+              }
             >
-              <option value="demo">デモ</option>
-              <option value="standard">スタンダード</option>
-              <option value="enterprise">エンタープライズ</option>
+              <option value="subscription">
+                サブスクプラン（デバイス代込み・月額継続）
+              </option>
+              <option value="purchase">
+                買取プラン（デバイス代を初回一括）
+              </option>
+              <option value="typeless">
+                タイプレス（既存サービスからの移行・統合契約）
+              </option>
+              <option value="demo">デモ（料金なし・検証用）</option>
             </select>
+          </div>
+
+          <div className="form-row">
+            <label className="form-label">ツクルデAI 連携</label>
+            <label className="form-checkbox">
+              <input
+                type="checkbox"
+                checked={tsukurudeAi}
+                onChange={(e) => setTsukurudeAi(e.target.checked)}
+              />
+              <span>このテナントはツクルデAIと連携している</span>
+            </label>
+          </div>
+
+          <div className="form-row">
+            <label className="form-label" htmlFor="tenant-cycle">
+              請求サイクル
+            </label>
+            <select
+              id="tenant-cycle"
+              className="select"
+              value={billingCycle}
+              onChange={(e) => setBillingCycle(e.target.value as BillingCycle)}
+            >
+              <option value="annual">年契約（既定）</option>
+              <option value="monthly">月契約</option>
+            </select>
+            <p className="form-help">
+              契約期限は今日からサイクル分（年契約なら 1 年）後に自動セット。後で詳細画面から変更可。
+            </p>
+          </div>
+
+          <div className="form-row">
+            <label className="form-label" htmlFor="tenant-payment">
+              決済手段
+            </label>
+            <select
+              id="tenant-payment"
+              className="select"
+              value={paymentMethod}
+              onChange={(e) =>
+                setPaymentMethod(e.target.value as PaymentMethod)
+              }
+            >
+              <option value="bank_transfer">銀行振込（既定）</option>
+              <option value="credit_card">クレジットカード</option>
+            </select>
+            <p className="form-help">
+              銀行振込なら請求書自動送信を ON で作成（送付先メールは詳細画面で設定）。
+            </p>
           </div>
         </div>
 

@@ -16,7 +16,12 @@ import {
   loadUsers,
 } from '../lib/adminStorage'
 
-type Props = Record<string, never>
+type Props = {
+  /** 指定があれば、その組織に対する操作だけに固定で絞り込む（テナント詳細タブから再利用） */
+  fixedOrganizationId?: string
+  /** 余白などをコンパクトにしたい場合（タブ内描画用） */
+  compact?: boolean
+}
 
 /** action 種別 → 日本語ラベル + 色クラス。未知のものはそのまま表示。 */
 const ACTION_META: Record<
@@ -82,7 +87,10 @@ function summarizeMetadata(
   return parts.length > 0 ? parts.join(' ・ ') : '—'
 }
 
-export function AdminAuditView(_: Props) {
+export function AdminAuditView({
+  fixedOrganizationId,
+  compact = false,
+}: Props) {
   const [actionFilter, setActionFilter] = useState('')
   const [search, setSearch] = useState('')
   const [orgFilter, setOrgFilter] = useState('')
@@ -92,6 +100,9 @@ export function AdminAuditView(_: Props) {
     const users = loadUsers()
     const orgs = loadOrganizations()
     const all = Object.values(logs)
+      .filter((l) =>
+        fixedOrganizationId ? l.organizationId === fixedOrganizationId : true,
+      )
       .map((l) => {
         const actor = users[l.staffUserId]
         const org = l.organizationId ? orgs[l.organizationId] : null
@@ -109,7 +120,7 @@ export function AdminAuditView(_: Props) {
         return bt - at
       })
     return { rows: all, totalCount: all.length }
-  }, [])
+  }, [fixedOrganizationId])
 
   const orgOptions = useMemo(() => {
     const set = new Set<string>()
@@ -137,19 +148,21 @@ export function AdminAuditView(_: Props) {
   }, [rows, actionFilter, orgFilter, search])
 
   return (
-    <div className="admin-view">
-      <header className="admin-view-header">
-        <div className="admin-view-header-text">
-          <h1 className="admin-view-title">
-            <History size={20} />
-            <span>監査ログ</span>
-          </h1>
-          <p className="admin-view-sub">
-            スタッフによる割り当て付与・取消、テナント閲覧（impersonation）の操作履歴です。
-            Phase F 以降は Webhook 受信や設定変更もここに記録します。
-          </p>
-        </div>
-      </header>
+    <div className={`admin-view ${compact ? 'admin-view-compact' : ''}`}>
+      {!compact && (
+        <header className="admin-view-header">
+          <div className="admin-view-header-text">
+            <h1 className="admin-view-title">
+              <History size={20} />
+              <span>監査ログ</span>
+            </h1>
+            <p className="admin-view-sub">
+              スタッフによる割り当て付与・取消、テナント閲覧（impersonation）の操作履歴です。
+              Phase F 以降は Webhook 受信や設定変更もここに記録します。
+            </p>
+          </div>
+        </header>
+      )}
 
       <div className="admin-toolbar audit-toolbar">
         <div className="admin-search">
@@ -175,18 +188,20 @@ export function AdminAuditView(_: Props) {
               </option>
             ))}
           </select>
-          <select
-            className="select"
-            value={orgFilter}
-            onChange={(e) => setOrgFilter(e.target.value)}
-          >
-            <option value="">すべてのテナント</option>
-            {orgOptions.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.name}
-              </option>
-            ))}
-          </select>
+          {!fixedOrganizationId && (
+            <select
+              className="select"
+              value={orgFilter}
+              onChange={(e) => setOrgFilter(e.target.value)}
+            >
+              <option value="">すべてのテナント</option>
+              {orgOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
         <div className="admin-count">
           全 <strong>{totalCount}</strong> 件
@@ -205,7 +220,7 @@ export function AdminAuditView(_: Props) {
               <th>発生日時</th>
               <th>アクション</th>
               <th>実行者</th>
-              <th>テナント</th>
+              {!fixedOrganizationId && <th>テナント</th>}
               <th>詳細</th>
             </tr>
           </thead>
@@ -233,14 +248,17 @@ export function AdminAuditView(_: Props) {
                       )}
                     </div>
                   </td>
-                  <td>{r.orgName}</td>
+                  {!fixedOrganizationId && <td>{r.orgName}</td>}
                   <td className="audit-summary">{r.summary}</td>
                 </tr>
               )
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={5} className="admin-table-empty">
+                <td
+                  colSpan={fixedOrganizationId ? 4 : 5}
+                  className="admin-table-empty"
+                >
                   {totalCount === 0
                     ? 'まだ監査ログがありません。'
                     : '一致する監査ログがありません。フィルタを見直してください。'}

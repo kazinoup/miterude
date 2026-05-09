@@ -181,72 +181,168 @@ create index on staff_audit_logs (action, occurred_at desc);
 
 ### 3.3 Devices
 
-#### `gateways`
+> **Phase F-4 (Block D) 改訂**: センサーとゲートウェイを 1 つの `devices` マスターに
+> 統合し、固有プロパティは `sensor_props` / `gateway_props` で持つ
+> Class Table Inheritance 構造に変更。Webhook 受信時は (manufacturer, external_key) で
+> `devices` を引き、`device_type` に応じて props 側を更新する。
+
+#### `devices`（共通マスター）
+すべてのデバイス（センサー / ゲートウェイ / 中継機）が 1 行ずつ並ぶマスター。
+共通プロパティ（識別子・分類・状態）はここで完結。固有のセンサー値や閾値は
+`sensor_props` / `gateway_props` に分けて持つ。
+
 ```sql
-create table gateways (
+create table devices (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-  name text not null,
-  external_id text not null,        -- Milesight 側の MAC など
-  manufacturer text not null,
-  model text not null,
-  serial_number text not null,
-  location text,
-  registered_at timestamptz default now(),
+
+  -- ============================================
+  -- 外部識別（メーカーが決める、不変）
+  -- ============================================
+  device_type text not null check (device_type in ('sensor','gateway')),
+  -- model からほぼ決まる具体的な役割。
+  -- sensor: 'temperature-humidity' | 'temperature' | 'current' | 'co2' | 'pressure' | 'door' | 'other'
+  -- gateway: 'master' | 'relay'
+  role text not null,
+  manufacturer text not null,            -- 'Milesight', 'IoT Mobile', ...
+  model text not null,                   -- 'EM320-TH', 'AM102', 'UG65', ...
+  -- メーカー発行の一意キー。Webhook 受信時の照合に使う。
+  -- 値の中身はメーカーごとに異なる（Milesight: devEUI、その他: serial_number 等）。
+  external_key text not null,
+  serial_number text not null,           -- 製造シリアル（参考表示用）
+  dev_eui text,                          -- LoRaWAN 識別子（無いメーカーもある）
+
+  -- ============================================
+  -- 表示・分類（ユーザー運用上設定）
+  -- ============================================
+  name text,
+  device_number text not null,           -- 'DV-001', '厨房-冷凍-01' 等の運用ラベル
+  category_id uuid references sensor_categories on delete set null,  -- 運用区分（冷凍/冷蔵/室温）
+  group_id uuid references sensor_groups on delete set null,         -- 設置場所
+  tags text[] default '{}',
+  notification_group_id uuid references notification_groups on delete set null,
+
+  -- ============================================
+  -- システム管理（自動更新）
+  -- ============================================
   online boolean default false,
   last_seen_at timestamptz,
+  registered_at timestamptz default now(),
   metadata jsonb default '{}',
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
-  unique (organization_id, external_id)
+
+  -- 一意性: メーカー + external_key の組で 1 デバイス
+  unique (organization_id, manufacturer, external_key)
 );
-create index on gateways (organization_id);
+create index on devices (organization_id);
+create index on devices (device_type);
+create index on devices (organization_id, manufacturer, external_key);
 ```
 
-#### `sensors`
+#### `sensor_props`（センサー固有プロパティ、devices と 1:1）
+`device_type='sensor'` のレコードに対する 1:1 の延長テーブル。
+
 ```sql
-create table sensors (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations on delete cascade,
-  name text,
-  device_number text not null,                  -- DV-001
-  serial_number text not null,                  -- 16桁HEX
-  manufacturer text not null,
-  model text not null,
-  gateway_id uuid references gateways on delete set null,
-  category_id uuid references sensor_categories on delete set null,
-  group_id uuid references sensor_groups on delete set null,
-  tags text[] default '{}',
-  kind text default 'temperature-humidity',
+create table sensor_props (
+  device_id uuid primary key references devices on delete cascade,
+  -- 接続先ゲートウェイ（同じ devices テーブルへの自己参照）
+  gateway_id uuid references devices,
+  -- 個別の逸脱判定閾値（kind に応じた構造を JSONB で保持）
   thresholds jsonb,
-  alert_settings jsonb default '{
+  battery int check (battery between 0 and 100),
+  -- アラート設定: deviation / offline / battery を含む
+  alert_settings jsonb not null default '{
     "offlineEnabled": true,
     "offlineThresholdMinutes": 60,
     "deviationEnabled": true,
     "deviationConsecutiveCount": 3,
     "batteryEnabled": false,
-    "batteryThresholdPercent": 10
+    "batteryThresholdPercent": 10,
+    "notifyChannels": {"email": true, "slack": false, "push": false}
   }',
-  notification_group_id uuid references notification_groups on delete set null,
-  online boolean default false,
-  battery int check (battery between 0 and 100),
-  last_seen_at timestamptz,
-  registered_at timestamptz default now(),
-  metadata jsonb default '{}',
+  -- 通知抑制（時間帯 / 特定日付）。配列型 JSONB。
+  exclusion_windows jsonb default '[]',
+  exclusion_dates jsonb default '[]',
   created_at timestamptz default now(),
-  updated_at timestamptz default now(),
-  unique (organization_id, serial_number)
+  updated_at timestamptz default now()
 );
-create index on sensors (organization_id);
-create index on sensors (gateway_id);
+create index on sensor_props (gateway_id);
+```
+
+#### `gateway_props`（ゲートウェイ固有プロパティ、devices と 1:1）
+`device_type='gateway'` のレコードに対する 1:1 の延長テーブル。
+温湿度の閾値判定もバッテリーも持たないため、アラート発火条件はオフラインのみ。
+
+```sql
+create table gateway_props (
+  device_id uuid primary key references devices on delete cascade,
+  -- アラート設定: offline のみ
+  alert_settings jsonb not null default '{
+    "offlineEnabled": true,
+    "offlineThresholdMinutes": 60,
+    "notifyChannels": {"email": true, "slack": false, "push": false}
+  }',
+  exclusion_windows jsonb default '[]',
+  exclusion_dates jsonb default '[]',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+```
+
+#### Webhook 受信時の照合フロー
+メーカーごとの統合モジュール（`/webhook/<manufacturer>` エンドポイント）は、
+ペイロードから「そのメーカーが採用している一意キー」を抽出する:
+
+| メーカー | external_key の中身 | ペイロードフィールド例 |
+|---|---|---|
+| Milesight | devEUI（16字HEX） | `payload.devEUI` |
+| Sensirion | serialNumber | `payload.serial` |
+| 自社開発 | 独自 ID | （メーカー仕様による） |
+
+照合手順:
+```sql
+-- 1) (organization_id, manufacturer, external_key) で devices を引く
+select * from devices
+where organization_id = $1
+  and manufacturer = 'Milesight'
+  and external_key = '24E124785D190657';
+-- 2) 見つかった device.device_type に応じて sensor_props / gateway_props を更新
+update sensor_props
+set battery = $1, updated_at = now()
+where device_id = $2;
+update devices
+set last_seen_at = now(), online = true
+where id = $2;
+```
+
+#### UI 上の View（オプション、参考）
+既存コードの利便性のため、JOIN 済みのビューを提供してもよい:
+```sql
+-- センサー JOIN ビュー（旧 sensors テーブル相当）
+create view sensors_v as
+  select d.*, sp.gateway_id, sp.thresholds, sp.battery, sp.alert_settings,
+         sp.exclusion_windows, sp.exclusion_dates
+  from devices d
+  join sensor_props sp on sp.device_id = d.id
+  where d.device_type = 'sensor';
+
+-- ゲートウェイ JOIN ビュー
+create view gateways_v as
+  select d.*, gp.alert_settings, gp.exclusion_windows, gp.exclusion_dates
+  from devices d
+  join gateway_props gp on gp.device_id = d.id
+  where d.device_type = 'gateway';
 ```
 
 #### `sensor_notes` — 運用メモ
+> Phase F-4 改訂: `sensor_id` は `devices(id)` を参照（device_type='sensor' 想定）。
+
 ```sql
 create table sensor_notes (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-  sensor_id uuid not null references sensors on delete cascade,
+  sensor_id uuid not null references devices on delete cascade,
   sensor_name_snapshot text not null,
   author_id uuid references users,
   author_name_snapshot text not null,
@@ -331,7 +427,7 @@ create table dashboard_checkins (
 create table dashboard_checkin_sensor_comments (
   id uuid primary key default gen_random_uuid(),
   checkin_id uuid not null references dashboard_checkins on delete cascade,
-  sensor_id uuid references sensors on delete set null,
+  sensor_id uuid references devices on delete set null,
   sensor_name_snapshot text not null,
   deviation_kinds text[] default '{}',
   detected_temp numeric,
@@ -429,7 +525,7 @@ create index on webhook_inbox (organization_id, received_at desc);
 create table sensor_readings (
   id bigint generated always as identity primary key,
   organization_id uuid not null references organizations on delete cascade,
-  sensor_id uuid not null references sensors on delete cascade,
+  sensor_id uuid not null references devices on delete cascade,
   measured_at timestamptz not null,
   temperature numeric,
   humidity numeric,
@@ -447,7 +543,7 @@ create index on sensor_readings (organization_id, measured_at desc);
 create table gateway_status_events (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-  gateway_id uuid not null references gateways on delete cascade,
+  gateway_id uuid not null references devices on delete cascade,
   occurred_at timestamptz default now(),
   status text check (status in ('online','offline')),
   source text                                -- 'heartbeat' / 'webhook' / 'manual'
@@ -462,8 +558,10 @@ create table alert_logs (
   organization_id uuid not null references organizations on delete cascade,
   occurred_at timestamptz not null,
   target_kind text not null check (target_kind in ('sensor','gateway')),
-  sensor_id uuid references sensors on delete set null,
-  gateway_id uuid references gateways on delete set null,
+  -- 統合後は単一の target_device_id を使う方が整合的だが、既存コードとの互換のため両方残す。
+  -- どちらも devices(id) を参照する（target_kind で区別）。
+  sensor_id uuid references devices on delete set null,
+  gateway_id uuid references devices on delete set null,
   manufacturer_snapshot text not null,
   model_snapshot text not null,
   serial_number_snapshot text not null,

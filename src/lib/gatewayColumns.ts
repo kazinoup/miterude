@@ -1,74 +1,135 @@
 /**
- * ゲートウェイ一覧の列表示・並び順設定 — Phase: センサー一覧と同等の列カスタマイズを提供。
+ * ゲートウェイ一覧の列表示・並び順設定 — Phase F-3 改訂
  *
- * 「名前」は固定表示（必須）。それ以外の列は表示／非表示・並び順を localStorage に永続化する。
- * パターンは sensorColumns.ts と揃えてあるので、両者を見比べると差分が分かりやすい。
+ * 「名称」（旧「名前」）は左端固定（必須）。
+ * それ以外の列は表示／非表示・並び順を localStorage に永続化する。
+ *
+ * センサー一覧と同じパターンで作ってあるので sensorColumns.ts と見比べると
+ * 差分が分かりやすい（ゲートウェイには温湿度・バッテリーが無いため、
+ * 関連列は省略する）。
  */
 
 export type GatewayColumnKey =
-  | 'id' // ゲートウェイ ID
+  | 'deviceNumber' // デバイス番号
+  | 'serialNumber' // 製造シリアル
+  | 'devEUI' // LoRaWAN 識別子
+  | 'model' // モデル名
   | 'manufacturer' // メーカー
-  | 'model' // モデル
-  | 'serialNumber' // シリアル番号
-  | 'location' // 設置場所
-  | 'linkedCount' // 接続センサー台数
+  | 'category' // 区分（親機 / 中継機）
+  | 'group' // グループ / 設置場所
+  | 'tags' // タグ
+  | 'status' // オンライン / オフライン
+  | 'offlineAlert' // オフラインアラート設定
+  | 'silentTimeRanges' // アラート停止時間帯
+  | 'silentDates' // アラート停止日
+  | 'notificationSetting' // 通知設定（紐付き通知グループ名）
+  | 'registeredAt' // 登録日
 
 export type GatewayColumnVisibility = Record<GatewayColumnKey, boolean>
 
 export type GatewayColumnDef = {
   key: GatewayColumnKey
   label: string
-  /** 列の説明（ダイアログのチェックボックスに表示） */
   hint?: string
-  /** 既定で表示するか */
   defaultVisible: boolean
   /** 数値・カウント列（右寄せ） */
   numeric?: boolean
 }
 
-/** 列定義（順序が一覧の表示順になる） */
+/** 列定義（順序が一覧の表示順になる）。
+ *  v2 で「名称」固定列 + DevEUI / 区分 / グループ / タグ / 状態 /
+ *  アラート設定詳細 / 登録日 を追加した。 */
 export const GATEWAY_COLUMN_DEFS: GatewayColumnDef[] = [
+  // 表示既定 ON
   {
-    key: 'id',
-    label: 'ID',
-    hint: 'ゲートウェイ識別子',
-    defaultVisible: true,
-  },
-  {
-    key: 'manufacturer',
-    label: 'メーカー',
-    hint: 'メーカー名（例: Milesight）',
-    defaultVisible: true,
-  },
-  {
-    key: 'model',
-    label: 'モデル',
-    hint: '機種名（例: UG65）',
+    key: 'deviceNumber',
+    label: 'デバイス番号',
+    hint: 'GW-001 形式のデバイスID',
     defaultVisible: true,
   },
   {
     key: 'serialNumber',
     label: 'シリアル番号',
-    hint: '16 桁 HEX のシリアル番号',
+    hint: '製造シリアル',
     defaultVisible: true,
   },
   {
-    key: 'location',
-    label: '設置場所',
-    hint: 'メモ的な設置場所（例: 1F、厨房）',
+    key: 'devEUI',
+    label: 'DevEUI',
+    hint: 'LoRaWAN 識別子（16 字 HEX）',
     defaultVisible: true,
   },
   {
-    key: 'linkedCount',
-    label: '接続センサー',
-    hint: '接続されているセンサーの台数',
+    key: 'category',
+    label: '区分',
+    hint: '親機 / 中継機',
     defaultVisible: true,
+  },
+  {
+    key: 'group',
+    label: 'グループ / 設置場所',
+    defaultVisible: true,
+  },
+  {
+    key: 'tags',
+    label: 'タグ',
+    defaultVisible: true,
+  },
+  {
+    key: 'status',
+    label: '状態',
+    hint: 'オンライン / オフライン',
+    defaultVisible: true,
+  },
+
+  // 表示既定 OFF
+  {
+    key: 'manufacturer',
+    label: 'メーカー',
+    defaultVisible: false,
+  },
+  {
+    key: 'model',
+    label: 'モデル',
+    defaultVisible: false,
+  },
+  {
+    key: 'offlineAlert',
+    label: 'オフラインアラート',
+    hint: 'オフライン通知の有効/無効と判定時間',
+    defaultVisible: false,
+  },
+  {
+    key: 'silentTimeRanges',
+    label: 'アラート停止時間帯',
+    hint: '通知を抑制する時間帯の件数',
+    defaultVisible: false,
     numeric: true,
+  },
+  {
+    key: 'silentDates',
+    label: 'アラート停止日',
+    hint: '通知を抑制する特定日付範囲の件数',
+    defaultVisible: false,
+    numeric: true,
+  },
+  {
+    key: 'notificationSetting',
+    label: '通知設定',
+    hint: '紐付いている通知グループ名',
+    defaultVisible: false,
+  },
+  {
+    key: 'registeredAt',
+    label: '登録日',
+    hint: 'このゲートウェイを登録した日付',
+    defaultVisible: false,
   },
 ]
 
-const STORAGE_KEY = 'miterude:gateways:columns:v1'
-const ORDER_KEY = 'miterude:gateways:columnOrder:v1'
+/** v2 で列キーを大幅変更したため、古い v1 永続化は捨てる。 */
+const STORAGE_KEY = 'miterude:gateways:columns:v2'
+const ORDER_KEY = 'miterude:gateways:columnOrder:v2'
 
 export function defaultColumnVisibility(): GatewayColumnVisibility {
   const out = {} as GatewayColumnVisibility

@@ -5,7 +5,7 @@
  * Phase A-4 ではテナント一覧 / 作成 / 詳細のみ。
  * Phase A-5 でスタッフ管理 + impersonation、A-7 で監査ログを足す。
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Building2, Users2, History, ShieldCheck } from 'lucide-react'
 import { UserMenu } from '../components/UserMenu'
 import { ContextSelectView } from '../components/ContextSelectView'
@@ -16,6 +16,7 @@ import { AdminStaffView } from './views/AdminStaffView'
 import { AdminStaffDetailView } from './views/AdminStaffDetailView'
 import { AdminAuditView } from './views/AdminAuditView'
 import { loadUsers, loadAuthSession } from './lib/adminStorage'
+import { globalUnmatchedDeviceCount } from './lib/webhookInbox'
 import type { AuthSession, UserSession } from '../types'
 
 export type AdminViewKey =
@@ -35,6 +36,29 @@ export function AdminApp({ session }: Props) {
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
   const [activeStaffId, setActiveStaffId] = useState<string | null>(null)
   const [contextSelectOpen, setContextSelectOpen] = useState(false)
+
+  /** サイドバー「テナント」項目の未登録 DevEUI バッジ用カウンタ。
+   *  本番では Realtime / SWR で push 更新する想定。モックでは
+   *  画面遷移ごとに recount する + storage event でも更新する。 */
+  const [unmatchedCount, setUnmatchedCount] = useState<number>(() =>
+    globalUnmatchedDeviceCount(),
+  )
+
+  useEffect(() => {
+    // 別タブで操作されたとき（webhook_inbox 更新）に追従
+    function onStorage(e: StorageEvent) {
+      if (e.key === 'miterude:admin:webhook_inbox') {
+        setUnmatchedCount(globalUnmatchedDeviceCount())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  // view / tenantId が変わるたびに recount
+  useEffect(() => {
+    setUnmatchedCount(globalUnmatchedDeviceCount())
+  }, [view, activeTenantId])
 
   /** UserMenu に渡すモック UserSession（admin 用） */
   const userSession: UserSession = useMemo(() => {
@@ -62,11 +86,11 @@ export function AdminApp({ session }: Props) {
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <div className="admin-sidebar-brand">
-          <ShieldCheck size={16} />
-          <div className="admin-sidebar-brand-text">
+          <div className="admin-sidebar-brand-line">
+            <ShieldCheck size={16} />
             <span className="admin-sidebar-brand-name">ミテルデ</span>
-            <span className="admin-sidebar-brand-sub">Admin Console</span>
           </div>
+          <div className="admin-sidebar-brand-sub">Admin Console</div>
         </div>
 
         <nav className="admin-sidebar-nav">
@@ -77,9 +101,22 @@ export function AdminApp({ session }: Props) {
               setView('tenants')
               setActiveTenantId(null)
             }}
+            title={
+              unmatchedCount > 0
+                ? `${unmatchedCount} 件のテナントで未登録 DevEUI が観測されています`
+                : undefined
+            }
           >
             <Building2 size={16} />
             <span>テナント</span>
+            {unmatchedCount > 0 && (
+              <span
+                className="admin-nav-badge"
+                aria-label={`未登録 DevEUI ${unmatchedCount} 件`}
+              >
+                {unmatchedCount}
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -117,10 +154,14 @@ export function AdminApp({ session }: Props) {
         {view === 'tenant-detail' && activeTenantId && (
           <AdminTenantDetailView
             tenantId={activeTenantId}
+            adminUserId={session.userId}
             onBack={() => {
               setView('tenants')
               setActiveTenantId(null)
             }}
+            onTenantStateChanged={() =>
+              setUnmatchedCount(globalUnmatchedDeviceCount())
+            }
           />
         )}
         {view === 'staff' && <AdminStaffView onOpenStaff={openStaffDetail} />}

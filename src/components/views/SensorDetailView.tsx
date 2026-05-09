@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ChevronLeft,
@@ -28,6 +28,8 @@ import {
   Wrench,
   ShieldCheck,
   Sliders,
+  ChevronDown,
+  FileText,
 } from 'lucide-react'
 import {
   CartesianGrid,
@@ -65,7 +67,9 @@ import {
   isMetricDeviationEnabled,
   summarizeRange,
 } from '../../lib/report'
+import { buildHistoryCsv, downloadCsv } from '../../lib/historyCsv'
 import {
+  customPeriodRange,
   formatPeriodLabel,
   fromDateInputValue,
   fromMonthInputValue,
@@ -76,9 +80,17 @@ import {
   type PeriodType,
 } from '../../lib/period'
 import { KpiCard } from '../KpiCard'
+import { PaginationControls } from '../PaginationControls'
 import { SensorAlertSettings } from '../SensorAlertSettings'
 import { SensorNoteDialog } from '../SensorNoteDialog'
 import { SensorThresholdSettings } from '../SensorThresholdSettings'
+import { computeCurrentDeviationStreak } from '../../lib/alertLog'
+import {
+  applyTemplateToSensor,
+  describeScope,
+  isTemplateApplicableToKind,
+} from '../../lib/thresholdTemplates'
+import type { SensorSettingsTemplate } from '../../types'
 import { notesForSensor } from '../../lib/records'
 import { toast } from '../../lib/toast'
 import { formatRelativeAgo, formatThresholdRange } from '../../lib/jp'
@@ -157,74 +169,14 @@ function batteryIcon(pct: number) {
 // ユーザー定義のカテゴリ（CategoryBadge）に置き換わっている。
 
 /* ---------- タブ ---------- */
-type DetailTab = 'basic' | 'history' | 'maintenance'
+type DetailTab = 'basic' | 'alerts' | 'history' | 'maintenance'
 
 const TAB_DEFS: { key: DetailTab; label: string; icon: React.ReactNode }[] = [
   { key: 'basic', label: '基本情報', icon: <Info size={14} /> },
+  { key: 'alerts', label: 'アラート設定', icon: <AlertTriangle size={14} /> },
   { key: 'history', label: '履歴', icon: <CalendarDays size={14} /> },
   { key: 'maintenance', label: 'メンテナンス・運用メモ', icon: <Wrench size={14} /> },
 ]
-
-/* ---------- CSV エクスポート ---------- */
-/** 履歴データを CSV 文字列に変換する。Excel が日本語を正しく読めるよう BOM を付与。 */
-function buildHistoryCsv(
-  deviceId: string,
-  readings: { measuredAt: Date; temperature: number; humidity: number; battery?: number }[],
-  thresholds: SensorThresholds | undefined,
-): string {
-  const header = [
-    '計測日時',
-    '温度(℃)',
-    '湿度(%)',
-    'バッテリー(%)',
-    '温度判定',
-    '湿度判定',
-  ].join(',')
-  const tempT = getThresholdForMetric(thresholds, 'temperature')
-  const humT = getThresholdForMetric(thresholds, 'humidity')
-
-  function classify(v: number, m: typeof tempT): string {
-    if (!m) return ''
-    const alertActive = m.alert.enabled && (m.alert.min != null || m.alert.max != null)
-    const warnActive = m.warn.enabled && (m.warn.min != null || m.warn.max != null)
-    if (!alertActive && !warnActive) return ''
-    if (alertActive) {
-      if (m.alert.min != null && v < m.alert.min) return '危険'
-      if (m.alert.max != null && v > m.alert.max) return '危険'
-    }
-    if (warnActive) {
-      if (m.warn.min != null && v < m.warn.min) return '注意'
-      if (m.warn.max != null && v > m.warn.max) return '注意'
-    }
-    return '正常'
-  }
-
-  const rows = readings.map((r) => {
-    const ts = r.measuredAt.toLocaleString('sv-SE').replace('T', ' ')
-    const t = r.temperature.toFixed(1)
-    const h = r.humidity.toFixed(1)
-    const b = r.battery != null ? r.battery.toFixed(0) : ''
-    const tJ = classify(r.temperature, tempT)
-    const hJ = classify(r.humidity, humT)
-    return [ts, t, h, b, tJ, hJ].join(',')
-  })
-
-  // ﻿ (BOM) を付与して Excel で文字化けしないように
-  return '﻿' + [`# ${deviceId}`, header, ...rows].join('\n')
-}
-
-/** Blob を生成してブラウザにダウンロードさせる */
-function downloadCsv(filename: string, csvContent: string): void {
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
 
 export function SensorDetailView({
   deviceId,
@@ -262,6 +214,13 @@ export function SensorDetailView({
   const sensor: Sensor | undefined = sensors[deviceId]
   const gateway = sensor ? gateways[sensor.gatewayId] : undefined
 
+  /** 直近 readings から「現在 N 回連続で逸脱中」の状態を導出。
+   *  thresholds やセンサー設定が変わっても再計算するために useMemo で囲う。 */
+  const deviationStreak = useMemo(() => {
+    if (!sensor) return undefined
+    return computeCurrentDeviationStreak(sensor, readings)
+  }, [sensor, readings])
+
   // 履歴ビューア state
   const [periodType, setPeriodType] = useState<PeriodType>('month')
   const initialAnchor = useMemo(() => {
@@ -269,6 +228,9 @@ export function SensorDetailView({
     return last?.measuredAt ?? new Date()
   }, [readings])
   const [anchor, setAnchor] = useState<Date>(initialAnchor)
+  /** 期間指定モード（'custom'）の開始日 / 終了日。yyyy-mm-dd 文字列で持つ。 */
+  const [customStart, setCustomStart] = useState<string>('')
+  const [customEnd, setCustomEnd] = useState<string>('')
   const [viewMode, setViewMode] = useState<'chart' | 'list'>('chart')
 
   // デバイスや読み込みデータが切り替わった際にアンカーを最新側に更新
@@ -276,7 +238,40 @@ export function SensorDetailView({
     setAnchor(initialAnchor)
   }, [deviceId, initialAnchor])
 
-  const range = useMemo(() => periodRange(periodType, anchor), [periodType, anchor])
+  // 'custom' モードに初めて入ったタイミングで、既定値として
+  // 「直近 30 日」をセットする（空欄のまま放置されないように）。
+  useEffect(() => {
+    if (periodType !== 'custom') return
+    if (customStart && customEnd) return
+    const today = initialAnchor
+    const past = new Date(today)
+    past.setDate(past.getDate() - 30)
+    setCustomStart(toDateInputValue(past))
+    setCustomEnd(toDateInputValue(today))
+  }, [periodType, customStart, customEnd, initialAnchor])
+
+  const range = useMemo(() => {
+    if (periodType === 'custom') {
+      const s = fromDateInputValue(customStart)
+      const e = fromDateInputValue(customEnd)
+      if (s && e && s.getTime() <= e.getTime()) {
+        return customPeriodRange(s, e)
+      }
+      // 不正な範囲なら空集合を返す
+      const z = new Date(0)
+      return { start: z, end: z }
+    }
+    return periodRange(periodType, anchor)
+  }, [periodType, anchor, customStart, customEnd])
+
+  /** 表示用ラベル（CSV ファイル名や見出しに使う） */
+  const periodLabel = useMemo(() => {
+    if (periodType === 'custom') {
+      if (!customStart || !customEnd) return '期間未指定'
+      return `${customStart.replaceAll('-', '/')} 〜 ${customEnd.replaceAll('-', '/')}`
+    }
+    return formatPeriodLabel(periodType, anchor)
+  }, [periodType, anchor, customStart, customEnd])
 
   const periodReadings = useMemo(
     () => readings.filter((r) => r.measuredAt >= range.start && r.measuredAt < range.end),
@@ -347,6 +342,7 @@ export function SensorDetailView({
     { key: 'day', label: '日' },
     { key: 'week', label: '週' },
     { key: 'month', label: '月' },
+    { key: 'custom', label: '期間指定' },
   ]
 
   return (
@@ -461,8 +457,11 @@ export function SensorDetailView({
             </div>
           </div>
 
-          {/* 2 行構成: 1 行目=識別 (名前・デバイス番号・シリアル番号)、
-             2 行目=機器情報 (モデル・メーカー・ゲートウェイ)。最終受信は読み取り専用で別行。 */}
+          {/* レイアウト方針:
+             - 編集可能（白背景）: センサー名・デバイス番号
+             - 固定（グレー背景）: シリアル番号・モデル・メーカー・DevEUI・接続GW
+             メーカーごとの一意性 / Webhook 受信時のキー / 物理的な機器識別子は
+             テナント側からは編集できない。区分・グループ・タグは下の「分類」で編集する。 */}
           <div className="meta-edit-grid">
             <label className="meta-edit-field meta-edit-field-name">
               <span className="meta-edit-label">センサー名</span>
@@ -491,58 +490,39 @@ export function SensorDetailView({
                 }
               />
             </label>
-            <label className="meta-edit-field">
+            <div className="meta-edit-field">
               <span className="meta-edit-label">シリアル番号</span>
-              <input
-                type="text"
-                className="form-input cell-mono"
-                value={sensor.serialNumber}
-                onChange={(e) =>
-                  onUpdateSensorInfo(deviceId, { serialNumber: e.target.value })
-                }
-              />
-            </label>
+              <div className="form-input form-input-static cell-mono">
+                {sensor.serialNumber || '—'}
+              </div>
+            </div>
 
-            <label className="meta-edit-field">
-              <span className="meta-edit-label">モデル</span>
-              <input
-                type="text"
-                className="form-input"
-                value={sensor.model}
-                onChange={(e) =>
-                  onUpdateSensorInfo(deviceId, { model: e.target.value })
-                }
-              />
-            </label>
-            <label className="meta-edit-field">
+            <div className="meta-edit-field">
               <span className="meta-edit-label">メーカー</span>
-              <input
-                type="text"
-                className="form-input"
-                value={sensor.manufacturer}
-                onChange={(e) =>
-                  onUpdateSensorInfo(deviceId, { manufacturer: e.target.value })
-                }
-              />
-            </label>
+              <div className="form-input form-input-static">
+                {sensor.manufacturer || '—'}
+              </div>
+            </div>
+            <div className="meta-edit-field">
+              <span className="meta-edit-label">モデル</span>
+              <div className="form-input form-input-static">
+                {sensor.model || '—'}
+              </div>
+            </div>
+            <div className="meta-edit-field">
+              <span className="meta-edit-label">DevEUI（識別番号）</span>
+              <div className="form-input form-input-static cell-mono">
+                {sensor.devEUI || '—'}
+              </div>
+            </div>
             <div className="meta-edit-field">
               <span className="meta-edit-label">接続ゲートウェイ</span>
               <div className="meta-edit-gateway">
-                <select
-                  className="select"
-                  value={sensor.gatewayId}
-                  onChange={(e) =>
-                    onUpdateSensorInfo(deviceId, { gatewayId: e.target.value })
-                  }
-                >
-                  {Object.values(gateways)
-                    .sort((a, b) => a.name.localeCompare(b.name))
-                    .map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}（{g.id}）
-                      </option>
-                    ))}
-                </select>
+                <div className="form-input form-input-static">
+                  {gateway
+                    ? `${gateway.name}（${gateway.id}）`
+                    : sensor.gatewayId || '— 未指定 —'}
+                </div>
                 {gateway && (
                   <button
                     type="button"
@@ -563,6 +543,17 @@ export function SensorDetailView({
             <span className="meta-readonly-label">最終受信</span>
             <span className="meta-readonly-value mono">
               {fmtDateTime(sensor.lastSeenAt)}
+            </span>
+            <span className="meta-readonly-sep" aria-hidden="true">|</span>
+            <span className="meta-readonly-label">登録日</span>
+            <span className="meta-readonly-value mono">
+              {sensor.registeredAt
+                ? sensor.registeredAt.toLocaleDateString('ja-JP', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                  })
+                : '—'}
             </span>
           </div>
         </section>
@@ -614,7 +605,7 @@ export function SensorDetailView({
               </div>
             </label>
             <label className="classify-field">
-              <span className="classify-label">グループ</span>
+              <span className="classify-label">グループ / 設置場所</span>
               <select
                 className="select"
                 value={sensor.groupId ?? ''}
@@ -686,8 +677,36 @@ export function SensorDetailView({
         </section>
       )}
 
-      {/* 基本情報タブ: 逸脱判定（センサー固有の閾値） */}
-      {activeTab === 'basic' && sensor && (
+      {/* アラート設定タブ: 1. テンプレ読み込み（横断適用） */}
+      {activeTab === 'alerts' && sensor && (
+        <SensorTemplateLoadCard
+          sensor={sensor}
+          templates={thresholdTemplates}
+          onApply={(template) => {
+            // 種別チェックは applyTemplateToSensor 内でも行うが、UI 側でも先に弾く
+            const next = applyTemplateToSensor(sensor, template)
+            // 個別の onChange を組み合わせて反映
+            if (next.thresholds !== sensor.thresholds) {
+              const t = next.thresholds
+              if (!t || t.kind === 'temperature-humidity') {
+                onUpdateSensorThresholds(
+                  deviceId,
+                  (t as TempHumidityThresholds | undefined) ?? undefined,
+                )
+              }
+            }
+            if (next.alertSettings !== sensor.alertSettings) {
+              onUpdateAlertSettings(deviceId, next.alertSettings)
+            }
+            if (next.notificationGroupId !== sensor.notificationGroupId) {
+              onUpdateNotificationGroup(deviceId, next.notificationGroupId ?? null)
+            }
+          }}
+        />
+      )}
+
+      {/* アラート設定タブ: 2. 逸脱判定（センサー固有の閾値） */}
+      {activeTab === 'alerts' && sensor && (
         <section className="panel-card">
           <div className="panel-card-head">
             <h2>
@@ -701,6 +720,7 @@ export function SensorDetailView({
           <SensorThresholdSettings
             sensor={sensor}
             templates={thresholdTemplates}
+            hideTemplatePicker
             onChange={(next: TempHumidityThresholds | undefined) => {
               onUpdateSensorThresholds(deviceId, next)
             }}
@@ -716,30 +736,6 @@ export function SensorDetailView({
             履歴
           </h2>
           <div className="panel-card-meta">
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={() => {
-                if (periodReadings.length === 0) {
-                  toast('この期間にダウンロードできるデータがありません', 'info')
-                  return
-                }
-                const periodTag =
-                  periodType === 'day'
-                    ? toDateInputValue(anchor)
-                    : periodType === 'week'
-                      ? `week-${toDateInputValue(anchor)}`
-                      : toMonthInputValue(anchor)
-                const filename = `${deviceId}_${periodTag}.csv`
-                const csv = buildHistoryCsv(deviceId, periodReadings, sensorThresholds)
-                downloadCsv(filename, csv)
-                toast(`${filename} をダウンロードしました`, 'success')
-              }}
-              title="表示中の期間の計測データを CSV でダウンロード"
-            >
-              <Download size={14} />
-              <span>CSV ダウンロード</span>
-            </button>
             <div className="view-toggle" role="group" aria-label="表示モード">
               <button
                 type="button"
@@ -779,48 +775,98 @@ export function SensorDetailView({
           </div>
 
           <div className="period-nav">
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setAnchor((a) => shiftPeriod(periodType, a, -1))}
-              aria-label="前の期間"
-            >
-              <ChevronLeft size={16} />
-            </button>
-
-            {periodType === 'month' ? (
-              <input
-                type="month"
-                className="select"
-                value={toMonthInputValue(anchor)}
-                onChange={(e) => {
-                  const d = fromMonthInputValue(e.target.value)
-                  if (d) setAnchor(d)
-                }}
-              />
+            {periodType === 'custom' ? (
+              <>
+                <input
+                  type="date"
+                  className="select"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  aria-label="開始日"
+                />
+                <span className="muted">〜</span>
+                <input
+                  type="date"
+                  className="select"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  aria-label="終了日"
+                />
+              </>
             ) : (
-              <input
-                type="date"
-                className="select"
-                value={toDateInputValue(anchor)}
-                onChange={(e) => {
-                  const d = fromDateInputValue(e.target.value)
-                  if (d) setAnchor(d)
-                }}
-              />
+              <>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setAnchor((a) => shiftPeriod(periodType, a, -1))}
+                  aria-label="前の期間"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+
+                {periodType === 'month' ? (
+                  <input
+                    type="month"
+                    className="select"
+                    value={toMonthInputValue(anchor)}
+                    onChange={(e) => {
+                      const d = fromMonthInputValue(e.target.value)
+                      if (d) setAnchor(d)
+                    }}
+                  />
+                ) : (
+                  <input
+                    type="date"
+                    className="select"
+                    value={toDateInputValue(anchor)}
+                    onChange={(e) => {
+                      const d = fromDateInputValue(e.target.value)
+                      if (d) setAnchor(d)
+                    }}
+                  />
+                )}
+
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setAnchor((a) => shiftPeriod(periodType, a, 1))}
+                  aria-label="次の期間"
+                >
+                  <ChevronRight size={16} />
+                </button>
+
+                <span className="period-label">{periodLabel}</span>
+              </>
             )}
-
-            <button
-              type="button"
-              className="icon-btn"
-              onClick={() => setAnchor((a) => shiftPeriod(periodType, a, 1))}
-              aria-label="次の期間"
-            >
-              <ChevronRight size={16} />
-            </button>
-
-            <span className="period-label">{formatPeriodLabel(periodType, anchor)}</span>
           </div>
+
+          {/* CSV ダウンロード — 表示中の期間（絞り込み）の右端に置く */}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm history-csv-btn"
+            onClick={() => {
+              if (periodReadings.length === 0) {
+                toast('この期間にダウンロードできるデータがありません', 'info')
+                return
+              }
+              const periodTag =
+                periodType === 'day'
+                  ? toDateInputValue(anchor)
+                  : periodType === 'week'
+                    ? `week-${toDateInputValue(anchor)}`
+                    : periodType === 'month'
+                      ? toMonthInputValue(anchor)
+                      : `${customStart}_${customEnd}`
+              const filename = `${deviceId}_${periodTag}.csv`
+              const csv = buildHistoryCsv(deviceId, periodReadings, sensorThresholds)
+              downloadCsv(filename, csv)
+              toast(`${filename} をダウンロードしました`, 'success')
+            }}
+            title="表示中の期間の計測データを CSV でダウンロード"
+          >
+            <Download size={14} />
+            <span>CSV ダウンロード</span>
+          </button>
         </div>
 
         <div className="kpi-grid kpi-grid-4">
@@ -1038,7 +1084,7 @@ export function SensorDetailView({
       </section>
       )}
 
-      {activeTab === 'basic' && sensor && (
+      {activeTab === 'alerts' && sensor && (
         <SensorAlertSettings
           sensorId={deviceId}
           sensorModel={sensor.model}
@@ -1047,6 +1093,7 @@ export function SensorDetailView({
           notificationGroups={notificationGroups}
           notificationGroupId={sensor.notificationGroupId ?? null}
           onNotificationGroupChange={(id) => onUpdateNotificationGroup(deviceId, id)}
+          deviationStreak={deviationStreak}
         />
       )}
 
@@ -1190,7 +1237,10 @@ export function SensorDetailView({
   )
 }
 
-/** 履歴の一覧表示（最大 200 件まで） */
+/** 履歴の一覧表示（ページネーションあり）。
+ *  既定で 1 ページ 100 件。最新（measuredAt 降順）から並べる。 */
+const HISTORY_PAGE_SIZE = 100
+
 function HistoryList({
   readings,
   thresholds,
@@ -1198,8 +1248,20 @@ function HistoryList({
   readings: { measuredAt: Date; temperature: number; humidity: number; battery?: number }[]
   thresholds: SensorThresholds | undefined
 }) {
-  const truncated = readings.length > 200
-  const view = truncated ? readings.slice(-200).reverse() : [...readings].reverse()
+  const sorted = useMemo(() => [...readings].reverse(), [readings])
+  const totalPages = Math.max(1, Math.ceil(sorted.length / HISTORY_PAGE_SIZE))
+  const [page, setPage] = useState(1)
+
+  // データ件数が変わった場合は 1 ページ目に戻す
+  useEffect(() => {
+    setPage(1)
+  }, [sorted.length])
+
+  const currentPage = Math.min(Math.max(1, page), totalPages)
+  const view = sorted.slice(
+    (currentPage - 1) * HISTORY_PAGE_SIZE,
+    currentPage * HISTORY_PAGE_SIZE,
+  )
 
   if (readings.length === 0) {
     return <p className="muted in-panel">この期間のデータがありません。</p>
@@ -1207,6 +1269,16 @@ function HistoryList({
 
   return (
     <div className="recent-table-wrap">
+      <div className="history-pagination history-pagination-top">
+        <PaginationControls
+          page={currentPage}
+          totalPages={totalPages}
+          pageSize={HISTORY_PAGE_SIZE}
+          filteredCount={sorted.length}
+          totalCount={sorted.length}
+          onSetPage={setPage}
+        />
+      </div>
       <table className="recent-table">
         <thead>
           <tr>
@@ -1237,11 +1309,103 @@ function HistoryList({
           })}
         </tbody>
       </table>
-      {truncated && (
-        <p className="muted in-panel" style={{ marginTop: '0.5rem' }}>
-          ※ {readings.length.toLocaleString('ja-JP')} 件中、最新 200 件を表示しています。
+      <div className="history-pagination history-pagination-bottom">
+        <PaginationControls
+          page={currentPage}
+          totalPages={totalPages}
+          pageSize={HISTORY_PAGE_SIZE}
+          filteredCount={sorted.length}
+          totalCount={sorted.length}
+          onSetPage={setPage}
+        />
+      </div>
+    </div>
+  )
+}
+
+/* ====================================================================
+   テンプレート読み込みカード
+   --------------------------------------------------------------------
+   アラート設定タブの最上部に配置し、テンプレを 1 つ選んで「読み込む」と
+   その scope に含まれる項目だけがセンサーに適用される。
+   旧 SensorThresholdSettings 内の「テンプレートから読み込み」ボタンを
+   ここへ昇格したもの。
+   ==================================================================== */
+
+function SensorTemplateLoadCard({
+  sensor,
+  templates,
+  onApply,
+}: {
+  sensor: Sensor
+  templates: ThresholdTemplateStore
+  onApply: (template: SensorSettingsTemplate) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const applicable = Object.values(templates).filter((t) =>
+    isTemplateApplicableToKind(t, sensor.kind),
+  )
+
+  // 外側クリックで閉じる
+  useEffect(() => {
+    if (!open) return
+    function onDoc(e: MouseEvent) {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  return (
+    <section className="panel-card template-load-card">
+      <div className="template-load-row" ref={wrapRef}>
+        <div className="template-load-text">
+          <Sliders size={14} className="head-icon" />
+          <strong>テンプレートから読み込み</strong>
+          <span className="muted small">
+            選んだテンプレートの「含まれる項目」だけが、このセンサーに上書きされます
+          </span>
+        </div>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm template-load-trigger"
+          onClick={() => setOpen((v) => !v)}
+          disabled={applicable.length === 0}
+          aria-haspopup="menu"
+          aria-expanded={open}
+        >
+          <FileText size={13} />
+          <span>テンプレートを選択</span>
+          <ChevronDown size={12} />
+        </button>
+        {open && applicable.length > 0 && (
+          <div className="template-load-pop" role="menu">
+            {applicable.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                className="template-load-item"
+                onClick={() => {
+                  setOpen(false)
+                  onApply(t)
+                }}
+              >
+                <span className="template-load-name">{t.name}</span>
+                <span className="template-load-scope">
+                  {describeScope(t.scope)}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      {applicable.length === 0 && (
+        <p className="muted small" style={{ margin: '0.4rem 0 0' }}>
+          このセンサーに適用できるテンプレートはありません。
+          「設定 → センサー設定テンプレート」で作成できます。
         </p>
       )}
-    </div>
+    </section>
   )
 }

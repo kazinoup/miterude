@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   LogOut,
@@ -32,14 +33,47 @@ type Props = {
 export function UserMenu({ session, onSwitchContext }: Props) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const popoverRef = useRef<HTMLDivElement>(null)
+  const [popoverPos, setPopoverPos] = useState<{ left: number; bottom: number } | null>(
+    null,
+  )
 
   useEffect(() => {
     if (!open) return
     function onDoc(e: MouseEvent) {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false)
+      const t = e.target as Node
+      if (wrapRef.current?.contains(t)) return
+      if (popoverRef.current?.contains(t)) return
+      setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
+  }, [open])
+
+  // ポップオーバーをサイドバーの overflow:hidden に縛られないよう、
+  // トリガー位置を実測して fixed 配置する。
+  useLayoutEffect(() => {
+    if (!open) {
+      setPopoverPos(null)
+      return
+    }
+    function recompute() {
+      const trig = triggerRef.current
+      if (!trig) return
+      const r = trig.getBoundingClientRect()
+      setPopoverPos({
+        left: r.left,
+        bottom: window.innerHeight - r.top + 6,
+      })
+    }
+    recompute()
+    window.addEventListener('resize', recompute)
+    window.addEventListener('scroll', recompute, true)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      window.removeEventListener('scroll', recompute, true)
+    }
   }, [open])
 
   const initials = (session.userName.trim()[0] ?? '?').toUpperCase()
@@ -69,6 +103,7 @@ export function UserMenu({ session, onSwitchContext }: Props) {
   return (
     <div className="user-menu" ref={wrapRef}>
       <button
+        ref={triggerRef}
         type="button"
         className={`user-menu-trigger ${open ? 'is-open' : ''}`}
         onClick={() => setOpen((v) => !v)}
@@ -85,8 +120,13 @@ export function UserMenu({ session, onSwitchContext }: Props) {
         <ChevronDown size={14} className="user-chev" />
       </button>
 
-      {open && (
-        <div className="user-menu-popover" role="menu">
+      {open && popoverPos && createPortal(
+        <div
+          ref={popoverRef}
+          className="user-menu-popover is-portal"
+          role="menu"
+          style={{ left: popoverPos.left, bottom: popoverPos.bottom }}
+        >
           <div className="user-menu-head">
             <div className="user-avatar user-avatar-xl" aria-hidden="true">
               {initials}
@@ -155,7 +195,8 @@ export function UserMenu({ session, onSwitchContext }: Props) {
           <div className="user-menu-foot">
             <small>認証は Clerk で連携</small>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )

@@ -6,23 +6,23 @@ import {
   Tags,
   Trash2,
   Sliders,
-  FileText,
   ExternalLink,
 } from 'lucide-react'
 import type {
   SensorCategoryStore,
   SensorGroupStore,
-  SensorThresholds,
+  SensorSettingsTemplate,
   ThresholdTemplateStore,
 } from '../types'
 import { normalizeTag } from '../lib/groups'
+import { describeScope } from '../lib/thresholdTemplates'
 
 type Action =
   | { kind: 'tag-add'; tags: string[] }
   | { kind: 'tag-remove'; tags: string[] }
   | { kind: 'group-set'; groupId: string | null }
   | { kind: 'category-set'; categoryId: string | null }
-  | { kind: 'threshold-set'; thresholds: SensorThresholds | undefined }
+  | { kind: 'template-apply'; template: SensorSettingsTemplate }
 
 type Props = {
   open: boolean
@@ -63,9 +63,8 @@ export function SensorBulkActionsDialog({
   const [tagsInput, setTagsInput] = useState('')
   const [groupId, setGroupId] = useState<string>('')
   const [categoryId, setCategoryId] = useState<string>('')
-  // Phase 9.14: 閾値一括変更（テンプレートから / 閾値をクリア の 2 択）
-  const [thresholdSource, setThresholdSource] =
-    useState<'template' | 'clear'>('template')
+  /** Phase F-3: 一括テンプレート適用はテンプレートを選んで適用する 1 ステップに統一。
+   *  以前あった「閾値をクリア」モードは廃止。 */
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('')
 
   useEffect(() => {
@@ -74,7 +73,6 @@ export function SensorBulkActionsDialog({
     setTagsInput('')
     setGroupId('')
     setCategoryId('')
-    setThresholdSource('template')
     setSelectedTemplateId('')
   }, [open])
 
@@ -105,17 +103,13 @@ export function SensorBulkActionsDialog({
     } else if (mode === 'category-set') {
       onApply({ kind: 'category-set', categoryId: categoryId || null })
     } else {
-      // threshold-set: テンプレートから / 閾値をクリア の 2 択
-      if (thresholdSource === 'clear') {
-        onApply({ kind: 'threshold-set', thresholds: undefined })
-        return
-      }
+      // テンプレート適用
       const t = templateList.find((x) => x.id === selectedTemplateId)
       if (!t) {
         alert('テンプレートを選択してください。')
         return
       }
-      onApply({ kind: 'threshold-set', thresholds: t.thresholds })
+      onApply({ kind: 'template-apply', template: t })
     }
   }
 
@@ -137,7 +131,7 @@ export function SensorBulkActionsDialog({
     { mode: 'tag-remove', label: 'タグ削除', icon: Trash2 },
     { mode: 'group-set', label: 'グループ移動', icon: Folder },
     { mode: 'category-set', label: '区分変更', icon: Tags },
-    { mode: 'threshold-set', label: '閾値一括変更', icon: Sliders },
+    { mode: 'threshold-set', label: 'テンプレート適用', icon: Sliders },
   ]
 
   return (
@@ -253,50 +247,30 @@ export function SensorBulkActionsDialog({
             {mode === 'threshold-set' && (
               <>
                 <div className="form-row">
-                  <span className="form-label">適用方法</span>
-                  <div className="seg-toggle">
+                  <div className="form-label-with-link">
+                    <label className="form-label" htmlFor="bulk-threshold-template">
+                      テンプレート
+                    </label>
                     <button
                       type="button"
-                      className={`seg-toggle-btn ${thresholdSource === 'template' ? 'is-active' : ''}`}
-                      onClick={() => setThresholdSource('template')}
+                      className="link-btn"
+                      onClick={() => {
+                        onClose()
+                        onGoToThresholdTemplates()
+                      }}
+                      title="設定画面の閾値テンプレート管理を開く"
                     >
-                      <FileText size={13} /> テンプレートから
-                    </button>
-                    <button
-                      type="button"
-                      className={`seg-toggle-btn ${thresholdSource === 'clear' ? 'is-active' : ''}`}
-                      onClick={() => setThresholdSource('clear')}
-                    >
-                      <Trash2 size={13} /> 閾値をクリア
+                      <Sliders size={11} />
+                      テンプレートを管理する
+                      <ExternalLink size={10} />
                     </button>
                   </div>
-                </div>
-
-                {thresholdSource === 'template' && (
-                  <div className="form-row">
-                    <div className="form-label-with-link">
-                      <label className="form-label" htmlFor="bulk-threshold-template">
-                        テンプレート
-                      </label>
-                      <button
-                        type="button"
-                        className="link-btn"
-                        onClick={() => {
-                          onClose()
-                          onGoToThresholdTemplates()
-                        }}
-                        title="設定画面の閾値テンプレート管理を開く"
-                      >
-                        <Sliders size={11} />
-                        テンプレートを管理する
-                        <ExternalLink size={10} />
-                      </button>
-                    </div>
-                    {templateList.length === 0 ? (
-                      <p className="muted in-panel">
-                        テンプレートがありません。上のリンクから「設定 → 閾値テンプレート」で作成してください。
-                      </p>
-                    ) : (
+                  {templateList.length === 0 ? (
+                    <p className="muted in-panel">
+                      テンプレートがありません。上のリンクから「設定 → センサー設定テンプレート」で作成してください。
+                    </p>
+                  ) : (
+                    <>
                       <select
                         id="bulk-threshold-template"
                         className="select"
@@ -311,16 +285,20 @@ export function SensorBulkActionsDialog({
                           </option>
                         ))}
                       </select>
-                    )}
-                  </div>
-                )}
-
-                {thresholdSource === 'clear' && (
-                  <p className="muted in-panel">
-                    選択中の <strong>{selectedCount}</strong> 台すべてから
-                    閾値設定を取り除き、逸脱判定を無効化します。
-                  </p>
-                )}
+                      {selectedTemplateId && (() => {
+                        const t = templateList.find((x) => x.id === selectedTemplateId)
+                        if (!t) return null
+                        return (
+                          <p className="muted in-panel form-hint">
+                            <strong>適用対象:</strong> {describeScope(t.scope)}
+                            <br />
+                            （これ以外の項目は各センサーの既存値を維持します）
+                          </p>
+                        )
+                      })()}
+                    </>
+                  )}
+                </div>
 
                 <p className="muted in-panel form-hint">
                   ※ 種別が一致するセンサー（温湿度センサー）にのみ適用されます。

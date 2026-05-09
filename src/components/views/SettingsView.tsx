@@ -19,33 +19,35 @@ import {
   ClipboardCheck,
   CheckCircle2,
   Clock,
-  Boxes,
+  CreditCard,
 } from 'lucide-react'
 import type {
   DashboardReminder,
   DashboardReminderStore,
   DashboardStore,
-  DeviceStore,
-  ManufacturerIntegration,
+  GatewayStore,
+  InvoiceStore,
   ManufacturerIntegrationStore,
   NotificationGroup,
   NotificationGroupStore,
+  Organization,
   ReportSchedule,
   ReportScheduleStore,
   SensorStore,
   ThresholdTemplate,
   ThresholdTemplateStore,
 } from '../../types'
-import { NOTIFICATION_TIMING_LABELS, SENSOR_KIND_DEFS } from '../../types'
+import { NOTIFICATION_TIMING_LABELS } from '../../types'
 import {
   MANUFACTURERS,
+  SUPPORTED_DEVICES,
   devicesByManufacturer,
   type SupportedDevice,
 } from '../../lib/supportedDevices'
-import { CsvImportButton } from '../CsvImportButton'
 import { NotificationGroupEditDialog } from '../NotificationGroupEditDialog'
-import { ManufacturerIntegrationDialog } from '../ManufacturerIntegrationDialog'
+import { BillingTab } from '../BillingTab'
 import { ThresholdTemplateEditDialog } from '../ThresholdTemplateEditDialog'
+import { describeScope } from '../../lib/thresholdTemplates'
 import { ReportScheduleEditDialog } from '../ReportScheduleEditDialog'
 import { DashboardReminderEditDialog } from '../DashboardReminderEditDialog'
 
@@ -53,15 +55,31 @@ type Props = {
   notificationGroups: NotificationGroupStore
   manufacturerIntegrations: ManufacturerIntegrationStore
   sensors: SensorStore
+  /** メーカー単位の登録台数集計に使う（ゲートウェイぶん） */
+  gateways: GatewayStore
   thresholdTemplates: ThresholdTemplateStore
+  /** 契約・支払いタブで表示するテナントの組織情報 */
+  organization: Organization
+  /** 請求書履歴（銀行振込テナントのみ） */
+  invoices: InvoiceStore
+  /** Stripe カード登録 / 削除のモック更新ハンドラ */
+  onUpdateStripeCard: (
+    patch: Partial<
+      Pick<
+        Organization,
+        | 'stripeCustomerId'
+        | 'stripePaymentMethodId'
+        | 'cardBrand'
+        | 'cardLast4'
+        | 'cardExpMonth'
+        | 'cardExpYear'
+      >
+    >,
+  ) => void
   onUpsertNotificationGroup: (g: NotificationGroup) => void
   onDeleteNotificationGroup: (id: string) => void
-  onUpdateIntegration: (i: ManufacturerIntegration) => void
   onUpsertThresholdTemplate: (t: ThresholdTemplate) => void
   onDeleteThresholdTemplate: (id: string) => void
-  /** Phase E-3: 連携設定リストの各メーカー行から CSV を直接取り込めるようにする */
-  devices: DeviceStore
-  onDevicesChange: (next: DeviceStore) => void
   /** Phase G: レポート定期配信 */
   reportSchedules: ReportScheduleStore
   onUpsertReportSchedule: (s: ReportSchedule) => void
@@ -75,13 +93,18 @@ type Props = {
   initialTab?: Tab
 }
 
-type Tab = 'integrations' | 'notifications' | 'thresholds' | 'devices'
+type Tab = 'billing' | 'integrations' | 'notifications' | 'thresholds'
 
 const TABS: { key: Tab; label: string; icon: React.ComponentType<{ size?: number }> }[] = [
-  { key: 'integrations', label: '連携設定', icon: Plug },
+  // 一番左: 契約情報・支払い方法（クレジット登録 / 請求書履歴）
+  { key: 'billing', label: '契約・支払い', icon: CreditCard },
+  // 旧「連携設定」と「対応デバイス」を 1 タブに統合。
+  // 設定編集（ON/OFF, シークレット）は admin のみで行う運用に変更したため、
+  // テナント側はメーカー単位の連携状況 + 対応機種 + 自テナントの登録台数を
+  // 読み取り専用で表示する画面に絞り込む。
+  { key: 'integrations', label: '連携状況・対応機種', icon: Plug },
   { key: 'notifications', label: '通知設定', icon: Bell },
-  { key: 'thresholds', label: '閾値テンプレート', icon: Sliders },
-  { key: 'devices', label: '対応デバイス', icon: Boxes },
+  { key: 'thresholds', label: 'センサー設定テンプレート', icon: Sliders },
 ]
 
 function countByGroup(sensors: SensorStore, groupId: string): number {
@@ -113,8 +136,11 @@ function summarizeReminder(r: DashboardReminder): string {
   return `毎日 ${r.deadlineTime} までに未確認なら通知`
 }
 
-/** テンプレ内容のかんたんなサマリ表示（例: "温度 0〜10℃ / 湿度 40〜85%"） */
+/** テンプレ内容のかんたんなサマリ表示（例: "温度 0〜10℃ / 湿度 40〜85%"）。
+ *  scope.thresholds=true のテンプレートだけが温度・湿度のサマリを出す。
+ *  他のスコープしか持たないテンプレートは別途 describeScope() で説明される。 */
 function summarizeTemplate(t: ThresholdTemplate): string {
+  if (!t.scope.thresholds || !t.thresholds) return '—'
   if (t.thresholds.kind !== 'temperature-humidity') return '—'
   const parts: string[] = []
   const tt = t.thresholds.temperature
@@ -140,7 +166,14 @@ function formatLevelSummary(
   return label
 }
 
-function DeviceCard({ device }: { device: SupportedDevice }) {
+function DeviceCard({
+  device,
+  registeredCount,
+}: {
+  device: SupportedDevice
+  /** このテナントで現在登録されている台数。0 でも表示する（"未登録"を明示）。 */
+  registeredCount?: number
+}) {
   const [imgError, setImgError] = useState(false)
   const showImage = device.imageUrl && !imgError
   const FallbackIcon = device.category === 'sensor' ? Cpu : RouterIcon
@@ -175,6 +208,23 @@ function DeviceCard({ device }: { device: SupportedDevice }) {
         <h4 className="supported-device-model">{device.model}</h4>
         <p className="supported-device-type muted">{device.typeLabel}</p>
         <p className="supported-device-desc">{device.description}</p>
+        {/* 登録台数: undefined のときは表示しない（後方互換）。0 件のときは
+            「未登録」と明示し、"対応はしているが まだこのテナントには無い"
+            ことを区別できるようにする。 */}
+        {registeredCount != null && device.supported && (
+          <p
+            className={`supported-device-registered ${registeredCount > 0 ? 'has-registered' : ''}`}
+            aria-label="このテナントの登録台数"
+          >
+            {registeredCount > 0 ? (
+              <>
+                <strong>{registeredCount}</strong> 台が登録中
+              </>
+            ) : (
+              <span className="muted">未登録</span>
+            )}
+          </p>
+        )}
       </div>
     </article>
   )
@@ -199,14 +249,15 @@ export function SettingsView({
   notificationGroups,
   manufacturerIntegrations,
   sensors,
+  gateways,
   thresholdTemplates,
+  organization,
+  invoices,
+  onUpdateStripeCard,
   onUpsertNotificationGroup,
   onDeleteNotificationGroup,
-  onUpdateIntegration,
   onUpsertThresholdTemplate,
   onDeleteThresholdTemplate,
-  devices,
-  onDevicesChange,
   reportSchedules,
   onUpsertReportSchedule,
   onDeleteReportSchedule,
@@ -216,7 +267,7 @@ export function SettingsView({
   onDeleteDashboardReminder,
   initialTab,
 }: Props) {
-  const [tab, setTab] = useState<Tab>(initialTab ?? 'integrations')
+  const [tab, setTab] = useState<Tab>(initialTab ?? 'billing')
   const [thresholdEditDialog, setThresholdEditDialog] = useState<{
     open: boolean
     initial: ThresholdTemplate | null
@@ -225,11 +276,6 @@ export function SettingsView({
   const [groupDialog, setGroupDialog] = useState<{
     open: boolean
     initial: NotificationGroup | null
-  }>({ open: false, initial: null })
-
-  const [integrationDialog, setIntegrationDialog] = useState<{
-    open: boolean
-    initial: ManufacturerIntegration | null
   }>({ open: false, initial: null })
 
   /** Phase G: レポート定期配信ダイアログ */
@@ -250,22 +296,38 @@ export function SettingsView({
     [notificationGroups],
   )
 
-  const integrationList = useMemo(() => {
-    // 対応デバイスタブと同じ並び（MANUFACTURERS の宣言順）に揃える。
-    // Milesight が先、IoT Mobile が後ろ。マスタに無いメーカーは末尾に
-    // 名前順で並べる（将来増えても破綻しないように）。
-    const orderIndex = new Map<string, number>()
-    MANUFACTURERS.forEach((m, idx) => {
-      orderIndex.set(m.name, idx)
-    })
-    const FAR = Number.MAX_SAFE_INTEGER
-    return Object.values(manufacturerIntegrations).sort((a, b) => {
-      const ai = orderIndex.get(a.manufacturer) ?? FAR
-      const bi = orderIndex.get(b.manufacturer) ?? FAR
-      if (ai !== bi) return ai - bi
-      return a.manufacturer.localeCompare(b.manufacturer)
-    })
+  /** メーカー名 → 連携の有効/無効。
+   *  独立した enabled フラグは持たず、`webhookSecret` が設定済みかどうかで判定する。
+   *  Secret が無ければ受信認証が通らないので「停止中」と等価。 */
+  const integrationByName = useMemo(() => {
+    const map = new Map<string, boolean>()
+    for (const i of Object.values(manufacturerIntegrations)) {
+      map.set(i.manufacturer.toLowerCase(), !!i.webhookSecret)
+    }
+    return map
   }, [manufacturerIntegrations])
+
+  /** 機種 ID → このテナント内の登録台数（センサー / ゲートウェイ合算）。
+   *  `Sensor.model` / `Gateway.model` の文字列を SUPPORTED_DEVICES と照合する。
+   *  EM320-TH-MAGNET のような派生モデルも `EM320-TH` の登録としてカウントする
+   *  （Milesight Webhook では結合済みで届くため、prefix + '-' でも一致を取る）。 */
+  const registeredCountByDeviceId = useMemo(() => {
+    const counts = new Map<string, number>()
+    function bump(model: string | undefined) {
+      if (!model) return
+      const lower = model.toLowerCase()
+      for (const d of SUPPORTED_DEVICES) {
+        const dm = d.model.toLowerCase()
+        if (lower === dm || lower.startsWith(dm + '-')) {
+          counts.set(d.id, (counts.get(d.id) ?? 0) + 1)
+          return
+        }
+      }
+    }
+    for (const s of Object.values(sensors)) bump(s.model)
+    for (const g of Object.values(gateways)) bump(g.model)
+    return counts
+  }, [sensors, gateways])
 
   return (
     <div className="settings-view">
@@ -295,52 +357,58 @@ export function SettingsView({
         ))}
       </nav>
 
+      {tab === 'billing' && (
+        <BillingTab
+          organization={organization}
+          invoices={invoices}
+          onUpdateStripeCard={onUpdateStripeCard}
+        />
+      )}
+
       {tab === 'integrations' && (
         <section className="panel-card">
           <div className="panel-card-head">
             <h2>
               <Plug size={16} className="head-icon" />
-              連携設定
+              連携状況・対応機種
             </h2>
             <span className="panel-card-meta">
-              Webhook を受け取って計測データを取り込むメーカー連携の一覧です。
+              連携の有効化や受信シークレットの設定はミテルデの運営側で行います。
+              ここでは現在の連携状況と、対応している機種の一覧（と登録台数）を確認できます。
             </span>
           </div>
-          <p className="muted in-panel multiline-help">
-            <span>
-              ミテルデ側で対応しているメーカーの連携 ON/OFF と、
-              受信用シークレットを管理します。
-            </span>
-            <span>
-              項目をクリックすると、連携状態・取扱種別・シークレットを編集できます。
-            </span>
-          </p>
 
-          {integrationList.length === 0 ? (
-            <p className="muted in-panel">連携できるメーカーがまだありません。</p>
-          ) : (
-            <ul className="template-list">
-              {integrationList.map((i) => (
-                <li key={i.id} className="template-list-item">
-                  <div className="template-list-main">
-                    <div className="template-list-name-row">
-                      <button
-                        type="button"
-                        className="template-list-name-btn"
-                        onClick={() =>
-                          setIntegrationDialog({ open: true, initial: i })
-                        }
-                        title="設定"
-                      >
-                        <Plug size={13} />
-                        <strong className="template-list-name">
-                          {i.manufacturer}
-                        </strong>
-                      </button>
+          {MANUFACTURERS.map((m) => {
+            const enabled = integrationByName.get(m.name.toLowerCase()) ?? false
+            const list = devicesByManufacturer(m.key)
+            return (
+              <div key={m.key} className="manufacturer-section">
+                <header className="manufacturer-section-head">
+                  <div className="manufacturer-section-title-row">
+                    <h3 className="manufacturer-section-name">{m.name}</h3>
+                    {/* メーカー単位の "対応中 / 対応予定" は機種マスタの supported を引き続き表示。
+                        加えて、運営側で連携を有効化済みかどうかを 連携中 / 停止中 で示す。 */}
+                    {m.supported ? (
+                      <span className="supported-device-badge supported-device-badge-active">
+                        <CheckCircle2 size={11} strokeWidth={2.4} />
+                        対応中
+                      </span>
+                    ) : (
+                      <span className="supported-device-badge supported-device-badge-future">
+                        <Clock size={11} strokeWidth={2.4} />
+                        対応予定
+                      </span>
+                    )}
+                    {m.supported && (
                       <span
-                        className={`badge ${i.enabled ? 'badge-online' : 'badge-offline'}`}
+                        className={`badge ${enabled ? 'badge-online' : 'badge-offline'}`}
+                        title={
+                          enabled
+                            ? 'このテナントで連携が有効化されています'
+                            : 'このテナントでは連携が停止中です（運営にご連絡ください）'
+                        }
                       >
-                        {i.enabled ? (
+                        {enabled ? (
                           <>
                             <ShieldCheck size={11} strokeWidth={2.2} />
                             連携中
@@ -352,49 +420,30 @@ export function SettingsView({
                           </>
                         )}
                       </span>
-                    </div>
-                    <span className="template-list-summary">
-                      取扱種別:{' '}
-                      {i.sensorKinds.length === 0
-                        ? '—'
-                        : i.sensorKinds
-                            .map((k) => SENSOR_KIND_DEFS[k]?.label ?? k)
-                            .join(', ')}
-                      {' ・ '}
-                      シークレット:{' '}
-                      <span className="mono">
-                        {i.webhookSecret
-                          ? `${i.webhookSecret.slice(0, 6)}…`
-                          : '未設定'}
-                      </span>
-                    </span>
+                    )}
                   </div>
-                  <div className="template-list-actions">
-                    {/* Phase E-3: 連携 ON のメーカーは CSV を直接取り込めるアイコンを表示。
-                     *   メーカーごとにフォーマットが将来異なる場合に備えて、現状の汎用パーサに
-                     *   そのまま流す（差分はパーサ層で吸収する想定）。 */}
-                    <CsvImportButton
-                      devices={devices}
-                      onDevicesChange={onDevicesChange}
-                      iconOnly
-                      label={`${i.manufacturer} の CSV を取り込む`}
-                      className={i.enabled ? '' : 'is-muted'}
-                    />
-                    <button
-                      type="button"
-                      className="icon-btn"
-                      aria-label="設定"
-                      onClick={() =>
-                        setIntegrationDialog({ open: true, initial: i })
-                      }
-                    >
-                      <Pencil size={14} />
-                    </button>
+                  {m.description && (
+                    <p className="manufacturer-section-desc muted">
+                      {m.description}
+                    </p>
+                  )}
+                </header>
+                {list.length > 0 && (
+                  <div className="supported-device-grid">
+                    {list.map((d) => (
+                      <DeviceCard
+                        key={d.id}
+                        device={d}
+                        registeredCount={
+                          registeredCountByDeviceId.get(d.id) ?? 0
+                        }
+                      />
+                    ))}
                   </div>
-                </li>
-              ))}
-            </ul>
-          )}
+                )}
+              </div>
+            )
+          })}
         </section>
       )}
 
@@ -730,7 +779,7 @@ export function SettingsView({
           <div className="panel-card-head">
             <h2>
               <Sliders size={16} className="head-icon" />
-              閾値テンプレート
+              センサー設定テンプレート
             </h2>
             <div className="panel-card-meta">
               <button
@@ -782,6 +831,9 @@ export function SettingsView({
                       <span className="template-list-summary">
                         {summarizeTemplate(t)}
                       </span>
+                      <span className="template-list-scope muted">
+                        含まれる項目: {describeScope(t.scope)}
+                      </span>
                     </div>
                     <div className="template-list-actions">
                       <button
@@ -818,59 +870,6 @@ export function SettingsView({
         </section>
       )}
 
-      {tab === 'devices' && (
-        <section className="panel-card">
-          <div className="panel-card-head">
-            <h2>
-              <Boxes size={16} className="head-icon" />
-              対応デバイス
-            </h2>
-            <span className="panel-card-meta">
-              ミテルデで取り扱える対象デバイスの一覧です。今後随時追加していきます。
-            </span>
-          </div>
-          <p className="muted in-panel">
-            別メーカーのセンサーとゲートウェイを混在させることはできません。
-            導入時はメーカー単位で組み合わせてください。
-          </p>
-
-          {MANUFACTURERS.map((m) => {
-            const list = devicesByManufacturer(m.key)
-            if (list.length === 0) return null
-            return (
-              <div key={m.key} className="manufacturer-section">
-                <header className="manufacturer-section-head">
-                  <div className="manufacturer-section-title-row">
-                    <h3 className="manufacturer-section-name">{m.name}</h3>
-                    {m.supported ? (
-                      <span className="supported-device-badge supported-device-badge-active">
-                        <CheckCircle2 size={11} strokeWidth={2.4} />
-                        対応中
-                      </span>
-                    ) : (
-                      <span className="supported-device-badge supported-device-badge-future">
-                        <Clock size={11} strokeWidth={2.4} />
-                        対応予定
-                      </span>
-                    )}
-                  </div>
-                  {m.description && (
-                    <p className="manufacturer-section-desc muted">
-                      {m.description}
-                    </p>
-                  )}
-                </header>
-                <div className="supported-device-grid">
-                  {list.map((d) => (
-                    <DeviceCard key={d.id} device={d} />
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-        </section>
-      )}
-
       <NotificationGroupEditDialog
         open={groupDialog.open}
         initial={groupDialog.initial}
@@ -889,19 +888,10 @@ export function SettingsView({
         }
       />
 
-      <ManufacturerIntegrationDialog
-        open={integrationDialog.open}
-        initial={integrationDialog.initial}
-        onClose={() => setIntegrationDialog({ open: false, initial: null })}
-        onSubmit={(i) => {
-          onUpdateIntegration(i)
-          setIntegrationDialog({ open: false, initial: null })
-        }}
-      />
-
       <ThresholdTemplateEditDialog
         open={thresholdEditDialog.open}
         initial={thresholdEditDialog.initial}
+        notificationGroups={notificationGroups}
         onClose={() => setThresholdEditDialog({ open: false, initial: null })}
         onSubmit={(t) => {
           onUpsertThresholdTemplate(t)

@@ -6,8 +6,13 @@
 
 /* ---------- App shell ---------- */
 .app-shell {
+  /* ビューポート全体に固定のシェル。
+     スクロールは右側 .app-content だけが行うように、
+     親側で overflow: hidden を立ててサイドバーを画面に張り付かせる。
+     アカウント情報（sidebar-foot）が常に画面下端に見えていることを保証する。 */
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--gray-100);
 }
 
@@ -16,6 +21,9 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+  /* iOS Safari の慣性スクロール */
+  -webkit-overflow-scrolling: touch;
 }
 
 .app-content-inner {
@@ -40,10 +48,12 @@
   color: #fff;
   display: flex;
   flex-direction: column;
-  position: sticky;
-  top: 0;
-  height: 100vh;
+  /* 親の .app-shell が 100vh / overflow:hidden なので、
+     ここはその full-height をそのまま受け取るだけで OK。
+     position:sticky は不要になった。 */
+  height: 100%;
   border-right: 1px solid var(--navy-900);
+  overflow: hidden;
 }
 
 .sidebar-brand {
@@ -64,6 +74,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+  /* nav のみ独立スクロール。foot は flex の固定下端に張り付く。 */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .nav-item {
@@ -99,6 +112,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  flex-shrink: 0;
+  /* nav が空になっても、foot は常に下端に張り付く。 */
+  margin-top: auto;
 }
 
 .device-counter {
@@ -1800,6 +1816,26 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* 履歴コントロール内の CSV ボタン: 右端に寄せる */
+.history-controls .history-csv-btn {
+  margin-left: auto;
+}
+
+/* 履歴一覧のページネーション */
+.history-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.5rem 0.2rem;
+}
+.history-pagination-top {
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: 0.5rem;
+}
+.history-pagination-bottom {
+  border-top: 1px solid var(--gray-200);
+  margin-top: 0.5rem;
+}
+
 .history-charts {
   display: flex;
   flex-direction: column;
@@ -3292,8 +3328,8 @@
   bottom: calc(100% + 0.4rem);
   left: 0;
   /* サイドバー幅に縛られず、文字が改行で潰れないよう広めに確保 */
-  min-width: 17rem;
-  max-width: 22rem;
+  min-width: 20rem;
+  max-width: 24rem;
   background: #fff;
   border: 1px solid var(--gray-300);
   border-radius: 8px;
@@ -3301,6 +3337,15 @@
   padding: 0.55rem 0.6rem;
   z-index: 30;
   color: var(--ink);
+}
+
+/* Portal で document.body に出した場合は、サイドバーの overflow:hidden に
+   縛られないよう fixed 配置 + 高 z-index にする。
+   位置は React 側でトリガーの bbox から計算して style 経由で渡す。 */
+.user-menu-popover.is-portal {
+  position: fixed;
+  bottom: auto;
+  z-index: 1000;
 }
 
 .user-menu-head {
@@ -6003,6 +6048,80 @@
   white-space: nowrap;
 }
 
+/* ----- Phase F-3: 追加列（DevEUI / アラート設定詳細 / 通知設定 / 登録日） ----- */
+.device-table th.col-devEUI,
+.device-table td.col-devEUI {
+  min-width: 160px;
+  white-space: nowrap;
+}
+
+.device-table th.col-alert,
+.device-table td.col-alert {
+  min-width: 130px;
+  white-space: nowrap;
+}
+
+.device-table th.col-silent,
+.device-table td.col-silent {
+  min-width: 96px;
+  white-space: nowrap;
+}
+
+.device-table th.col-notification,
+.device-table td.col-notification {
+  min-width: 120px;
+  max-width: 200px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.device-table th.col-registeredAt,
+.device-table td.col-registeredAt {
+  min-width: 100px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* アラート設定セルの ON 表示（無彩色のピル） */
+.alert-cell-on {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.5rem;
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--navy-800);
+  white-space: nowrap;
+}
+
+/* 一括 CSV 出力ダイアログ: 期間行 */
+.bulk-csv-period-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.bulk-csv-period-row .select {
+  flex: 0 1 9rem;
+}
+
+/* アラート停止件数のピル */
+.silence-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-300);
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--gray-700);
+  cursor: help;
+}
+
 .device-table th.col-action,
 .device-table td.col-action {
   width: 44px;
@@ -6441,6 +6560,15 @@
   border-color: var(--navy-500);
 }
 
+/* 読み取り専用フィールド: 編集可能な入力と一目で見分けられるように、
+   グレー背景 + 枠線を弱め + 文字色をミュートにする。 */
+.meta-edit-field .form-input.form-input-static {
+  background: var(--gray-50, #f8fafc);
+  border-color: var(--gray-200);
+  color: var(--gray-600);
+  cursor: default;
+}
+
 .meta-edit-gateway {
   display: flex;
   align-items: center;
@@ -6476,6 +6604,12 @@
 .meta-readonly-value.mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   color: var(--navy-800);
+}
+
+.meta-readonly-sep {
+  color: var(--gray-300);
+  font-weight: 400;
+  user-select: none;
 }
 
 .panel-card-meta-note {
@@ -7261,6 +7395,25 @@
   color: var(--gray-700);
 }
 
+/* 連携状況・対応機種タブで、各機種カードに「○ 台が登録中 / 未登録」を出す行 */
+.supported-device-registered {
+  margin: 0.5rem 0 0;
+  padding-top: 0.4rem;
+  border-top: 1px solid var(--gray-200);
+  font-size: 0.84rem;
+  color: var(--gray-600);
+}
+
+.supported-device-registered.has-registered {
+  color: var(--navy-800);
+}
+
+.supported-device-registered strong {
+  font-size: 1rem;
+  color: var(--navy-800);
+  font-weight: 700;
+}
+
 /* ---------- Phase 9.18: 対応デバイスカード — 画像領域 ---------- */
 
 .supported-device-image-wrap {
@@ -7445,6 +7598,17 @@
   gap: 1rem;
 }
 
+/* タイトル/説明 と 絞り込み の間、絞り込み と グリッド の間を
+   どちらも .alerts-view の gap (1rem) に統一する。
+   既定の view-header の margin-bottom (1.5rem) と panel-card の
+   margin-bottom (1rem) が gap に追加されるのを避ける。 */
+.alerts-view .view-header {
+  margin-bottom: 0;
+}
+.alerts-view .panel-card {
+  margin-bottom: 0;
+}
+
 /* ----- フィルタパネル ----- */
 .alerts-filter-card .panel-card-meta {
   display: inline-flex;
@@ -7469,6 +7633,40 @@
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+}
+
+/* 期間 + 種別 を横並び。スペースが足りなくなったら折り返す。 */
+.alerts-extra-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem 1.5rem;
+  margin-top: 0.6rem;
+}
+
+.alerts-extra-filters-row .alerts-filter-block-period {
+  flex: 0 0 auto;
+}
+
+.alerts-extra-filters-row .alerts-filter-block-kinds {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 期間ブロックのみ枠線で囲って絞り込み内のグループを明示する */
+
+/* 種別チップ列を期間入力の高さに合わせて縦中央揃え */
+.alerts-extra-filters-row .alerts-kind-chips {
+  min-height: 39px;
+  align-items: center;
+}
+
+/* アラート絞り込みパネル内の SensorFilterPanel 枠線を非表示にする
+   （種別チップは期間と並ぶ別ブロックなので、ベースのカード枠だけで十分） */
+.alerts-filter-card .filter-panel {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-bottom: 0;
 }
 
 .alerts-filter-label {
@@ -7592,27 +7790,18 @@
   font-size: 0.74rem;
 }
 
-.alerts-target-kind {
+/* デバイス種別アイコン（センサー/ゲートウェイ）— 文言は使わずアイコンのみ。
+   サイドバーで使われている Cpu / Router と同じアイコンを並べる。 */
+.alerts-target-kind-icon {
   display: inline-flex;
   align-items: center;
-  padding: 0.08rem 0.35rem;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  border: 1px solid transparent;
-}
-
-.alerts-target-kind-sensor {
-  background: rgba(37, 99, 235, 0.08);
-  color: #1d4ed8;
-  border-color: rgba(37, 99, 235, 0.24);
-}
-
-.alerts-target-kind-gateway {
-  background: rgba(13, 148, 136, 0.08);
-  color: #0f766e;
-  border-color: rgba(13, 148, 136, 0.26);
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-700);
+  flex-shrink: 0;
 }
 
 /* ----- アラート一覧グリッド ----- */
@@ -7636,137 +7825,146 @@
   padding: 0.55rem 0.7rem;
   border-bottom: 2px solid var(--gray-200);
   letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .alerts-grid tbody td {
   padding: 0.55rem 0.7rem;
   border-bottom: 1px solid var(--gray-200);
-  vertical-align: top;
-  word-break: break-word;
+  /* バッジを含む行でも文字セルが上寄せにならないよう、行内で中央揃え。
+     どの列も改行させない（溢れた場合は ellipsis で詰める）。
+     「内容」列は十分な幅を割り当てているので通常は溢れない想定。 */
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .alerts-grid tbody tr:hover {
   background: var(--gray-50);
 }
 
+/* ----- 列幅
+   「発生日時」「種別」「デバイス番号」を最小限まで詰め、
+   「内容」を flex で残り全体に広げる。
+   table-layout: fixed なので width 指定を明確にする。 */
 .alerts-grid .col-time {
-  width: 11rem;
+  /* "YYYY/MM/DD HH:MM:SS" を改行なしで収める最小幅 */
+  width: 11.25rem;
   font-variant-numeric: tabular-nums;
 }
 
-.alerts-grid .col-target {
-  width: 18rem;
+.alerts-grid .col-kind {
+  /* 「逸脱（注意・期限）」のような 9 文字ラベルが入る最小幅。 */
+  width: 9.25rem;
 }
 
-.alerts-grid .col-kind {
+.alerts-grid .col-device-name {
+  width: 12.25rem;
+}
+
+.alerts-grid .col-device-number {
+  width: 6.5rem;
+}
+
+/* 「内容」と「確認メモ」は table-layout: fixed の中で
+   3:2 の比率を維持したいので、% 幅（table 幅基準）で指定する。
+   他の列は px 固定なので、残り幅を 36% / 24% で割り付ける形になる。 */
+.alerts-grid .col-confirm {
+  width: 24%;
+}
+
+.alerts-grid .col-category {
+  width: 6rem;
+}
+
+.alerts-grid .col-group {
   width: 9rem;
 }
 
+.alerts-grid .col-tags {
+  width: 9rem;
+}
+
+.alerts-grid .col-manufacturer {
+  width: 7rem;
+}
+
+.alerts-grid .col-model {
+  width: 7rem;
+}
+
+/* 「内容」列は確認メモと 3:2 になるよう % で指定。 */
 .alerts-grid .col-message {
-  /* 残り全て */
+  width: 36%;
 }
 
 .alerts-target-cell {
   display: inline-flex;
   align-items: center;
-  gap: 0.45rem;
-  margin-bottom: 0.18rem;
+  gap: 0.4rem;
+  min-width: 0;
 }
 
 .alerts-target-cell-name {
   font-weight: 600;
   color: var(--navy-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
-.alerts-target-cell-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  font-size: 0.72rem;
-  font-variant-numeric: tabular-nums;
-}
-
-/* 種別バッジ */
+/* ----- 種別バッジ（無彩色 — アイコンと文言のみで識別） ----- */
 .alert-kind-badge {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
+  gap: 0.3rem;
   padding: 0.18rem 0.5rem;
   border-radius: 999px;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
-  border: 1px solid transparent;
+  border: 1px solid var(--gray-300);
+  background: #fff;
+  color: var(--gray-800, #1f2937);
   white-space: nowrap;
 }
 
-.alert-kind-badge-deviation-alert,
-.alert-kind-chip-deviation-alert {
-  background: rgba(204, 0, 0, 0.08);
-  color: #c00;
-  border-color: rgba(204, 0, 0, 0.28);
-}
-
-.alert-kind-chip-deviation-alert.is-active {
-  background: #c00;
-  color: #fff;
-  border-color: #c00;
-}
-
-.alert-kind-badge-deviation-warn,
-.alert-kind-chip-deviation-warn {
-  background: rgba(217, 119, 6, 0.10);
-  color: #b45309;
-  border-color: rgba(217, 119, 6, 0.30);
-}
-
-.alert-kind-chip-deviation-warn.is-active {
-  background: #b45309;
-  color: #fff;
-  border-color: #b45309;
-}
-
-.alert-kind-badge-offline,
-.alert-kind-chip-offline {
-  background: var(--gray-50);
-  color: var(--gray-700);
-  border-color: var(--gray-300);
-}
-
-.alert-kind-chip-offline.is-active {
-  background: var(--gray-700);
-  color: #fff;
-  border-color: var(--gray-700);
-}
-
-.alert-kind-badge-battery,
+/* ----- 絞り込みチップ（無彩色 — アクティブ時のみ navy 反転） ----- */
+.alert-kind-chip-deviation-alert,
+.alert-kind-chip-deviation-warn,
+.alert-kind-chip-offline,
 .alert-kind-chip-battery {
-  background: rgba(202, 138, 4, 0.10);
-  color: #854d0e;
-  border-color: rgba(202, 138, 4, 0.30);
+  /* 個別色付けは廃止。.alert-kind-chip の既定スタイル（白 + gray-300 枠）を継承 */
 }
 
+.alert-kind-chip-deviation-alert.is-active,
+.alert-kind-chip-deviation-warn.is-active,
+.alert-kind-chip-offline.is-active,
 .alert-kind-chip-battery.is-active {
-  background: #854d0e;
+  background: var(--navy-800);
   color: #fff;
-  border-color: #854d0e;
+  border-color: var(--navy-800);
 }
 
-/* ページネーション */
-.alerts-pagination {
+/* ページネーション（センサー一覧と同じ PaginationControls を使う）。
+   グリッドの上下に同じスタイルで右寄せ表示する。 */
+.alerts-pagination-bar {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  padding: 0.7rem;
-  border-top: 1px solid var(--gray-200);
-  margin-top: 0.5rem;
+  justify-content: flex-end;
 }
 
-.alerts-pagination-info {
-  font-size: 0.85rem;
-  color: var(--gray-700);
-  font-variant-numeric: tabular-nums;
+.alerts-pagination-bar-top {
+  padding: 0.2rem 0.2rem 0.7rem;
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: 0.5rem;
+}
+
+.alerts-pagination-bar-bottom {
+  padding: 0.7rem 0.2rem 0.2rem;
+  margin-top: 0.5rem;
+  border-top: 1px solid var(--gray-200);
 }
 
 /* =====================================================
@@ -7839,6 +8037,9 @@
 .user-menu-switch-sub {
   font-size: 0.7rem;
   color: var(--gray-600);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* =====================================================
@@ -8015,4 +8216,1330 @@
   font-size: 0.7rem;
   color: var(--gray-500);
   text-align: center;
+}
+
+/* =====================================================
+   アラート除外時間（営業時間外などにアラートを止める）
+   - センサー詳細 > アラート設定パネル下部に表示
+   - 各除外時間カードは折りたたまずベタ並びで表示
+   ===================================================== */
+
+.exclusion-empty {
+  background: #fff;
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+  padding: 1rem;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.84rem;
+  margin: 0.5rem 0;
+}
+
+.exclusion-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.exclusion-card {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.exclusion-card.is-disabled {
+  opacity: 0.6;
+}
+
+.exclusion-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  background: var(--gray-50, #f8fafc);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.exclusion-enable {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.exclusion-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.exclusion-summary strong {
+  font-size: 0.88rem;
+  color: var(--navy-800);
+}
+
+.exclusion-summary-detail {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+}
+
+.exclusion-remove {
+  flex-shrink: 0;
+  color: var(--gray-500);
+}
+
+.exclusion-remove:hover {
+  color: var(--danger);
+}
+
+.exclusion-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+}
+
+.exclusion-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.exclusion-row .row-label {
+  flex-shrink: 0;
+  width: 7.5rem;
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  font-weight: 600;
+  padding-top: 0.35rem;
+}
+
+.exclusion-label-input {
+  flex: 1;
+  min-width: 12rem;
+  max-width: 22rem;
+}
+
+.exclusion-time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.exclusion-time-input {
+  width: 7.5rem;
+}
+
+.exclusion-time-sep {
+  color: var(--gray-500);
+}
+
+.exclusion-hint {
+  background: #fffaf0;
+  border: 1px solid #f4c98a;
+  color: #92400e;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.exclusion-warn {
+  color: var(--danger);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+.exclusion-dow-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 16rem;
+}
+
+.exclusion-dow-presets {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.exclusion-dow-checks {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.exclusion-dow-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.exclusion-targets-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  align-items: center;
+}
+
+.exclusion-target-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.84rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* =====================================================
+   現在の連続逸脱状態インジケータ
+   - センサー詳細 > アラート発生条件 > 連続逸脱アラートの中
+   - 「いま N 回連続で逸脱中（あと M 回でアラート発動）」を出す
+   ===================================================== */
+
+.streak-indicator {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  border: 1px solid transparent;
+}
+
+.streak-indicator .streak-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.streak-indicator strong {
+  font-weight: 700;
+}
+
+/* 計測データなし */
+.streak-empty {
+  background: var(--gray-50, #f8fafc);
+  border-color: var(--gray-200);
+  color: var(--gray-500);
+  font-style: italic;
+}
+
+/* 直近サンプル正常 */
+.streak-ok {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #047857;
+}
+
+/* 連続中だがまだ閾値未到達（注意表示） */
+.streak-warn-up {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.streak-warn-up.is-alert {
+  background: #fff5f5;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+/* 閾値到達でアラート発動中 */
+.streak-fired {
+  background: #fff5f5;
+  border-color: #fca5a5;
+  color: #991b1b;
+  font-weight: 500;
+}
+
+.streak-fired.is-warn {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+/* 除外時間中による抑制ラベル */
+.streak-suppressed {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  background: var(--gray-100, #f1f5f9);
+  border: 1px solid var(--gray-200);
+  border-radius: 999px;
+  color: var(--gray-700);
+  font-size: 0.74rem;
+  font-weight: 500;
+}
+
+/* 除外日 (exclusion dates) — date input は時間 input と幅を揃える */
+.exclusion-date-input {
+  width: 9.5rem;
+}
+
+/* =====================================================
+   テンプレート編集ダイアログのスコープセクション
+   ===================================================== */
+
+.tpl-scope-section {
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  margin-top: 0.75rem;
+  background: #fff;
+  overflow: hidden;
+  transition: border-color 120ms ease, background 120ms ease;
+  /* 親 .app-dialog-body が flex column になっているので、内容ぶんの
+     高さを保つために flex-shrink: 0 を明示する。 */
+  flex-shrink: 0;
+}
+
+.tpl-scope-section.is-active {
+  border-color: var(--navy-700);
+}
+
+.tpl-scope-section.is-inactive {
+  background: #fafbfc;
+}
+
+.tpl-scope-section.is-inactive .tpl-scope-body {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.tpl-scope-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50, #f8fafc);
+}
+
+.tpl-scope-section.is-active .tpl-scope-head {
+  background: #eef2f8;
+}
+
+.tpl-scope-head input[type='checkbox'] {
+  flex-shrink: 0;
+}
+
+.tpl-scope-title {
+  font-weight: 700;
+  color: var(--navy-800);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.92rem;
+}
+
+.tpl-scope-icon {
+  display: inline-flex;
+  color: var(--navy-700);
+}
+
+.tpl-scope-desc {
+  margin-left: auto;
+  color: var(--gray-600);
+  font-size: 0.78rem;
+}
+
+.tpl-scope-body {
+  padding: 0.85rem;
+}
+
+.template-exclusions {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.exclusion-block {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+}
+
+.exclusion-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.exclusion-block-title {
+  font-weight: 600;
+  font-size: 0.86rem;
+  color: var(--navy-800);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.app-dialog-lg {
+  width: min(880px, 96vw);
+}
+
+/* =====================================================
+   除外時間帯 / 除外日 — コンパクト版（折り畳み可）
+   - 各カードはデフォルト折り畳み、ヘッダ 1 行で表示
+   - 新規追加した直後だけ自動展開
+   - 除外日が年々増える運用でも一覧性を保つ
+   ===================================================== */
+
+.exclusion-empty-compact {
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+}
+
+.exclusion-list-compact {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.exclusion-card-compact {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 120ms ease;
+}
+
+.exclusion-card-compact.is-expanded {
+  border-color: var(--navy-700);
+}
+
+.exclusion-card-compact.is-disabled {
+  opacity: 0.55;
+}
+
+.exclusion-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.6rem;
+}
+
+.exclusion-card-compact.is-expanded .exclusion-row-header {
+  border-bottom: 1px solid var(--gray-200);
+  background: var(--gray-50, #f8fafc);
+}
+
+.exclusion-row-enable {
+  flex-shrink: 0;
+}
+
+.exclusion-row-name {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+  max-width: 18rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.84rem;
+  height: 1.85rem;
+}
+
+.exclusion-row-summary {
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.exclusion-row-targets {
+  background: #eef2f8;
+  color: var(--navy-700);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #d6e0ee;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.exclusion-row-toggle,
+.exclusion-row-remove {
+  flex-shrink: 0;
+  color: var(--gray-500);
+}
+
+.exclusion-row-remove:hover {
+  color: var(--danger);
+}
+
+.exclusion-row-body {
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.exclusion-edit-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.exclusion-edit-label {
+  font-size: 0.76rem;
+  color: var(--gray-700);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.exclusion-edit-sep {
+  color: var(--gray-300);
+  margin: 0 0.25rem;
+}
+
+.exclusion-time-input {
+  width: 6.5rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.84rem;
+  height: 1.85rem;
+}
+
+.exclusion-date-input {
+  width: 9rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.84rem;
+  height: 1.85rem;
+}
+
+.exclusion-dow-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+  user-select: none;
+  padding: 0 0.15rem;
+}
+
+/* 古い縦長スタイルを上書きで隠す（互換のため定義は残すが、コンパクト版では使わない） */
+.exclusion-list-compact .exclusion-card,
+.exclusion-list-compact .exclusion-card-head,
+.exclusion-list-compact .exclusion-card-body {
+  display: revert;
+}
+
+/* 閾値編集 — 温度と湿度を横 2 カラム。区切り線で視覚的に分ける。
+   画面幅が狭いときは縦積みに自動切り替え。 */
+.threshold-metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.threshold-metrics-grid > .threshold-metric {
+  margin: 0;
+}
+
+.threshold-metrics-grid::before {
+  content: '';
+  grid-column: 2;
+  grid-row: 1;
+  background: var(--gray-200);
+  height: 100%;
+  min-height: 6rem;
+  align-self: stretch;
+}
+
+@media (max-width: 720px) {
+  .threshold-metrics-grid {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  .threshold-metrics-grid::before {
+    display: none;
+  }
+}
+
+/* テンプレート読み込みカード（センサー詳細 アラート設定タブ最上部） */
+.template-load-card {
+  padding: 0.75rem 1rem;
+}
+
+.template-load-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.template-load-text {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 14rem;
+}
+
+.template-load-text strong {
+  color: var(--navy-800);
+  font-size: 0.92rem;
+}
+
+.template-load-text .small {
+  font-size: 0.78rem;
+}
+
+.template-load-trigger {
+  flex-shrink: 0;
+}
+
+.template-load-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  z-index: 20;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(20, 54, 94, 0.12);
+  min-width: 18rem;
+  max-width: 26rem;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.template-load-item {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-family: inherit;
+}
+
+.template-load-item:hover {
+  background: var(--gray-50, #f8fafc);
+}
+
+.template-load-name {
+  font-weight: 600;
+  color: var(--navy-800);
+  font-size: 0.86rem;
+}
+
+.template-load-scope {
+  font-size: 0.72rem;
+  color: var(--gray-600);
+}
+
+/* =====================================================
+   ContextSelectView: 大量テナント向け combobox
+   - 6 社以上の所属がある場合に切り替わる検索ボックス + リスト。
+   - テナントが 30 社あっても画面が縦に伸びないよう、リストは最大高さ + スクロール。
+   ===================================================== */
+
+.ctx-tenant-combo {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  background: var(--gray-50, #f8fafc);
+}
+
+.ctx-tenant-combo-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ctx-tenant-combo-label {
+  font-size: 0.78rem;
+  color: var(--gray-700);
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.ctx-tenant-combo-search {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+  min-width: 12rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0 0.5rem;
+  color: var(--gray-500);
+}
+
+.ctx-tenant-combo-search .form-input {
+  border: none;
+  outline: none;
+  flex: 1;
+  padding: 0.35rem 0.2rem;
+  font-size: 0.86rem;
+  background: transparent;
+}
+
+.ctx-tenant-combo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0.3rem;
+}
+
+.ctx-tenant-combo-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.84rem;
+}
+
+.ctx-tenant-combo-item {
+  display: grid;
+  grid-template-columns: 1.2rem 1fr 8rem auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.86rem;
+  transition: background 100ms ease, border-color 100ms ease;
+}
+
+.ctx-tenant-combo-item:hover:not(:disabled) {
+  background: var(--gray-50, #f8fafc);
+  border-color: var(--gray-200);
+}
+
+.ctx-tenant-combo-item.is-active {
+  background: #eef2f8;
+  border-color: var(--navy-700);
+}
+
+.ctx-tenant-combo-icon {
+  color: var(--navy-700);
+}
+
+.ctx-tenant-combo-name {
+  font-weight: 600;
+  color: var(--navy-800);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-tenant-combo-meta {
+  font-size: 0.74rem;
+  color: var(--gray-500);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ctx-tenant-combo-role {
+  font-size: 0.72rem;
+  color: var(--gray-600);
+  white-space: nowrap;
+}
+
+@media (max-width: 720px) {
+  .ctx-tenant-combo-item {
+    grid-template-columns: 1.2rem 1fr;
+  }
+  .ctx-tenant-combo-meta,
+  .ctx-tenant-combo-role {
+    display: none;
+  }
+}
+
+/* =====================================================
+   form-input-static: テナント側センサー詳細でも使う
+   （admin.css の同名定義と重複してもブラウザ側で問題なし）
+   ===================================================== */
+.form-input-static {
+  background: var(--gray-50, #f8fafc);
+  color: var(--gray-700);
+  cursor: default;
+  user-select: text;
+  display: flex;
+  align-items: center;
+  min-height: 2.05rem;
+}
+
+/* =====================================================
+   契約・支払いタブ（テナント設定 > 一番左）
+   ===================================================== */
+
+.billing-card {
+  margin-bottom: 1rem;
+}
+
+/* ----- 1. 契約情報セクション ----- */
+.billing-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem 1.5rem;
+  margin: 0;
+  padding: 0;
+}
+
+.billing-info-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  background: var(--gray-50, #f8fafc);
+  border-radius: 6px;
+  border: 1px solid var(--gray-200);
+}
+
+.billing-info-row dt {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.billing-info-row dd {
+  margin: 0;
+  font-size: 0.92rem;
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.billing-expiry.is-soon {
+  color: #d97706;
+}
+
+.billing-expiry.is-expired {
+  color: var(--danger);
+}
+
+.billing-expiry-days {
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .billing-info-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ----- 2. 支払い方法セクション ----- */
+.billing-method-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.85rem;
+}
+
+.billing-method-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  border: 2px solid var(--gray-200);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.billing-method-card:hover {
+  border-color: var(--gray-300);
+}
+
+.billing-method-card.is-active {
+  border-color: var(--navy-700);
+  background: #f8fbff;
+}
+
+.billing-method-card input[type='radio'] {
+  margin-top: 0.2rem;
+  flex-shrink: 0;
+}
+
+.billing-method-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.billing-method-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.billing-method-sub {
+  font-size: 0.78rem;
+  color: var(--gray-600);
+  line-height: 1.5;
+}
+
+.billing-method-detail {
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+
+@media (max-width: 720px) {
+  .billing-method-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ----- 支払い方法（読み取り専用バッジ） ----- */
+.billing-method-readonly {
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.billing-method-readonly-body {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.billing-method-readonly-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: var(--navy-700);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.billing-method-readonly-title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--gray-800, #1f2937);
+}
+
+.billing-method-readonly-sub {
+  font-size: 0.8rem;
+  margin-top: 0.15rem;
+  line-height: 1.45;
+}
+
+.billing-method-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.6rem 0.85rem;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  color: #0c4a6e;
+  font-size: 0.8rem;
+  line-height: 1.55;
+}
+
+.billing-method-notice .inline-icon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* ----- 契約情報「プラン」行のバッジ補足 ----- */
+.billing-plan-badge {
+  margin-left: 0.4rem;
+}
+
+.billing-plan-desc {
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  line-height: 1.45;
+}
+
+/* ----- カード登録済み表示 ----- */
+.billing-card-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.billing-card-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--navy-800);
+  font-size: 0.9rem;
+}
+
+.billing-card-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.6rem 1rem;
+}
+
+.billing-card-mask {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--navy-800);
+  letter-spacing: 0.08em;
+}
+
+.billing-card-exp {
+  font-size: 0.84rem;
+}
+
+.billing-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+.billing-card-remove {
+  color: var(--danger) !important;
+  margin-left: auto;
+}
+
+.billing-stripe-note {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0;
+  padding-top: 0.4rem;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.billing-card-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.billing-card-empty p {
+  margin: 0;
+}
+
+/* ----- 3. 請求書履歴 ----- */
+.billing-invoice-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.billing-invoice-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.65rem 0.85rem;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  background: #fff;
+}
+
+.billing-invoice-main {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.billing-invoice-number {
+  font-size: 0.84rem;
+  color: var(--gray-700);
+}
+
+.billing-invoice-period {
+  font-size: 0.86rem;
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.billing-invoice-amount {
+  margin-left: auto;
+  font-size: 0.96rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  font-variant-numeric: tabular-nums;
+}
+
+.billing-invoice-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.billing-invoice-status.status-confirming {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.billing-invoice-status.status-sent {
+  background: #eff6ff;
+  color: #1e40af;
+  border-color: #bfdbfe;
+}
+
+.billing-invoice-status.status-paid {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.billing-invoice-status.status-overdue {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.billing-invoice-status.status-cancelled {
+  background: var(--gray-100);
+  color: var(--gray-500);
+  text-decoration: line-through;
+}
+
+.billing-invoice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+  font-size: 0.78rem;
+}
+
+.billing-invoice-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.billing-empty {
+  padding: 1rem;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.86rem;
+  background: var(--gray-50, #f8fafc);
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+}
+
+/* =====================================================
+   Stripe Checkout 風のモックダイアログ
+   - 本番では Stripe Checkout のホストページに遷移するため、この UI は
+     ローカルのモック検証専用。ボタン押下で simulate する。
+   ===================================================== */
+
+.stripe-mock-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 39, 68, 0.55);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.stripe-mock-card {
+  background: #fff;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 460px;
+  padding: 1.4rem 1.5rem 1.25rem;
+  box-shadow: 0 24px 48px rgba(15, 39, 68, 0.25);
+}
+
+.stripe-mock-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.stripe-mock-brand {
+  display: inline-block;
+  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #635bff 0%, #5851ec 100%);
+  color: #fff;
+  padding: 0.15rem 0.6rem;
+  border-radius: 5px;
+  margin-right: 0.55rem;
+}
+
+.stripe-mock-merchant {
+  font-size: 0.84rem;
+  color: var(--gray-700);
+  font-weight: 500;
+}
+
+.stripe-mock-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.stripe-mock-sub {
+  margin: 0 0 1rem;
+  font-size: 0.8rem;
+  color: var(--gray-600);
+  line-height: 1.55;
+}
+
+.stripe-mock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.stripe-mock-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.stripe-mock-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.stripe-mock-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.stripe-mock-input {
+  flex: 1;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 6px;
+  font-size: 0.92rem;
+  letter-spacing: 0.04em;
+}
+
+.stripe-mock-input:focus {
+  border-color: #635bff;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(99, 91, 255, 0.18);
+}
+
+.stripe-mock-field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+}
+
+.stripe-mock-brand-pill {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--gray-500);
+}
+
+.stripe-mock-brand-pill.brand-visa {
+  background: #1a1f71;
+}
+.stripe-mock-brand-pill.brand-mastercard {
+  background: #eb001b;
+}
+.stripe-mock-brand-pill.brand-amex {
+  background: #2671b9;
+}
+.stripe-mock-brand-pill.brand-jcb {
+  background: #0e4c96;
+}
+
+.stripe-mock-note {
+  font-size: 0.72rem;
+  color: var(--gray-500);
+  margin: 0.4rem 0 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.stripe-mock-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 0.6rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--gray-200);
+}
+
+.stripe-mock-submit {
+  background: #635bff;
+  border-color: #635bff;
+}
+
+.stripe-mock-submit:hover:not(:disabled) {
+  background: #5851ec;
 }

@@ -3,9 +3,13 @@
    ===================================================== */
 
 .admin-shell {
+  /* テナント側と同じく、ビューポート全体に固定されたシェル。
+     スクロールするのは右の .admin-main だけ。サイドバーのアカウント情報は
+     常に画面下端に張り付く。 */
   display: grid;
   grid-template-columns: 240px 1fr;
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: var(--gray-50);
 }
 
@@ -18,34 +22,38 @@
   flex-direction: column;
   padding: 1rem 0.75rem 0.75rem;
   /* admin が「テナント側じゃないこと」が分かるよう左に強調帯 */
-  border-right: 4px solid #c2410c;
+  border-right: 4px solid #E53E3E;
+  height: 100%;
+  overflow: hidden;
 }
 
 .admin-sidebar-brand {
   display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  flex-direction: column;
+  gap: 0.5rem;
   padding: 0.5rem 0.5rem 1.25rem;
   color: #fff;
 }
 
-.admin-sidebar-brand-text {
+.admin-sidebar-brand-line {
   display: flex;
-  flex-direction: column;
-  line-height: 1.15;
+  align-items: center;
+  gap: 0.55rem;
 }
 
 .admin-sidebar-brand-name {
   font-size: 1rem;
   font-weight: 700;
+  line-height: 1;
 }
 
 .admin-sidebar-brand-sub {
   font-size: 0.68rem;
-  letter-spacing: 0.06em;
-  color: #f97316;
+  letter-spacing: 0.08em;
+  color: #E53E3E;
   text-transform: uppercase;
   font-weight: 700;
+  line-height: 1;
 }
 
 .admin-sidebar-nav {
@@ -53,6 +61,9 @@
   flex-direction: column;
   gap: 0.15rem;
   flex: 1;
+  /* nav のみ独立スクロール。foot はサイドバー下端に張り付く。 */
+  overflow-y: auto;
+  min-height: 0;
 }
 
 .admin-nav-item {
@@ -90,17 +101,21 @@
 .admin-nav-badge {
   margin-left: auto;
   font-size: 0.62rem;
-  background: rgba(255, 255, 255, 0.16);
+  /* 未登録 DevEUI などの「対応が必要」系バッジ。視認性のため
+     ネイビー基調のサイドバーの中で警告色（赤）で目立たせる。 */
+  background: var(--danger);
   color: #fff;
-  padding: 0.05rem 0.4rem;
+  padding: 0.05rem 0.45rem;
   border-radius: 999px;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
 .admin-sidebar-foot {
-  margin-top: 0.5rem;
+  margin-top: auto;
   padding-top: 0.6rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
 }
 
 /* ---------- Main ---------- */
@@ -108,10 +123,377 @@
 .admin-main {
   padding: 2rem 2.25rem;
   overflow-x: auto;
+  overflow-y: auto;
+  /* iOS Safari の慣性スクロール */
+  -webkit-overflow-scrolling: touch;
 }
 
 .admin-view {
   max-width: 1100px;
+}
+
+/* ワイド表示（センサー / ゲートウェイのように列が多いテーブル用）。
+   admin-main 内の左右パディングだけが効き、それ以外の制限を解除する。 */
+.admin-view.admin-view-wide {
+  max-width: none;
+}
+
+/* テナント一覧のワイドテーブル — 13 列に拡張したため、
+   横スクロール対応の wrap と列ごとの最低幅を設定。
+   .admin-table-wrap が overflow: hidden を後出しで上書きしてくるので、
+   両方のクラスを連結したセレクタで明示的に勝たせる。 */
+.admin-table-wrap.admin-tenants-grid {
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.tenants-table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.tenants-table th,
+.tenants-table td {
+  white-space: nowrap;
+}
+
+.tenants-table th.col-tenant-name,
+.tenants-table td.col-tenant-name {
+  /* 名前は他より広め。スクロール中も先頭がちゃんと見えるよう sticky 化はしない（要望に応じて追加可） */
+  min-width: 14rem;
+}
+
+.tenants-table th.num,
+.tenants-table td.num {
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+/* 真偽値セル（AI 連携 / 自動送付） */
+.bool-yes {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+}
+
+.bool-no {
+  font-weight: 600;
+}
+
+/* =====================================================
+   Phase F-3 (mock): 移行 CSV インポートパネル
+   ===================================================== */
+
+.migration-panel {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 1rem 1.1rem;
+  margin-bottom: 1rem;
+}
+
+/* 移行モード OFF 時は描画しないため idle スタイルは不要（削除済） */
+
+/* 移行モード ON 時のパネル */
+.migration-panel-active {
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.migration-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.85rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #fde68a;
+  gap: 0.75rem;
+}
+
+.migration-head h3 {
+  margin: 0 0 0.15rem;
+  font-size: 1rem;
+  color: var(--navy-800);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.migration-head small {
+  display: block;
+}
+
+.migration-finish-btn {
+  flex-shrink: 0;
+}
+
+/* ドロップゾーン */
+.migration-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 2rem 1rem;
+  background: #fff;
+  border: 2px dashed var(--gray-300);
+  border-radius: 8px;
+  color: var(--gray-600);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.migration-drop.is-hover {
+  border-color: var(--navy-700);
+  background: #f8fbff;
+  color: var(--navy-700);
+}
+
+.migration-drop.is-busy {
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.migration-drop-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--navy-800);
+}
+
+.migration-drop-sub {
+  font-size: 0.74rem;
+  color: var(--gray-600);
+}
+
+.migration-pick-btn {
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+
+.migration-drop-busy {
+  margin-top: 0.4rem;
+  font-size: 0.74rem;
+  color: var(--gray-600);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.spinning {
+  animation: migration-spin 1s linear infinite;
+}
+
+@keyframes migration-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* プレビューテーブル */
+.migration-preview-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.84rem;
+  margin-bottom: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  background: #fff;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+}
+
+.migration-preview-summary .warn {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.migration-table-wrap {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.migration-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+}
+
+.migration-table thead {
+  background: var(--gray-50);
+}
+
+.migration-table th {
+  text-align: left;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--gray-200);
+  white-space: nowrap;
+}
+
+.migration-table td {
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--gray-100, #f1f5f9);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.migration-table tr:last-child td {
+  border-bottom: none;
+}
+
+.migration-file {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 18rem;
+}
+
+.migration-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.migration-period {
+  font-size: 0.74rem;
+  color: var(--gray-700);
+}
+
+.migration-state {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.migration-state.is-ok {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.migration-state.is-warn {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fed7aa;
+}
+
+.migration-state.is-error {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.migration-state.is-muted {
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-600);
+  border-color: var(--gray-300);
+}
+
+.migration-error {
+  display: block;
+  margin-top: 0.15rem;
+  max-width: 14rem;
+  font-size: 0.68rem;
+  white-space: normal;
+  line-height: 1.3;
+}
+
+.migration-preview-foot {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+/* 進捗バー */
+.migration-importing {
+  padding: 1.25rem;
+}
+
+.migration-importing-label {
+  font-size: 0.84rem;
+  margin-bottom: 0.5rem;
+}
+
+.migration-progress {
+  width: 100%;
+  height: 8px;
+  background: var(--gray-200);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.migration-progress-bar {
+  height: 100%;
+  background: var(--navy-700);
+  border-radius: inherit;
+  transition: width 200ms ease;
+}
+
+/* 完了 */
+.migration-done {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.4rem 0;
+}
+
+.migration-done-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.migration-done-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.migration-done-text strong {
+  font-size: 0.95rem;
+  color: var(--navy-800);
+}
+
+.migration-done-text p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--gray-700);
+}
+
+.migration-done-text p.warn {
+  color: #b45309;
+  font-size: 0.78rem;
+}
+
+.migration-done-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .admin-view-header {
@@ -351,6 +733,273 @@
   color: var(--gray-500);
 }
 
+/* セクションヘッダ右側に「説明 + アクションメニュー」を並べるための入れ物 */
+.admin-section-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* セクション右上の kebab アクションメニュー */
+.section-action-menu {
+  position: relative;
+}
+
+.section-action-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--gray-500);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+
+.section-action-trigger:hover {
+  background: var(--gray-100, #f1f5f9);
+  color: var(--navy-700);
+  border-color: var(--gray-200);
+}
+
+.section-action-menu-pop {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  min-width: 18rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(15, 39, 68, 0.15);
+  padding: 0.3rem;
+  z-index: 30;
+}
+
+.section-action-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0.45rem 0.6rem;
+  border-radius: 5px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.section-action-item:hover {
+  background: var(--gray-100, #f1f5f9);
+}
+
+.section-action-label {
+  display: block;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.section-action-hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  color: var(--gray-600);
+  line-height: 1.4;
+}
+
+/* =====================================================
+   センサー / ゲートウェイ追加ダイアログ
+   ===================================================== */
+
+/* ワイドダイアログ（一括追加プレビュー用） */
+.app-dialog.app-dialog-wide {
+  width: min(90vw, 1100px);
+  max-width: none;
+}
+
+.form-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem 1rem;
+}
+
+.form-grid-2 .form-row.form-row-wide {
+  grid-column: 1 / -1;
+}
+
+.form-error-block {
+  margin-top: 0.85rem;
+  padding: 0.6rem 0.85rem;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  font-size: 0.82rem;
+}
+
+.form-error-block strong {
+  display: block;
+  margin-bottom: 0.2rem;
+}
+
+.form-error-block ul {
+  margin: 0;
+  padding-left: 1rem;
+}
+
+/* 一括追加: 列順案内 */
+.bulk-cols {
+  margin: 0.5rem 0 0.6rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--gray-50);
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.bulk-cols ol {
+  margin: 0.25rem 0 0;
+  padding-left: 1.4rem;
+  color: var(--gray-700);
+  line-height: 1.6;
+}
+
+.bulk-textarea {
+  width: 100%;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  white-space: pre;
+}
+
+.bulk-preview-body {
+  /* プレビュー時はテーブルが横長になるためダイアログ自体をワイド前提 */
+  padding-bottom: 0.5rem;
+}
+
+.bulk-preview-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  background: var(--gray-50);
+  border-radius: 6px;
+  margin-bottom: 0.55rem;
+  font-size: 0.86rem;
+}
+
+.bulk-preview-summary .warn {
+  color: #b45309;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.bool-yes-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #047857;
+  font-weight: 600;
+}
+
+.bulk-preview-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+}
+
+.bulk-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+
+.bulk-preview-table th {
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  background: var(--gray-50);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  text-transform: uppercase;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.bulk-preview-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--gray-100, #f1f5f9);
+  white-space: nowrap;
+}
+
+.bulk-preview-table tr:last-child td {
+  border-bottom: none;
+}
+
+.bulk-preview-table tr.has-error {
+  background: #fef2f2;
+}
+
+.bulk-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.bulk-issue {
+  display: block;
+  font-size: 0.7rem;
+  color: #b91c1c;
+  white-space: normal;
+  max-width: 28rem;
+}
+
+.bulk-done {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.5rem 0;
+}
+
+.bulk-done-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.bulk-done strong {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--navy-800);
+}
+
+.bulk-done p {
+  margin: 0.2rem 0 0;
+  font-size: 0.84rem;
+  color: var(--gray-700);
+}
+
+/* 納品 CSV プレビューでの編集可能セル用の小さな入力 */
+.bulk-preview-table .input-sm {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.74rem;
+  width: 9rem;
+}
+
+.bulk-preview-table .select {
+  padding: 0.2rem 0.35rem;
+  font-size: 0.74rem;
+}
+
 .admin-grid-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -495,14 +1144,15 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.55rem 1rem;
-  background: linear-gradient(90deg, #c2410c 0%, #ea580c 100%);
+  background: #E53E3E;
   color: #fff;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   font-size: 0.85rem;
 }
 
 .impersonation-banner.is-expired {
-  background: linear-gradient(90deg, #991b1b 0%, #b91c1c 100%);
+  /* 期限切れは更に強い暗赤色で差別化 */
+  background: #9b2c2c;
 }
 
 .app-shell.has-impersonation-banner {
@@ -663,4 +1313,893 @@
 .audit-table th:first-child,
 .audit-table td:first-child {
   white-space: nowrap;
+}
+
+/* =====================================================
+   Phase A 後半: 契約・請求 / デバイス一覧
+   ===================================================== */
+
+.contract-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.contract-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  background: #eef2f8;
+  color: var(--navy-700);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid #c7d2fe;
+}
+
+.contract-expiry {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.contract-expiry-days {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--gray-500);
+}
+
+.contract-expiry.is-soon {
+  color: #b45309;
+}
+
+.contract-expiry.is-soon .contract-expiry-days {
+  color: #b45309;
+}
+
+.contract-expiry.is-expired {
+  color: #b91c1c;
+}
+
+.contract-expiry.is-expired .contract-expiry-days {
+  color: #b91c1c;
+}
+
+/* テナント一覧の「次回更新」セル */
+.contract-expiry-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+}
+
+.contract-expiry-cell.is-soon {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.contract-expiry-cell.is-expired {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.contract-expiry-cell .contract-expiry-days {
+  color: var(--gray-500);
+  font-size: 0.72rem;
+}
+
+.contract-expiry-cell.is-soon .contract-expiry-days,
+.contract-expiry-cell.is-expired .contract-expiry-days {
+  color: inherit;
+}
+
+/* デバイス一覧のオンライン / オフライン表示 */
+.device-online,
+.device-offline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.device-online {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.device-offline {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.muted {
+  color: var(--gray-500);
+}
+
+/* 契約種別ピル（買取 / サブスク） */
+.contract-type-pill {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+}
+
+.contract-type-pill.contract-type-subscription {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.contract-type-pill.contract-type-purchase {
+  background: #fff7ed;
+  color: #b45309;
+  border-color: #fed7aa;
+}
+
+.contract-type-pill.contract-type-demo {
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-700);
+  border-color: var(--gray-300);
+}
+
+.contract-type-pill.contract-type-typeless {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+/* ツクルデAI 連携バッジ */
+.contract-pill.contract-pill-ai {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #c4b5fd;
+  font-weight: 700;
+}
+
+.contract-pill.contract-pill-sm {
+  margin-left: 0.4rem;
+  font-size: 0.62rem;
+  padding: 0.05rem 0.4rem;
+}
+
+/* テーブル列ヘッダのソート可表示 */
+.admin-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.admin-table th.sortable-th:hover {
+  color: var(--navy-800);
+  background: var(--gray-100, #f1f5f9);
+}
+
+.admin-table th.sortable-th[aria-sort='ascending'],
+.admin-table th.sortable-th[aria-sort='descending'] {
+  color: var(--navy-800);
+}
+
+.sort-indicator {
+  margin-left: 0.25rem;
+  vertical-align: middle;
+}
+
+.sort-indicator.inactive {
+  color: var(--gray-400);
+  font-size: 0.7rem;
+}
+
+.sort-indicator.active {
+  color: var(--navy-700);
+}
+
+/* =====================================================
+   テナント詳細: タイトル行 + タブ
+   ===================================================== */
+
+.tenant-detail-back {
+  margin-bottom: 0.45rem;
+}
+
+.tenant-detail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0 0 0.85rem;
+  padding: 0;
+}
+
+.tenant-detail-title {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  line-height: 1.2;
+}
+
+.tenant-detail-id {
+  font-size: 0.74rem;
+  color: var(--gray-500);
+  font-weight: 500;
+  white-space: nowrap;
+  align-self: flex-end;
+}
+
+/* タブナビ */
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: 1rem;
+  padding: 0;
+  /* タブが画面幅より広くなるときは折り返しではなく横スクロールで対応 */
+  overflow-x: auto;
+  flex-wrap: nowrap;
+}
+
+.admin-tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.55rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+  margin-bottom: -1px; /* ベースラインを border-bottom にぴったり寄せる */
+  /* タブが多い（6 個）と日本語ラベルが 1 文字ずつ縦折りされる事象が
+     起きるので、各タブはまとめて 1 行に収める。 */
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.admin-tab-btn:hover:not(.is-active) {
+  color: var(--navy-800);
+}
+
+.admin-tab-btn.is-active {
+  color: var(--navy-800);
+  border-bottom-color: var(--navy-700);
+}
+
+.admin-tab-count {
+  display: inline-block;
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-600);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  min-width: 1.2rem;
+  text-align: center;
+}
+
+.admin-tab-btn.is-active .admin-tab-count {
+  background: #eef2f8;
+  color: var(--navy-700);
+}
+
+/* タブ内のセクションは余白を最小に */
+.admin-section.admin-section-tab {
+  margin-top: 0;
+}
+
+.admin-section.admin-section-tab + .admin-section.admin-section-tab {
+  margin-top: 1rem;
+}
+
+/* =====================================================
+   スタッフ区分ピル（サポート / 営業 / 任意メール）
+   ===================================================== */
+
+.staff-category-pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.staff-category-pill.staff-category-support {
+  background: #eef2f8;
+  color: var(--navy-700);
+  border-color: #c7d2fe;
+}
+
+.staff-category-pill.staff-category-sales {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.staff-category-pill.staff-category-email {
+  background: var(--gray-100, #f1f5f9);
+  color: var(--gray-600);
+  border-color: var(--gray-300);
+}
+
+/* =====================================================
+   請求書事前通知エディタ
+   ===================================================== */
+
+.form-row.form-row-wide {
+  /* admin-grid-form の 2 カラムを横断する */
+  grid-column: 1 / -1;
+}
+
+.prenotify-block {
+  background: #f8fafc;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.prenotify-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.86rem;
+  color: var(--navy-800);
+  margin-bottom: 0.4rem;
+}
+
+.prenotify-desc {
+  margin: 0 0 0.85rem;
+  line-height: 1.55;
+}
+
+.prenotify-days-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.85rem;
+}
+
+.prenotify-days-row .form-label {
+  margin: 0;
+}
+
+.prenotify-days-input {
+  width: 5rem;
+}
+
+.prenotify-recipients {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.prenotify-empty {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+  background: #fff;
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+  padding: 0.6rem 0.85rem;
+}
+
+.recipient-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.recipient-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.recipient-name {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+
+.recipient-email {
+  color: var(--gray-700);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.recipient-remove {
+  background: transparent;
+  border: none;
+  color: var(--gray-500);
+  padding: 0.2rem;
+  cursor: pointer;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.recipient-remove:hover {
+  color: var(--danger);
+  background: #fef2f2;
+}
+
+.recipient-add {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--gray-200);
+}
+
+.recipient-add .select {
+  font-size: 0.82rem;
+}
+
+.recipient-add-email {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.recipient-add-email .form-input {
+  flex: 1;
+}
+
+/* =====================================================
+   登録デバイスタブのサブタブ（センサー / ゲートウェイ）
+   ===================================================== */
+
+.admin-section-devices {
+  /* 通常のテナント画面と同じ device-table を内包するため、
+     パディングを抑えて横幅を稼ぐ */
+  padding: 1rem 1rem 1.25rem;
+}
+
+.admin-device-grid {
+  /* 横幅が大きい列があるので必要に応じてスクロール */
+  overflow-x: auto;
+}
+
+/* 通常の SensorsView はチェックボックス列(col-check, 36px)を持つため、
+   col-name は left:36px で sticky 配置されている。admin の詳細画面では
+   col-check を出さないので、col-name を画面左端に詰める。
+   さらに横スクロール時に背景が透けて他列が透けないよう、background を担保。 */
+.admin-section-devices .device-table th.col-name,
+.admin-section-devices .device-table td.col-name {
+  left: 0;
+}
+
+.admin-empty-block {
+  background: #fff;
+  border: 1px dashed var(--gray-300);
+  border-radius: 6px;
+  padding: 1.25rem;
+  text-align: center;
+  color: var(--gray-500);
+  font-size: 0.86rem;
+}
+
+/* =====================================================
+   未登録 DevEUI セクション（Phase F-3 mock）
+   Webhook で届いたが sensors に紐付かない DevEUI 一覧。
+   オレンジ系の枠で「要対応」感を出すが、ボタン自体は通常の
+   primary（ネイビー）と ghost を使う（過度な警告色は避ける）。
+   ===================================================== */
+
+.unmatched-section {
+  border: 1px solid #f4c98a;
+  background: #fffaf0;
+}
+
+.unmatched-section .admin-section-head {
+  /* タイトルと説明テキストを縦に並べる（横幅で押しつぶされないように） */
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.unmatched-section .admin-section-head h2.unmatched-head-title {
+  color: #92400e;
+  white-space: nowrap;
+}
+
+.unmatched-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.unmatched-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0.75rem;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+}
+
+.unmatched-row-main {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.unmatched-deveui {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--navy-800);
+  letter-spacing: 0.04em;
+}
+
+.unmatched-model {
+  font-size: 0.7rem;
+  padding: 0.05rem 0.35rem;
+}
+
+.unmatched-meta {
+  font-size: 0.78rem;
+  color: var(--gray-500);
+}
+
+.unmatched-row-actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+/* =====================================================
+   Milesight 連携設定タブ（Phase F-2 mock）
+   テナントごとの Webhook URL / Secret を表示する画面。
+   ===================================================== */
+
+.integration-intro {
+  font-size: 0.86rem;
+  color: var(--gray-700);
+  line-height: 1.6;
+  margin: 0 0 1rem;
+}
+
+.integration-intro code.mono {
+  background: var(--gray-100);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.integration-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.integration-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.integration-value-block {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.integration-value {
+  flex: 1;
+  min-width: 18rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  font-size: 0.84rem;
+  word-break: break-all;
+}
+
+.integration-secret {
+  /* 下線のあるパスワード風表示 */
+  letter-spacing: 0.05em;
+}
+
+.integration-events-head {
+  font-size: 0.92rem;
+  margin: 1.5rem 0 0.6rem;
+  color: var(--navy-800);
+}
+
+.integration-events-table {
+  font-size: 0.84rem;
+}
+
+.integration-events-table th {
+  white-space: nowrap;
+}
+
+.integration-events-table td {
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.integration-status {
+  display: inline-block;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+}
+
+.integration-status-pending {
+  background: #f3f4f6;
+  color: var(--gray-700);
+  border-color: #e5e7eb;
+}
+
+.integration-status-processed {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.integration-status-unmatched {
+  background: #fffaf0;
+  color: #92400e;
+  border-color: #f4c98a;
+}
+
+.integration-status-ignored {
+  background: var(--gray-100);
+  color: var(--gray-500);
+  border-color: var(--gray-200);
+  text-decoration: line-through;
+}
+
+/* =====================================================
+   生 payload ビューア（Milesight 連携タブから開く）
+   webhook_inbox.payload_raw 相当を見せるダイアログ。
+   ===================================================== */
+
+.raw-payload-dialog {
+  /* 横長の JSON を読みやすく */
+  max-width: min(960px, 92vw);
+  width: 760px;
+}
+
+.raw-payload-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 70vh;
+}
+
+.raw-payload-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.84rem;
+  padding: 0.5rem 0.7rem;
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+}
+
+.raw-payload-meta strong {
+  color: var(--navy-800);
+  font-weight: 600;
+}
+
+.raw-payload-json {
+  flex: 1;
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  background: var(--navy-800);
+  color: #e2e8f0;
+  border-radius: 6px;
+  overflow: auto;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre;
+  max-height: 50vh;
+}
+
+/* =====================================================
+   連携設定タブ — sub-tabs（メーカー単位）
+   ===================================================== */
+
+.integration-subtabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--gray-200);
+  margin: 0 0 1rem;
+  padding: 0;
+  overflow-x: auto;
+}
+
+.integration-subtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.45rem 0.85rem;
+  font-family: inherit;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--gray-600);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.integration-subtab:hover:not(.is-active) {
+  color: var(--navy-800);
+}
+
+.integration-subtab.is-active {
+  color: var(--navy-800);
+  border-bottom-color: var(--navy-700);
+}
+
+/* sub-tab 内のパネル */
+.integration-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.integration-panel-head {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+/* IoT Mobile などの "今後対応予定" プレースホルダ */
+.integration-future-block {
+  padding: 1.25rem 1.5rem;
+}
+
+.integration-future-block strong {
+  font-size: 0.95rem;
+  color: var(--navy-800);
+}
+
+/* UUID / Secret 手入力欄 */
+.integration-input {
+  flex: 1;
+  min-width: 18rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.84rem;
+}
+
+.integration-save-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--gray-100, #f1f5f9);
+}
+
+/* =====================================================
+   Webhook 受信ログ — 期間絞り込み + ページネーション
+   ===================================================== */
+
+.integration-events-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0.7rem;
+  background: var(--gray-50, #f8fafc);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.integration-filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.form-label-inline {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.integration-date-input {
+  width: 9.5rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.82rem;
+  height: 1.9rem;
+}
+
+.integration-page-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.integration-pagesize {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.82rem;
+  height: 1.9rem;
+}
+
+.integration-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0;
+  margin-top: 0.4rem;
+}
+
+.integration-pager-status {
+  padding: 0 0.6rem;
+  font-size: 0.82rem;
+  color: var(--gray-700);
+  font-weight: 600;
+  min-width: 4.5rem;
+  text-align: center;
+}
+
+/* =====================================================
+   ダイアログの "確定済み（編集不可）" 値表示
+   - <input class="form-input form-input-static"> ではなく
+     <div class="form-input form-input-static"> としてラベル付き値を出す。
+   - 入力欄と同じ高さ・枠で並ばせ、見た目だけグレー化。
+   ===================================================== */
+
+.form-input-static {
+  background: var(--gray-50, #f8fafc);
+  color: var(--gray-700);
+  cursor: default;
+  user-select: text;
+  display: flex;
+  align-items: center;
+  min-height: 2.05rem;
 }

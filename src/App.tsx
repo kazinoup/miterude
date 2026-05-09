@@ -26,9 +26,10 @@ import type {
   DashboardStore,
   DeviceStore,
   GatewayStore,
-  ManufacturerIntegration,
+  InvoiceStore,
   ManufacturerIntegrationStore,
   NotificationGroup,
+  Organization,
   NotificationGroupStore,
   ReportKind,
   ReportSchedule,
@@ -66,6 +67,8 @@ import { canReportBattery } from './lib/supportedDevices'
 import {
   loadAuthSession,
   loadOrganizations,
+  saveOrganizations,
+  upsertOrganization,
   loadUsers,
 } from './admin/lib/adminStorage'
 import {
@@ -76,7 +79,14 @@ import {
 import { AdminApp } from './admin/AdminApp'
 import { getEffectiveRole } from './lib/permissions'
 import type { AuthSession } from './types'
-import { loadState, saveState } from './lib/storage'
+import {
+  gatewaysFromState,
+  loadState,
+  saveState,
+  sensorsFromState,
+  withGateways,
+  withSensors,
+} from './lib/storage'
 import {
   addWidget,
   buildDefaultDashboard,
@@ -91,7 +101,6 @@ import {
 import {
   buildDefaultIntegrations,
   removeNotificationGroup,
-  upsertIntegration,
   upsertNotificationGroup,
 } from './lib/notify'
 import {
@@ -115,8 +124,8 @@ import {
   upsertCategory as upsertCategoryInStore,
 } from './lib/categories'
 import {
+  applyTemplateToSensor,
   buildDefaultTemplates,
-  cloneThresholds,
   removeTemplate as deleteTemplateFromStore,
   upsertTemplate as upsertTemplateInStore,
 } from './lib/thresholdTemplates'
@@ -176,6 +185,32 @@ export default function App() {
     }
   }, [session, activeOrgId])
 
+  /** 契約・支払いタブで使う Organization オブジェクト。
+   *  admin_organizations ストアからロード。状態が変わると差し替えるため、
+   *  軽量な refresh tick で再評価する。 */
+  const [orgRefreshTick, setOrgRefreshTick] = useState(0)
+  const currentOrganization = useMemo(() => {
+    const orgs = loadOrganizations()
+    return (
+      orgs[activeOrgId] ?? {
+        id: activeOrgId,
+        name: 'CanBright（デモ組織）',
+        slug: 'canbright-demo',
+        createdAt: new Date(),
+      }
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrgId, orgRefreshTick])
+
+  function patchOrganization(patch: Partial<Organization>) {
+    const orgs = loadOrganizations()
+    const cur = orgs[activeOrgId]
+    if (!cur) return
+    const next: Organization = { ...cur, ...patch }
+    saveOrganizations(upsertOrganization(orgs, next))
+    setOrgRefreshTick((t) => t + 1)
+  }
+
   // Phase A-2: コンテキスト選択画面の表示状態（ユーザーメニューの「切り替え」から起動）
   const [contextSelectOpen, setContextSelectOpen] = useState(false)
 
@@ -183,8 +218,16 @@ export default function App() {
   const initial = useMemo(() => loadState(activeOrgId), [activeOrgId])
 
   const [devices, setDevices] = useState<DeviceStore>(initial?.devices ?? {})
-  const [sensors, setSensors] = useState<SensorStore>(initial?.sensors ?? {})
-  const [gateways, setGateways] = useState<GatewayStore>(initial?.gateways ?? {})
+  // Phase F-4 D-2: 永続化レイヤは deviceMaster/sensorProps/gatewayProps の 3 ストアで
+  // 持つが、UI コードが Sensor / Gateway の JOIN ビューを期待しているため、
+  // React state はその JOIN ビューを保持する。永続化時に withSensors / withGateways
+  // で 3 ストアに書き戻す。
+  const [sensors, setSensors] = useState<SensorStore>(
+    initial ? sensorsFromState(initial) : {},
+  )
+  const [gateways, setGateways] = useState<GatewayStore>(
+    initial ? gatewaysFromState(initial) : {},
+  )
   const [dashboards, setDashboards] = useState<DashboardStore>(
     initial?.dashboards ?? {},
   )
@@ -194,10 +237,16 @@ export default function App() {
   const [notificationGroups, setNotificationGroups] = useState<NotificationGroupStore>(
     initial?.notificationGroups ?? {},
   )
-  const [manufacturerIntegrations, setManufacturerIntegrations] =
-    useState<ManufacturerIntegrationStore>(
-      initial?.manufacturerIntegrations ?? buildDefaultIntegrations(),
-    )
+  // テナント側からは編集不可になったため、setter は使わない（admin 側のみ更新）。
+  // 実バックエンド移行後はこの localStorage state が `manufacturer_integrations`
+  // テーブルからの SELECT 結果に置き換わる想定。
+  const [manufacturerIntegrations] = useState<ManufacturerIntegrationStore>(
+    initial?.manufacturerIntegrations ?? buildDefaultIntegrations(),
+  )
+  /** 銀行振込テナント向けの請求書履歴。
+   *  実バックエンド移行後は `invoices` テーブルからの SELECT に置き換わる。
+   *  クレジット契約の請求履歴は Stripe 側で管理するためここには保存しない。 */
+  const [invoices] = useState<InvoiceStore>(initial?.invoices ?? {})
   const [checkins, setCheckins] = useState<DashboardCheckinStore>(
     initial?.checkins ?? {},
   )
@@ -235,7 +284,7 @@ export default function App() {
    *  navigate('settings') 直前に setSettingsInitialTab で指定し、
    *  SettingsView マウント時の初期タブとして消費する。 */
   const [settingsInitialTab, setSettingsInitialTab] = useState<
-    'integrations' | 'notifications' | 'thresholds' | 'devices' | undefined
+    'integrations' | 'notifications' | 'thresholds' | undefined
   >(undefined)
 
   // Phase 9.11: 共通 ReportThresholds は廃止。閾値はセンサー個別 (sensor.thresholds) で管理。
@@ -345,27 +394,32 @@ export default function App() {
 
   // 永続化: 変更ごとに保存（テナント別キーへ）
   useEffect(() => {
-    saveState(
-      {
-        devices,
-        sensors,
-        gateways,
-        dashboards,
-        activeDashboardId,
-        notificationGroups,
-        manufacturerIntegrations,
-        checkins,
-        sensorNotes,
-        sensorGroups,
-        sensorCategories,
-        thresholdTemplates,
-        savedFilters,
-        alertLogs,
-        reportSchedules,
-        dashboardReminders,
-      },
-      activeOrgId,
-    )
+    // Phase F-4 D-2: 3 ストア形式に書き戻して保存。
+    // sensors / gateways は React 上の JOIN ビューのまま withSensors / withGateways
+    // を通して deviceMaster + sensorProps / gatewayProps へ展開する。
+    let state: import('./lib/storage').PersistedState = {
+      devices,
+      deviceMaster: {},
+      sensorProps: {},
+      gatewayProps: {},
+      dashboards,
+      activeDashboardId,
+      notificationGroups,
+      manufacturerIntegrations,
+      checkins,
+      sensorNotes,
+      sensorGroups,
+      sensorCategories,
+      thresholdTemplates,
+      savedFilters,
+      alertLogs,
+      reportSchedules,
+      dashboardReminders,
+      invoices,
+    }
+    state = withSensors(state, sensors)
+    state = withGateways(state, gateways)
+    saveState(state, activeOrgId)
   }, [
     activeOrgId,
     devices,
@@ -385,8 +439,6 @@ export default function App() {
     reportSchedules,
     dashboardReminders,
   ])
-
-  const sensorIds = useMemo(() => Object.keys(sensors).sort(), [sensors])
 
   const bulkPrintDeviceIds = useMemo(() => {
     if (!printingBulk) return [] as string[]
@@ -538,11 +590,6 @@ export default function App() {
       return changed ? next : prev
     })
     toast(`通知グループ「${g?.name ?? id}」を削除しました`, 'info')
-  }
-
-  function handleUpdateIntegration(i: ManufacturerIntegration) {
-    setManufacturerIntegrations((prev) => upsertIntegration(prev, i))
-    toast(`${i.manufacturer} 連携を${i.enabled ? '有効化' : '更新'}しました`, 'success')
   }
 
   /* -------- Phase 8: 確認チェックイン・運用メモ -------- */
@@ -803,10 +850,12 @@ export default function App() {
     toast(`リマインド「${r?.name ?? id}」を削除しました`, 'info')
   }
 
-  /** 複数センサーへ閾値を一括適用（種別が一致するものだけ更新、他はスキップ） */
-  function handleApplyBulkThresholds(
+  /** 複数センサーへセンサー設定テンプレートを一括適用。
+   *  種別が一致するものだけ更新し、他はスキップ。
+   *  scope に含まれている項目だけが上書きされる（含まれない項目は元の値を維持）。 */
+  function handleApplyTemplate(
     ids: string[],
-    thresholds: SensorThresholds | undefined,
+    template: import('./types').SensorSettingsTemplate,
   ) {
     setSensors((prev) => {
       const next: SensorStore = { ...prev }
@@ -814,22 +863,14 @@ export default function App() {
       for (const sid of ids) {
         const s = next[sid]
         if (!s) continue
-        if (thresholds) {
-          // 種別チェック: thresholds.kind がセンサーの kind と一致するかチェック
-          const sensorKind = s.kind ?? 'temperature-humidity'
-          if (thresholds.kind !== sensorKind) {
-            skipped += 1
-            continue
-          }
-          // スナップショット適用: 参照を切り離してコピー
-          next[sid] = { ...s, thresholds: cloneThresholds(thresholds) }
-        } else {
-          // クリア
-          next[sid] = { ...s, thresholds: undefined }
+        const sensorKind = s.kind ?? 'temperature-humidity'
+        if (template.targetKind !== sensorKind) {
+          skipped += 1
+          continue
         }
+        next[sid] = applyTemplateToSensor(s, template)
       }
       if (skipped > 0) {
-        // state 更新中に toast を呼ぶと不安定なので setTimeout で逃がす
         setTimeout(
           () => toast(`${skipped} 台は種別が一致しないためスキップしました`, 'info'),
           0,
@@ -881,6 +922,20 @@ export default function App() {
       const cur = prev[sensorId]
       if (!cur) return prev
       return { ...prev, [sensorId]: { ...cur, groupId } }
+    })
+  }
+
+  /** ゲートウェイの任意フィールドを部分更新する汎用ハンドラ。
+   *  名称・デバイス番号・分類（区分/グループ/タグ）・アラート設定・通知グループなど、
+   *  ゲートウェイ詳細画面のリアルタイム保存先として使う。 */
+  function handleUpdateGateway(
+    gatewayId: string,
+    patch: Partial<import('./types').Gateway>,
+  ) {
+    setGateways((prev) => {
+      const cur = prev[gatewayId]
+      if (!cur) return prev
+      return { ...prev, [gatewayId]: { ...cur, ...patch } }
     })
   }
 
@@ -1090,7 +1145,6 @@ export default function App() {
       <Sidebar
         current={view}
         onNavigate={navigate}
-        sensorCount={sensorIds.length}
         dashboards={dashboards}
         activeDashboardId={activeDashboardId}
         onSelectDashboard={selectDashboard}
@@ -1139,6 +1193,7 @@ export default function App() {
               categories={sensorCategories}
               savedFilters={savedFilters}
               thresholdTemplates={thresholdTemplates}
+              notificationGroups={notificationGroups}
               onOpenSensor={openSensor}
               onDeleteSensors={handleDeleteSensors}
               onUpsertGroup={handleUpsertGroup}
@@ -1150,7 +1205,7 @@ export default function App() {
               onApplyBulkTags={handleApplyBulkTags}
               onApplyBulkGroup={handleApplyBulkGroup}
               onApplyBulkCategory={handleApplyBulkCategory}
-              onApplyBulkThresholds={handleApplyBulkThresholds}
+              onApplyTemplate={handleApplyTemplate}
               onGoToThresholdTemplates={() => {
                 setSettingsInitialTab('thresholds')
                 navigate('settings')
@@ -1191,8 +1246,12 @@ export default function App() {
               gateways={gateways}
               sensors={sensors}
               devices={devices}
+              groups={sensorGroups}
+              categories={sensorCategories}
+              notificationGroups={notificationGroups}
               onOpenGateway={openGateway}
               onOpenSensor={openSensor}
+              onUpdateGateway={handleUpdateGateway}
             />
           )}
 
@@ -1202,8 +1261,12 @@ export default function App() {
               gateways={gateways}
               sensors={sensors}
               devices={devices}
+              groups={sensorGroups}
+              categories={sensorCategories}
+              notificationGroups={notificationGroups}
               onBack={() => navigate('gateways')}
               onOpenSensor={openSensor}
+              onUpdateGateway={handleUpdateGateway}
             />
           )}
 
@@ -1212,14 +1275,17 @@ export default function App() {
               notificationGroups={notificationGroups}
               manufacturerIntegrations={manufacturerIntegrations}
               sensors={sensors}
+              gateways={gateways}
               thresholdTemplates={thresholdTemplates}
+              organization={currentOrganization}
+              invoices={invoices}
+              onUpdateStripeCard={(patch) => {
+                patchOrganization(patch)
+              }}
               onUpsertNotificationGroup={handleUpsertNotificationGroup}
               onDeleteNotificationGroup={handleDeleteNotificationGroup}
-              onUpdateIntegration={handleUpdateIntegration}
               onUpsertThresholdTemplate={handleUpsertThresholdTemplate}
               onDeleteThresholdTemplate={handleDeleteThresholdTemplate}
-              devices={devices}
-              onDevicesChange={handleDevicesChange}
               reportSchedules={reportSchedules}
               onUpsertReportSchedule={handleUpsertReportSchedule}
               onDeleteReportSchedule={handleDeleteReportSchedule}

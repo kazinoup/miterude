@@ -56,20 +56,24 @@ export function TempHumidityThresholdsEditor({ value, onChange }: Props) {
           上限値を上回ると発動します。片方だけ設定すれば、その方向だけの閾値として動作します。
         </span>
       </p>
-      <ThresholdMetricEditor
-        title="温度"
-        icon={<Thermometer size={14} />}
-        unit="℃"
-        metric={value.temperature}
-        onChange={patchTemperature}
-      />
-      <ThresholdMetricEditor
-        title="湿度"
-        icon={<Droplets size={14} />}
-        unit="%"
-        metric={value.humidity}
-        onChange={patchHumidity}
-      />
+      {/* 温度・湿度を横 2 カラムで並べる（縦区切りつき）。
+          画面幅が狭い場合は CSS で自動的に縦積みに戻る。 */}
+      <div className="threshold-metrics-grid">
+        <ThresholdMetricEditor
+          title="温度"
+          icon={<Thermometer size={14} />}
+          unit="℃"
+          metric={value.temperature}
+          onChange={patchTemperature}
+        />
+        <ThresholdMetricEditor
+          title="湿度"
+          icon={<Droplets size={14} />}
+          unit="%"
+          metric={value.humidity}
+          onChange={patchHumidity}
+        />
+      </div>
     </div>
   )
 }

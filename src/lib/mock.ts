@@ -10,6 +10,7 @@ import type {
   AlertSettings,
   DeviceStore,
   Gateway,
+  GatewayAlertSettings,
   GatewayStore,
   Sensor,
   SensorReading,
@@ -26,6 +27,15 @@ export function defaultAlertSettings(): AlertSettings {
     /** Phase C: バッテリー残量アラート — 既定 OFF / 10% */
     batteryEnabled: false,
     batteryThresholdPercent: 10,
+  }
+}
+
+/** Gateway 用の既定アラート設定（オフラインのみ） */
+export function defaultGatewayAlertSettings(): GatewayAlertSettings {
+  return {
+    offlineEnabled: true,
+    offlineThresholdMinutes: 60,
+    notifyChannels: { email: true, slack: false, push: false },
   }
 }
 
@@ -90,10 +100,18 @@ function makeSensor(
   const last = readings[readings.length - 1]
   const lastAt = last?.measuredAt ?? new Date()
   const battery = last?.battery ?? mockBatteryFor(id)
+  const serial = generateSerial(id)
+  const devEUI = hash16(`devEUI:${id}`)
   return {
     id,
+    deviceType: 'sensor',
+    role: 'temperature-humidity',
+    name: undefined,
     deviceNumber: generateDeviceNumber(index),
-    serialNumber: generateSerial(id),
+    serialNumber: serial,
+    devEUI,
+    // Milesight は devEUI を externalKey として使う
+    externalKey: devEUI,
     model: DEFAULT_MODEL,
     manufacturer: DEFAULT_MANUFACTURER,
     gatewayId,
@@ -111,13 +129,28 @@ function makeSensor(
 
 function makeGateway(index: number): Gateway {
   const id = `GW-${String(index + 1).padStart(3, '0')}`
+  const serial = hash16(`gateway:${id}`)
+  const devEUI = hash16(`gateway-eui:${id}`)
   return {
     id,
+    deviceType: 'gateway',
+    role: 'master',
     name: `ゲートウェイ ${String(index + 1).padStart(2, '0')}`,
-    serialNumber: hash16(`gateway:${id}`),
+    deviceNumber: id,
+    serialNumber: serial,
+    devEUI,
+    // Milesight は devEUI を externalKey として使う
+    externalKey: devEUI,
     model: GATEWAY_MODEL,
     manufacturer: GATEWAY_MANUFACTURER,
     location: index === 0 ? '1F' : index === 1 ? '2F' : `${index + 1}F`,
+    online: true,
+    lastSeenAt: new Date(),
+    categoryId: null,
+    groupId: null,
+    tags: [],
+    notificationGroupId: null,
+    alertSettings: defaultGatewayAlertSettings(),
     registeredAt: new Date(),
   }
 }

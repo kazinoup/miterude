@@ -46,6 +46,13 @@ export type SupportedDevice = {
     /** バッテリー残量を計測値として送信できるか */
     battery?: boolean
   }
+  /** センサー種別（`category === 'sensor'` のときのみ意味を持つ）。
+   *  センサー追加ダイアログで「種別」を自動決定するために使う。
+   *  未指定なら呼び出し側で 'temperature-humidity' をデフォルトとする。 */
+  kind?: import('../types').SensorKind
+  /** ゲートウェイ役割（`category === 'gateway'` のときのみ意味を持つ）。
+   *  Phase F-4: model から自動判別して DeviceBase.role に格納する。 */
+  gatewayRole?: import('../types').GatewayRole
 }
 
 export const MANUFACTURERS: Manufacturer[] = [
@@ -78,6 +85,20 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     supported: true,
     imageUrl: '/devices/milesight-em320-th.png',
     capabilities: { battery: true },
+    kind: 'temperature-humidity',
+  },
+  {
+    id: 'milesight-em320-th-magnet',
+    manufacturerKey: 'milesight',
+    category: 'sensor',
+    model: 'EM320-TH-MAGNET',
+    typeLabel: '温湿度センサー（マグネット式）',
+    description:
+      '扉開閉などに使うマグネット付きの LoRaWAN 温湿度センサー。EM320-TH 派生機。',
+    supported: true,
+    imageUrl: '/devices/milesight-em320-th.png',
+    capabilities: { battery: true },
+    kind: 'temperature-humidity',
   },
   {
     id: 'milesight-am102',
@@ -90,6 +111,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     supported: false,
     imageUrl: '/devices/milesight-am102.png',
     capabilities: { battery: true },
+    kind: 'temperature-humidity',
   },
   {
     id: 'milesight-ug65',
@@ -101,6 +123,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
       '屋内設置向けの LoRaWAN ゲートウェイ。複数のセンサーから受信したデータをクラウドへ中継する。',
     supported: true,
     imageUrl: '/devices/milesight-ug65.png',
+    gatewayRole: 'master',
   },
   {
     id: 'milesight-ug63',
@@ -112,6 +135,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
       'コンパクトな LoRaWAN ゲートウェイ。小規模な拠点や設置スペースが限られる場所向け。',
     supported: true,
     imageUrl: '/devices/milesight-ug63.png',
+    gatewayRole: 'relay',
   },
 
   /* ---------- IoT Mobile（対応予定） ---------- */
@@ -123,6 +147,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     typeLabel: '温湿度センサー',
     description: 'LTE-M 対応のスタンドアロン温湿度センサーを準備中。',
     supported: false,
+    kind: 'temperature-humidity',
   },
   {
     id: 'iot-mobile-gateway-tbd',
@@ -178,4 +203,81 @@ export function findSupportedDeviceByModel(
 export function canReportBattery(model: string): boolean {
   const dev = findSupportedDeviceByModel(model)
   return dev?.capabilities?.battery === true
+}
+
+/** model 文字列に **派生サフィックス**（例 `-MAGNET`）が付いていても
+ *  ベース機種を見つけられるよう、prefix 一致で検索する版。
+ *  まず完全一致 → ヒットしなければ "ベース-" で始まる一致を試す。 */
+export function findSupportedDeviceByModelLoose(
+  model: string,
+): SupportedDevice | undefined {
+  if (!model) return undefined
+  const exact = findSupportedDeviceByModel(model)
+  if (exact) return exact
+  const lower = model.toLowerCase()
+  return SUPPORTED_DEVICES.find((d) => {
+    const dm = d.model.toLowerCase()
+    return lower.startsWith(dm + '-')
+  })
+}
+
+/** あるメーカーの **対応中（supported）かつ category='sensor'** な機種を返す。
+ *  センサー追加ダイアログのモデル選択 dropdown 用。 */
+export function supportedSensorModelsByManufacturer(
+  manufacturerKey: string,
+): SupportedDevice[] {
+  return SUPPORTED_DEVICES.filter(
+    (d) =>
+      d.manufacturerKey === manufacturerKey &&
+      d.category === 'sensor' &&
+      d.supported,
+  ).sort((a, b) => a.model.localeCompare(b.model))
+}
+
+/** 対応中のメーカーだけを返す。センサー追加ダイアログのメーカー選択用。 */
+export function supportedManufacturers(): Manufacturer[] {
+  return MANUFACTURERS.filter((m) => m.supported)
+}
+
+/** model 文字列から SensorKind を引く（派生型対応 + 既定 'temperature-humidity'）。 */
+export function inferSensorKindFromModel(
+  model: string,
+): import('../types').SensorKind {
+  const dev = findSupportedDeviceByModelLoose(model)
+  return dev?.kind ?? 'temperature-humidity'
+}
+
+/* ---------- Phase F-4 (Block D): model → DeviceType / DeviceRole 推定 ---------- */
+
+/** model 文字列から DeviceType を引く。
+ *  未知モデルの場合 undefined を返す（呼び出し側で登録拒否）。 */
+export function inferDeviceTypeFromModel(
+  model: string,
+): import('../types').DeviceType | undefined {
+  const dev = findSupportedDeviceByModelLoose(model)
+  if (!dev) return undefined
+  return dev.category
+}
+
+/** model 文字列から DeviceRole を引く（model からほぼ一意に決まる）。
+ *  未知モデルの場合 undefined を返す（呼び出し側で登録拒否）。 */
+export function inferDeviceRoleFromModel(
+  model: string,
+): import('../types').DeviceRole | undefined {
+  const dev = findSupportedDeviceByModelLoose(model)
+  if (!dev) return undefined
+  if (dev.category === 'gateway') {
+    return dev.gatewayRole ?? 'master'
+  }
+  // sensor: SensorKind がそのまま SensorRole に対応する命名を採用しているので流用
+  return (dev.kind ?? 'other') as import('../types').SensorRole
+}
+
+/** Webhook 受信時に「ペイロードのどのフィールドを externalKey として使うか」を
+ *  メーカー単位で決めるルール。Milesight は devEUI、それ以外は serialNumber を既定とする。
+ *  本番では ManufacturerIntegration.externalKeyField で上書き可能にしていく想定。 */
+export function externalKeyFieldFor(manufacturer: string): 'devEUI' | 'serialNumber' {
+  const m = manufacturer.toLowerCase()
+  if (m === 'milesight') return 'devEUI'
+  return 'serialNumber'
 }

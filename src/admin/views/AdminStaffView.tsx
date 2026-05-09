@@ -112,10 +112,10 @@ export function AdminStaffView({ onOpenStaff }: Props) {
           <thead>
             <tr>
               <th>名前</th>
+              <th>区分</th>
               <th>メール</th>
               <th>有効な割り当て</th>
               <th>追加日</th>
-              <th>ID</th>
             </tr>
           </thead>
           <tbody>
@@ -126,10 +126,16 @@ export function AdminStaffView({ onOpenStaff }: Props) {
                 onClick={() => onOpenStaff(u.id)}
               >
                 <td className="admin-table-name">{u.displayName}</td>
+                <td>
+                  <span
+                    className={`staff-category-pill staff-category-${u.staffCategory ?? 'support'}`}
+                  >
+                    {u.staffCategory === 'sales' ? '営業' : 'サポート'}
+                  </span>
+                </td>
                 <td className="mono">{u.email}</td>
                 <td className="num">{u.activeAssignments}</td>
                 <td>{formatDate(u.createdAt)}</td>
-                <td className="mono ellipsis">{u.id}</td>
               </tr>
             ))}
             {filtered.length === 0 && (

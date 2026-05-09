@@ -125,7 +125,17 @@ export const DEFAULT_CATEGORY_IDS = {
   other: 'cat-default-other',
 } as const
 
-/** 初期データとして用意する区分（冷凍 / 冷蔵 / 室温） */
+/** Phase F-3 → F-4 の経過措置: 旧「親機 / 中継機」区分の固定 ID。
+ *  ストレージマイグレーションで既存データの categoryId が一致した場合、
+ *  Gateway.role に変換してから categoryId を null にクリアする。
+ *  buildDefaultCategories からは削除済み。 */
+export const LEGACY_GATEWAY_CATEGORY_IDS = {
+  master: 'cat-default-gateway-master',
+  relay: 'cat-default-gateway-relay',
+} as const
+
+/** 初期データとして用意する区分（冷凍 / 冷蔵 / 室温）。
+ *  Phase F-4: 「親機 / 中継機」は Device.role に移行したため削除。 */
 export function buildDefaultCategories(): SensorCategoryStore {
   const now = new Date()
   return {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ChevronRight,
+  Download,
   Trash2,
   Cpu,
   BatteryFull,
@@ -14,16 +15,16 @@ import {
   Folder,
   Tags,
   Settings2,
-  ChevronLeft,
-  ChevronsLeft,
-  ChevronsRight,
 } from 'lucide-react'
+import { PaginationControls } from '../PaginationControls'
 import { toast } from '../../lib/toast'
 import type {
   DeviceStore,
   FilterConditions,
   Gateway,
   GatewayStore,
+  NotificationGroup,
+  NotificationGroupStore,
   SavedFilter,
   SavedFilterStore,
   Sensor,
@@ -33,7 +34,7 @@ import type {
   SensorGroupStore,
   SensorReading,
   SensorStore,
-  SensorThresholds,
+  SensorSettingsTemplate,
   ThresholdTemplateStore,
 } from '../../types'
 import {
@@ -66,6 +67,7 @@ import {
   type PageSize,
 } from '../SensorColumnSettingsDialog'
 import { SensorBulkActionsDialog } from '../SensorBulkActionsDialog'
+import { SensorBulkCsvDialog } from '../SensorBulkCsvDialog'
 import { ConfirmDialog } from '../ConfirmDialog'
 
 type Props = {
@@ -76,6 +78,8 @@ type Props = {
   categories: SensorCategoryStore
   savedFilters: SavedFilterStore
   thresholdTemplates: ThresholdTemplateStore
+  /** 「通知設定」列の表示に使う */
+  notificationGroups: NotificationGroupStore
   onOpenSensor: (id: string) => void
   onDeleteSensors: (ids: string[]) => void
   onUpsertGroup: (g: SensorGroup) => void
@@ -87,15 +91,15 @@ type Props = {
   onApplyBulkTags: (ids: string[], tags: string[], remove: boolean) => void
   onApplyBulkGroup: (ids: string[], groupId: string | null) => void
   onApplyBulkCategory: (ids: string[], categoryId: string | null) => void
-  onApplyBulkThresholds: (
-    ids: string[],
-    thresholds: SensorThresholds | undefined,
-  ) => void
-  /** 一括操作ダイアログから「閾値テンプレートを管理」リンクで使う */
+  /** Phase: テンプレート（4 スコープ対応）を一括適用。
+   *  scope に応じて閾値・アラート発生条件・除外設定・通知のうち
+   *  含まれているものだけを上書きする（種別不一致はスキップ）。 */
+  onApplyTemplate: (ids: string[], template: SensorSettingsTemplate) => void
+  /** 一括操作ダイアログから「テンプレートを管理」リンクで使う */
   onGoToThresholdTemplates: () => void
 }
 
-type SensorRow = {
+export type SensorRow = {
   sensor: Sensor
   count: number
   first?: Date
@@ -132,7 +136,7 @@ function savePageSize(n: PageSize): void {
   }
 }
 
-function buildRow(
+export function buildRow(
   sensor: Sensor,
   readings: SensorReading[],
   gateways: GatewayStore,
@@ -257,26 +261,35 @@ function formatThresholdShort(
  *  各列の <th> ラベルと <td> セルを 1 箇所に集約。
  *  SensorsView 本体では columnOrder 配列を順番に回しながら描画する。
  */
-const COLUMN_LABEL: Record<SensorColumnKey, string> = {
+export const COLUMN_LABEL: Record<SensorColumnKey, string> = {
   deviceNumber: 'デバイス番号',
   serialNumber: 'シリアル番号',
+  devEUI: 'DevEUI',
   model: 'モデル',
   manufacturer: 'メーカー',
   category: '区分',
-  group: 'グループ',
+  group: 'グループ / 設置場所',
   gateway: 'ゲートウェイ',
   tags: 'タグ',
   status: '状態',
   battery: 'バッテリー',
-  lastUpdated: '最終更新',
+  lastUpdated: '最新受信日時',
   latestValue: '最新値',
-  threshold: '閾値',
+  threshold: '逸脱設定（閾値）',
+  deviationAlert: '連続逸脱アラート',
+  offlineAlert: 'オフラインアラート',
+  batteryAlert: 'バッテリーアラート',
+  silentTimeRanges: 'アラート停止時間帯',
+  silentDates: 'アラート停止日',
+  notificationSetting: '通知設定',
+  registeredAt: '登録日',
 }
 
 /** ヘッダ <th> に当てる class（数値系の列は num を含む） */
-const COLUMN_HEAD_CLASS: Record<SensorColumnKey, string> = {
+export const COLUMN_HEAD_CLASS: Record<SensorColumnKey, string> = {
   deviceNumber: 'col-deviceNumber',
   serialNumber: 'col-serialNumber',
+  devEUI: 'col-devEUI',
   model: 'col-model',
   manufacturer: 'col-manufacturer',
   category: 'col-category',
@@ -288,14 +301,23 @@ const COLUMN_HEAD_CLASS: Record<SensorColumnKey, string> = {
   lastUpdated: 'col-lastUpdated',
   latestValue: 'num col-latestValue',
   threshold: 'col-threshold',
+  deviationAlert: 'col-alert',
+  offlineAlert: 'col-alert',
+  batteryAlert: 'col-alert',
+  silentTimeRanges: 'num col-silent',
+  silentDates: 'num col-silent',
+  notificationSetting: 'col-notification',
+  registeredAt: 'col-registeredAt',
 }
 
-/** 1 行 × 1 列の <td> を描画する */
-function renderCell(
+/** 1 行 × 1 列の <td> を描画する。
+ *  notificationGroups は「通知設定」列の表示にだけ使う（admin 側など、未指定でも他列はそのまま動く）。 */
+export function renderCell(
   key: SensorColumnKey,
   r: SensorRow,
   groups: Record<string, SensorGroup>,
   categories: Record<string, SensorCategory>,
+  notificationGroups?: Record<string, NotificationGroup>,
 ): ReactNode {
   const sensor = r.sensor
   switch (key) {
@@ -313,6 +335,16 @@ function renderCell(
           title={sensor.serialNumber}
         >
           {sensor.serialNumber}
+        </td>
+      )
+    case 'devEUI':
+      return (
+        <td
+          key={key}
+          className="cell-mono cell-serial col-devEUI"
+          title={sensor.devEUI ?? ''}
+        >
+          {sensor.devEUI ?? '—'}
         </td>
       )
     case 'model':
@@ -395,92 +427,147 @@ function renderCell(
           <ThresholdCell sensor={sensor} />
         </td>
       )
+    case 'deviationAlert': {
+      const a = sensor.alertSettings
+      return (
+        <td key={key} className="col-alert">
+          {a?.deviationEnabled ? (
+            <span className="alert-cell-on">
+              ON ×{a.deviationConsecutiveCount}回連続
+            </span>
+          ) : (
+            <span className="muted">OFF</span>
+          )}
+        </td>
+      )
+    }
+    case 'offlineAlert': {
+      const a = sensor.alertSettings
+      return (
+        <td key={key} className="col-alert">
+          {a?.offlineEnabled ? (
+            <span className="alert-cell-on">
+              ON {a.offlineThresholdMinutes}分超
+            </span>
+          ) : (
+            <span className="muted">OFF</span>
+          )}
+        </td>
+      )
+    }
+    case 'batteryAlert': {
+      const a = sensor.alertSettings
+      return (
+        <td key={key} className="col-alert">
+          {a?.batteryEnabled ? (
+            <span className="alert-cell-on">
+              ON ≦{a.batteryThresholdPercent ?? 10}%
+            </span>
+          ) : (
+            <span className="muted">OFF</span>
+          )}
+        </td>
+      )
+    }
+    case 'silentTimeRanges': {
+      const list = sensor.alertSettings?.exclusionWindows ?? []
+      return (
+        <td key={key} className="num col-silent">
+          <SilenceCountCell count={list.length} title={summarizeWindows(list)} />
+        </td>
+      )
+    }
+    case 'silentDates': {
+      const list = sensor.alertSettings?.exclusionDates ?? []
+      return (
+        <td key={key} className="num col-silent">
+          <SilenceCountCell count={list.length} title={summarizeDates(list)} />
+        </td>
+      )
+    }
+    case 'notificationSetting': {
+      const gid = sensor.notificationGroupId
+      const g = gid && notificationGroups ? notificationGroups[gid] : undefined
+      return (
+        <td key={key} className="col-notification" title={g?.name ?? ''}>
+          {g ? g.name : <span className="muted">—</span>}
+        </td>
+      )
+    }
+    case 'registeredAt': {
+      const d = sensor.registeredAt
+      return (
+        <td key={key} className="col-registeredAt">
+          {d ? fmtDateOnly(d) : <span className="muted">—</span>}
+        </td>
+      )
+    }
   }
 }
 
-/** 件数表示 + ページ送りボタンのセット。上下のツールバーで共用する。 */
-function PaginationControls({
-  page,
-  totalPages,
-  pageSize,
-  filteredCount,
-  totalCount,
-  onSetPage,
-}: {
-  page: number
-  totalPages: number
-  pageSize: number
-  filteredCount: number
-  totalCount: number
-  onSetPage: (n: number | ((p: number) => number)) => void
-}) {
-  const start = filteredCount === 0 ? 0 : (page - 1) * pageSize + 1
-  const end = Math.min(page * pageSize, filteredCount)
-  const isFiltered = filteredCount !== totalCount
+/** アラート停止件数表示 — 0 件は「—」、それ以外はピル + ホバー詳細 */
+function SilenceCountCell({ count, title }: { count: number; title: string }) {
+  if (count === 0) return <span className="muted">—</span>
   return (
-    <div className="pagination-bar">
-      <span className="pagination-info">
-        {isFiltered ? (
-          <>
-            絞り込み <strong>{filteredCount}</strong> 件中、
-            <strong>
-              {start}〜{end}
-            </strong>{' '}
-            件を表示（全 {totalCount} 台）
-          </>
-        ) : (
-          <>
-            全 <strong>{totalCount}</strong> 件中、
-            <strong>
-              {start}〜{end}
-            </strong>{' '}
-            件を表示
-          </>
-        )}
-      </span>
-      <div className="pagination-controls">
-        <button
-          type="button"
-          className="icon-btn"
-          disabled={page === 1}
-          onClick={() => onSetPage(1)}
-          aria-label="最初のページ"
-        >
-          <ChevronsLeft size={16} />
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          disabled={page === 1}
-          onClick={() => onSetPage((p) => Math.max(1, p - 1))}
-          aria-label="前のページ"
-        >
-          <ChevronLeft size={16} />
-        </button>
-        <span className="pagination-current">
-          {page} / {totalPages}
-        </span>
-        <button
-          type="button"
-          className="icon-btn"
-          disabled={page === totalPages}
-          onClick={() => onSetPage((p) => Math.min(totalPages, p + 1))}
-          aria-label="次のページ"
-        >
-          <ChevronRight size={16} />
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          disabled={page === totalPages}
-          onClick={() => onSetPage(totalPages)}
-          aria-label="最後のページ"
-        >
-          <ChevronsRight size={16} />
-        </button>
-      </div>
-    </div>
+    <span className="silence-pill" title={title}>
+      {count} 件
+    </span>
   )
+}
+
+/** ホバー用の停止時間帯サマリ（曜日 + HH:MM〜HH:MM を 1 行ずつ） */
+function summarizeWindows(
+  list: ReadonlyArray<{
+    label?: string
+    enabled: boolean
+    startTime: string
+    endTime: string
+    daysOfWeek: ReadonlyArray<number>
+  }>,
+): string {
+  const wd = ['日', '月', '火', '水', '木', '金', '土']
+  return list
+    .map((w) => {
+      const days =
+        w.daysOfWeek.length === 0
+          ? '毎日'
+          : w.daysOfWeek.map((d) => wd[d]).join('')
+      const status = w.enabled ? '' : '（無効）'
+      const lbl = w.label ? `${w.label}: ` : ''
+      return `${lbl}${days} ${w.startTime}〜${w.endTime}${status}`
+    })
+    .join('\n')
+}
+
+/** ホバー用の停止日サマリ（YYYY-MM-DD 〜 YYYY-MM-DD を 1 行ずつ） */
+function summarizeDates(
+  list: ReadonlyArray<{
+    label?: string
+    enabled: boolean
+    startDate: string
+    endDate: string
+  }>,
+): string {
+  return list
+    .map((d) => {
+      const range =
+        d.startDate === d.endDate
+          ? d.startDate
+          : `${d.startDate} 〜 ${d.endDate}`
+      const status = d.enabled ? '' : '（無効）'
+      const lbl = d.label ? `${d.label}: ` : ''
+      return `${lbl}${range}${status}`
+    })
+    .join('\n')
+}
+
+/** YYYY/MM/DD（時刻なし） */
+function fmtDateOnly(d: Date): string {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—'
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}/${m}/${day}`
 }
 
 function CategoryBadge({ category }: { category?: SensorCategory }) {
@@ -583,6 +670,7 @@ export function SensorsView({
   categories,
   savedFilters,
   thresholdTemplates,
+  notificationGroups,
   onOpenSensor,
   onDeleteSensors,
   onUpsertGroup,
@@ -594,7 +682,7 @@ export function SensorsView({
   onApplyBulkTags,
   onApplyBulkGroup,
   onApplyBulkCategory,
-  onApplyBulkThresholds,
+  onApplyTemplate,
   onGoToThresholdTemplates,
 }: Props) {
   const sensorList = useMemo(
@@ -622,6 +710,7 @@ export function SensorsView({
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false)
   const [columnSettingsOpen, setColumnSettingsOpen] = useState(false)
   const [bulkActionOpen, setBulkActionOpen] = useState(false)
+  const [bulkCsvOpen, setBulkCsvOpen] = useState(false)
   const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false)
 
   // 列の表示／非表示 — localStorage に永続化
@@ -758,14 +847,14 @@ export function SensorsView({
     toast(`保存フィルタ「${f.name}」を適用しました`, 'info')
   }
 
-  // 一括操作（タグ/グループ）
+  // 一括操作（タグ/グループ/区分/テンプレート）
   function handleBulkAction(
     action:
       | { kind: 'tag-add'; tags: string[] }
       | { kind: 'tag-remove'; tags: string[] }
       | { kind: 'group-set'; groupId: string | null }
       | { kind: 'category-set'; categoryId: string | null }
-      | { kind: 'threshold-set'; thresholds: SensorThresholds | undefined },
+      | { kind: 'template-apply'; template: SensorSettingsTemplate },
   ) {
     const ids = Array.from(selected)
     if (ids.length === 0) return
@@ -788,13 +877,10 @@ export function SensorsView({
         : '未設定'
       toast(`${ids.length} 台の区分を「${catName}」に変更しました`, 'success')
     } else {
-      // threshold-set
-      onApplyBulkThresholds(ids, action.thresholds)
-      // App.tsx 側で種別不一致は弾くが、ここでは「適用しました」を出す
+      // template-apply
+      onApplyTemplate(ids, action.template)
       toast(
-        action.thresholds
-          ? `${ids.length} 台に閾値を適用しました（種別が一致するセンサーのみ）`
-          : `${ids.length} 台の閾値をクリアしました`,
+        `${ids.length} 台にテンプレート「${action.template.name}」を適用しました（種別が一致するセンサーのみ）`,
         'success',
       )
     }
@@ -898,6 +984,15 @@ export function SensorsView({
               <button
                 type="button"
                 className="btn btn-secondary btn-sm"
+                onClick={() => setBulkCsvOpen(true)}
+                title="選択したセンサーの計測データを ZIP でまとめてダウンロード"
+              >
+                <Download size={14} />
+                <span>CSV 出力</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
                 onClick={bulkRestart}
               >
                 <RotateCcw size={14} />
@@ -927,7 +1022,7 @@ export function SensorsView({
                 value={sortKey}
                 onChange={(e) => setSortKey(e.target.value as SortKey)}
               >
-                <option value="name">名前（昇順）</option>
+                <option value="name">名称（昇順）</option>
                 <option value="updated">最終更新（新しい順）</option>
                 <option value="battery">バッテリー残量（少ない順）</option>
               </select>
@@ -941,6 +1036,7 @@ export function SensorsView({
             filteredCount={sortedRows.length}
             totalCount={sensorList.length}
             onSetPage={setPage}
+            totalUnit="台"
           />
         </div>
 
@@ -960,7 +1056,7 @@ export function SensorsView({
                       onChange={toggleAllVisible}
                     />
                   </th>
-                  <th className="col-name">名前</th>
+                  <th className="col-name">名称</th>
                   {columnOrder
                     .filter((k) => vis[k])
                     .map((k) => (
@@ -998,7 +1094,9 @@ export function SensorsView({
                       </td>
                       {columnOrder
                         .filter((k) => vis[k])
-                        .map((k) => renderCell(k, r, groups, categories))}
+                        .map((k) =>
+                          renderCell(k, r, groups, categories, notificationGroups),
+                        )}
                       <td
                         className="row-actions col-action"
                         onClick={(e) => e.stopPropagation()}
@@ -1029,6 +1127,7 @@ export function SensorsView({
               filteredCount={sortedRows.length}
               totalCount={sensorList.length}
               onSetPage={setPage}
+              totalUnit="台"
             />
           </div>
         )}
@@ -1073,6 +1172,14 @@ export function SensorsView({
         onClose={() => setBulkActionOpen(false)}
         onApply={handleBulkAction}
         onGoToThresholdTemplates={onGoToThresholdTemplates}
+      />
+
+      <SensorBulkCsvDialog
+        open={bulkCsvOpen}
+        selectedSensorIds={Array.from(selected)}
+        sensors={sensors}
+        devices={devices}
+        onClose={() => setBulkCsvOpen(false)}
       />
 
       <SensorColumnSettingsDialog
