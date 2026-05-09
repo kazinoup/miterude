@@ -59,9 +59,305 @@
 
 ---
 
-## 3. テーブル一覧（ドメイン別）
+## 3. ER 図（図解）
 
-### 3.1 Tenancy & Auth
+> Mermaid 形式で記述してあるので、GitHub の Markdown ビューや VS Code の Mermaid プレビューで自動レンダリングされる。
+> カーディナリティ記号: `||` 必須 1、`o|` 任意 1（0 or 1）、`}o`/`}{` 0+/1+ 多。
+
+### 3.1 全体像（主要テーブルだけ）
+
+```mermaid
+erDiagram
+  ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has members"
+  ORGANIZATIONS ||--o{ DEVICES : "owns"
+  ORGANIZATIONS ||--o{ DASHBOARDS : "owns"
+  ORGANIZATIONS ||--o{ NOTIFICATION_GROUPS : "owns"
+  ORGANIZATIONS ||--o{ THRESHOLD_TEMPLATES : "owns"
+  ORGANIZATIONS ||--o{ INVOICES : "billed for"
+
+  USERS ||--o{ ORGANIZATION_MEMBERS : "belongs to"
+  USERS ||--o{ STAFF_ASSIGNMENTS : "assigned (staff role)"
+
+  DEVICES ||--o| SENSOR_PROPS  : "1:1 if sensor"
+  DEVICES ||--o| GATEWAY_PROPS : "1:1 if gateway"
+  DEVICES ||--o{ DEVICES        : "sensor.gatewayId → gateway"
+  DEVICES ||--o{ SENSOR_READINGS : "produces"
+  DEVICES ||--o{ SENSOR_NOTES    : "annotated by"
+  DEVICES ||--o{ ALERT_LOGS      : "triggers"
+
+  SENSOR_CATEGORIES ||--o{ DEVICES : "categorized as"
+  SENSOR_GROUPS     ||--o{ DEVICES : "located in"
+  NOTIFICATION_GROUPS ||--o{ DEVICES : "notified through"
+
+  DASHBOARDS ||--o{ WIDGETS : "contains"
+  DASHBOARDS ||--o{ DASHBOARD_CHECKINS : "checked"
+  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : "per-sensor"
+  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SEGMENT_COMMENTS : "per-segment"
+```
+
+### 3.2 Devices ドメイン（Phase F-4 統合後の中核）
+
+```mermaid
+erDiagram
+  DEVICES {
+    uuid id PK
+    uuid organization_id FK
+    string device_type "sensor | gateway"
+    string role "temperature-humidity | master | …"
+    string manufacturer
+    string model
+    string external_key "Webhook 照合キー"
+    string serial_number
+    string dev_eui "nullable"
+    string name "ユーザ表示名"
+    string device_number "運用ラベル"
+    uuid category_id FK "nullable"
+    uuid group_id FK "nullable"
+    text_array tags
+    uuid notification_group_id FK "nullable"
+    bool online
+    timestamp last_seen_at
+    timestamp registered_at
+  }
+
+  SENSOR_PROPS {
+    uuid device_id PK,FK
+    uuid gateway_id FK "→ devices.id (parent gateway)"
+    jsonb thresholds
+    int battery
+    jsonb alert_settings "deviation+offline+battery"
+    jsonb exclusion_windows
+    jsonb exclusion_dates
+  }
+
+  GATEWAY_PROPS {
+    uuid device_id PK,FK
+    jsonb alert_settings "offline only"
+    jsonb exclusion_windows
+    jsonb exclusion_dates
+  }
+
+  SENSOR_CATEGORIES {
+    uuid id PK
+    uuid organization_id FK
+    string name "冷凍 / 冷蔵 / 室温 等"
+    string icon
+  }
+
+  SENSOR_GROUPS {
+    uuid id PK
+    uuid organization_id FK
+    string name "1F / 厨房 等"
+  }
+
+  NOTIFICATION_GROUPS {
+    uuid id PK
+    uuid organization_id FK
+    string name
+    string timing "instant | batch-1h | batch-1d"
+  }
+
+  DEVICES ||--o| SENSOR_PROPS  : "1:1 if device_type=sensor"
+  DEVICES ||--o| GATEWAY_PROPS : "1:1 if device_type=gateway"
+  DEVICES ||--o{ DEVICES       : "sensor → parent gateway"
+  SENSOR_CATEGORIES   ||--o{ DEVICES : ""
+  SENSOR_GROUPS       ||--o{ DEVICES : ""
+  NOTIFICATION_GROUPS ||--o{ DEVICES : ""
+```
+
+**ポイント**:
+- `devices` 1 テーブルに sensor も gateway も並ぶ（`device_type` で区別）
+- `sensor_props` / `gateway_props` は `devices` への 1:1 拡張テーブル（マップキー = device_id）
+- センサーから親機への参照 `sensor_props.gateway_id` も `devices.id` を指す（自己参照）
+- Webhook 照合は `(organization_id, manufacturer, external_key)` の複合一意キー
+
+### 3.3 認証・ロール ドメイン
+
+```mermaid
+erDiagram
+  USERS {
+    uuid id PK
+    string email
+    string display_name
+    string system_role "super_admin | tenant_user"
+    string staff_category "support | sales | …"
+  }
+
+  ORGANIZATIONS {
+    uuid id PK
+    string name
+    string contract_type
+    string plan
+    timestamp contract_started_at
+    timestamp contract_expires_at
+  }
+
+  ORGANIZATION_MEMBERS {
+    uuid id PK
+    uuid organization_id FK
+    uuid user_id FK
+    string role "editor | dashboard_confirmer"
+  }
+
+  MEMBER_INVITATIONS {
+    uuid id PK
+    uuid organization_id FK
+    string email
+    string role
+    timestamp expires_at
+  }
+
+  STAFF_ASSIGNMENTS {
+    uuid id PK
+    uuid user_id FK "staff (system_role=super_admin)"
+    uuid organization_id FK "担当テナント"
+  }
+
+  STAFF_AUDIT_LOGS {
+    uuid id PK
+    uuid staff_user_id FK
+    uuid organization_id FK
+    string action
+    string target_table
+    string target_id
+    timestamp at
+  }
+
+  ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has"
+  ORGANIZATIONS ||--o{ MEMBER_INVITATIONS  : "issues"
+  ORGANIZATIONS ||--o{ STAFF_ASSIGNMENTS   : "is assigned"
+  ORGANIZATIONS ||--o{ STAFF_AUDIT_LOGS    : "logged on"
+  USERS ||--o{ ORGANIZATION_MEMBERS : "as member"
+  USERS ||--o{ STAFF_ASSIGNMENTS    : "as staff"
+  USERS ||--o{ STAFF_AUDIT_LOGS     : "performed"
+```
+
+### 3.4 運用・ログ ドメイン（Dashboards / Alerts / Readings）
+
+```mermaid
+erDiagram
+  DEVICES {
+    uuid id PK
+  }
+
+  SENSOR_READINGS {
+    bigint id PK
+    uuid organization_id FK
+    uuid sensor_id FK "→ devices.id"
+    timestamp measured_at
+    numeric temperature
+    numeric humidity
+    int battery
+  }
+
+  GATEWAY_STATUS_EVENTS {
+    uuid id PK
+    uuid organization_id FK
+    uuid gateway_id FK "→ devices.id"
+    string status "online | offline"
+    timestamp occurred_at
+  }
+
+  ALERT_LOGS {
+    uuid id PK
+    uuid organization_id FK
+    string target_kind "sensor | gateway"
+    uuid sensor_id FK "→ devices.id"
+    uuid gateway_id FK "→ devices.id"
+    string kind "deviation-alert | deviation-warn | offline | battery"
+    string message
+    text confirm_comment
+    timestamp occurred_at
+  }
+
+  SENSOR_NOTES {
+    uuid id PK
+    uuid organization_id FK
+    uuid sensor_id FK "→ devices.id"
+    string category "install | move | calibration | …"
+    text body
+    timestamp created_at
+  }
+
+  DASHBOARDS {
+    uuid id PK
+    uuid organization_id FK
+    string name
+    jsonb default_period
+  }
+
+  WIDGETS {
+    uuid id PK
+    uuid dashboard_id FK
+    string type "tiles | chart | map | …"
+    jsonb config
+    int order_index
+  }
+
+  DASHBOARD_CHECKINS {
+    uuid id PK
+    uuid dashboard_id FK
+    uuid author_id FK
+    timestamp at
+    text comment
+    jsonb approval
+  }
+
+  DASHBOARD_CHECKIN_SENSOR_COMMENTS {
+    uuid id PK
+    uuid checkin_id FK
+    uuid sensor_id FK "→ devices.id"
+    text comment
+  }
+
+  DASHBOARD_CHECKIN_SEGMENT_COMMENTS {
+    uuid id PK
+    uuid checkin_id FK
+    text segment_label
+    text comment
+  }
+
+  DEVICES ||--o{ SENSOR_READINGS : "produces (sensor)"
+  DEVICES ||--o{ GATEWAY_STATUS_EVENTS : "emits (gateway)"
+  DEVICES ||--o{ ALERT_LOGS      : "triggers"
+  DEVICES ||--o{ SENSOR_NOTES    : "annotated by"
+  DEVICES ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : "referenced in"
+  DASHBOARDS ||--o{ WIDGETS : "contains"
+  DASHBOARDS ||--o{ DASHBOARD_CHECKINS : "checked"
+  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : ""
+  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SEGMENT_COMMENTS : ""
+```
+
+### 3.5 Webhook 受信ドメイン（生データの一時保管）
+
+```mermaid
+erDiagram
+  WEBHOOK_INBOX {
+    uuid id PK
+    uuid organization_id FK "nullable (照合前)"
+    string manufacturer
+    jsonb payload
+    string parse_status "pending | matched | unmatched | error"
+    uuid matched_device_id FK "nullable → devices.id"
+    timestamp received_at
+    timestamp processed_at
+  }
+
+  DEVICES ||--o{ WEBHOOK_INBOX : "matched_device_id"
+  ORGANIZATIONS ||--o{ WEBHOOK_INBOX : ""
+```
+
+**Webhook 受信フロー**:
+1. メーカーから POST 受信 → `webhook_inbox` に生 payload を保存（status=pending）
+2. ワーカが `(manufacturer, external_key)` で `devices` を引き、ヒットすれば status=matched + matched_device_id を埋める
+3. matched なら `device_type` に応じて `sensor_props` / `gateway_props` を更新、`sensor_readings` / `gateway_status_events` に時系列を追記
+4. 未マッチは status=unmatched で残し、admin 画面で手動マッピング可能にする
+
+---
+
+## 4. テーブル一覧（ドメイン別）
+
+### 4.1 Tenancy & Auth
 
 #### `organizations`
 ```sql
@@ -161,7 +457,7 @@ create index on staff_audit_logs (action, occurred_at desc);
 
 ---
 
-### 3.2 Settings（テナント単位のマスタ）
+### 4.2 Settings（テナント単位のマスタ）
 
 | テーブル | 役割 | 主要カラム |
 |---|---|---|
@@ -179,7 +475,7 @@ create index on staff_audit_logs (action, occurred_at desc);
 
 ---
 
-### 3.3 Devices
+### 4.3 Devices
 
 > **Phase F-4 (Block D) 改訂**: センサーとゲートウェイを 1 つの `devices` マスターに
 > 統合し、固有プロパティは `sensor_props` / `gateway_props` で持つ
@@ -361,7 +657,7 @@ create index on sensor_notes (organization_id, sensor_id);
 
 ---
 
-### 3.4 Dashboards & Widgets
+### 4.4 Dashboards & Widgets
 
 #### `dashboards`
 ```sql
@@ -457,7 +753,7 @@ create index on dashboard_checkin_segment_comments (sensor_comment_id);
 
 ---
 
-### 3.5 Public Dashboard Sharing
+### 4.5 Public Dashboard Sharing
 
 #### `dashboard_shares`
 ```sql
@@ -496,7 +792,7 @@ create index on dashboard_share_views (share_id, viewed_at desc);
 
 ---
 
-### 3.6 Data / Logs（時系列）
+### 4.6 Data / Logs（時系列）
 
 #### `webhook_inbox`
 ```sql
@@ -634,9 +930,9 @@ create index on notification_dispatches (organization_id, created_at desc);
 
 ---
 
-## 4. RLS（Row Level Security）方針
+## 5. RLS（Row Level Security）方針
 
-### 4.1 ヘルパ関数
+### 5.1 ヘルパ関数
 ```sql
 create or replace function public.acting_organization_id() returns uuid
 language sql stable as $$
@@ -649,7 +945,7 @@ language sql stable as $$
 $$;
 ```
 
-### 4.2 標準ポリシー（ほぼすべての業務テーブルに適用）
+### 5.2 標準ポリシー（ほぼすべての業務テーブルに適用）
 
 ```sql
 create policy "<table> access policy"
@@ -679,7 +975,7 @@ create policy "<table> access policy"
   );
 ```
 
-### 4.3 `dashboard_confirmer` 用ポリシー
+### 5.3 `dashboard_confirmer` 用ポリシー
 基本的にはサイドメニュー / UI 側で出し分け（ダッシュボード関連のみアクセス可）。
 書き込みポリシーは `dashboard_checkins` 等のみに `editor or dashboard_confirmer` を許可、
 それ以外のテーブルへの書き込みは `editor` のみ。
@@ -710,17 +1006,17 @@ create policy "sensors write"
   );
 ```
 
-### 4.4 公開URL（dashboard_shares）からのアクセス
+### 5.4 公開URL（dashboard_shares）からのアクセス
 - Edge Function（service_role）でトークン検証 → 必要なデータだけホワイトリスト形式で返却
 - RLS をバイパスするため、Edge Function 側で必ずアクセス制御（token + revoked_at + expires_at）
 
-### 4.5 Webhook 受信
+### 5.5 Webhook 受信
 - Edge Function が service_role で `webhook_inbox` に挿入
 - パース結果も同様に service_role で書き込み
 
 ---
 
-## 5. データフロー全体像
+## 6. データフロー全体像
 
 ```
 [Milesight Webhook]
@@ -763,20 +1059,20 @@ create policy "sensors write"
 
 ---
 
-## 6. テーブル一覧サマリ（合計 25 テーブル）
+## 7. テーブル一覧サマリ（合計 26 テーブル）
 
 | ドメイン | テーブル |
 |---|---|
 | Tenancy / Auth | `organizations`, `users`, `organization_members`, `member_invitations`, `staff_assignments`, `staff_audit_logs` |
 | Settings | `manufacturer_integrations`, `notification_groups`, `notification_channels`, `threshold_templates`, `sensor_categories`, `sensor_groups`, `saved_filters`, `report_schedules`, `dashboard_reminders` |
-| Devices | `gateways`, `sensors`, `sensor_notes` |
+| Devices | `devices`, `sensor_props`, `gateway_props`, `sensor_notes` |
 | Dashboards | `dashboards`, `widgets`, `dashboard_checkins`, `dashboard_checkin_sensor_comments`, `dashboard_checkin_segment_comments` |
 | Public Sharing | `dashboard_shares`, `dashboard_share_views` |
 | Data / Logs | `webhook_inbox`, `sensor_readings`, `gateway_status_events`, `alert_logs`, `report_runs`, `notification_dispatches` |
 
 ---
 
-## 7. 実装フェーズ
+## 8. 実装フェーズ
 
 | Phase | 範囲 | 期待される動作 |
 |---|---|---|
@@ -788,7 +1084,7 @@ create policy "sensors write"
 | F | Webhook 受信 → webhook_inbox の Edge Function 構築 | 実データ取り込み |
 | G | アラート判定 / レポート生成 / 通知配信の自動化（Cron） | 完全 SaaS 動作 |
 
-### Phase A の詳細サブステップ
+### 8.1 Phase A の詳細サブステップ
 
 | ステップ | 内容 |
 |---|---|
@@ -802,7 +1098,7 @@ create policy "sensors write"
 
 ---
 
-## 8. 検討余地（将来のオプション）
+## 9. 検討余地（将来のオプション）
 
 1. **`sensors.online` を保持 vs 都度算出**
    - 現状: 保持。`last_seen_at` のみで「N 分以上前ならオフライン」と算出する設計も可
@@ -821,7 +1117,7 @@ create policy "sensors write"
 
 ---
 
-## 9. 参考: 認証セッションのデータ形（モック期）
+## 10. 参考: 認証セッションのデータ形（モック期）
 
 ```ts
 type AuthSession =
