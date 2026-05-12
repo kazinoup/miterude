@@ -325,6 +325,7 @@ export default function App() {
     setCheckins,
     setAlertLogs,
     setGateways,
+    setReportSchedules,
   })
 
   // Phase G (Block C): Realtime 購読 — webhook → DB に書き込まれた
@@ -357,6 +358,7 @@ export default function App() {
     checkins,
     alertLogs,
     gateways,
+    reportSchedules,
     hydrationState: supabaseHydration.status.state,
   })
 

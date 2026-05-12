@@ -20,6 +20,7 @@ import {
   deleteGatewayFromSupabase,
   deleteGroupFromSupabase,
   deleteNotificationGroupFromSupabase,
+  deleteReportScheduleFromSupabase,
   deleteSensorFromSupabase,
   deleteSensorNoteFromSupabase,
   updateGatewayInSupabase,
@@ -30,6 +31,7 @@ import {
   upsertDashboardInSupabase,
   upsertGroupInSupabase,
   upsertNotificationGroupInSupabase,
+  upsertReportScheduleInSupabase,
   upsertSensorNoteInSupabase,
   type GatewayUpdatePatch,
   type SensorUpdatePatch,
@@ -46,6 +48,8 @@ import type {
   GatewayStore,
   NotificationGroup,
   NotificationGroupStore,
+  ReportSchedule,
+  ReportScheduleStore,
   Sensor,
   SensorCategory,
   SensorCategoryStore,
@@ -159,6 +163,19 @@ function sameNotificationGroup(a: NotificationGroup, b: NotificationGroup): bool
   )
 }
 
+function sameReportSchedule(a: ReportSchedule, b: ReportSchedule): boolean {
+  return (
+    a.name === b.name &&
+    a.enabled === b.enabled &&
+    a.reportKind === b.reportKind &&
+    sameArray(a.targetSensorIds, b.targetSensorIds) &&
+    a.notificationGroupId === b.notificationGroupId &&
+    a.deliveryTime === b.deliveryTime &&
+    (a.weeklyDayOfWeek ?? null) === (b.weeklyDayOfWeek ?? null) &&
+    (a.monthlyDayOfMonth ?? null) === (b.monthlyDayOfMonth ?? null)
+  )
+}
+
 function computeGatewayDiff(prev: Gateway, next: Gateway): GatewayUpdatePatch | null {
   const patch: GatewayUpdatePatch = {}
   if (prev.name !== next.name) patch.name = next.name ?? null
@@ -227,6 +244,7 @@ export function useSupabaseWriteSync(opts: {
   checkins: DashboardCheckinStore
   alertLogs: AlertLogStore
   gateways: GatewayStore
+  reportSchedules: ReportScheduleStore
   hydrationState: 'disabled' | 'loading' | 'ready' | 'error'
 }): void {
   const baselineRef = useRef<{
@@ -239,6 +257,7 @@ export function useSupabaseWriteSync(opts: {
     checkins: DashboardCheckinStore
     alertLogs: AlertLogStore
     gateways: GatewayStore
+    reportSchedules: ReportScheduleStore
   } | null>(null)
   const readyRef = useRef<SyncReady>('pending')
 
@@ -265,6 +284,7 @@ export function useSupabaseWriteSync(opts: {
         checkins: opts.checkins,
         alertLogs: opts.alertLogs,
         gateways: opts.gateways,
+        reportSchedules: opts.reportSchedules,
       }
       readyRef.current = 'ready'
       return
@@ -394,6 +414,16 @@ export function useSupabaseWriteSync(opts: {
         'アラート',
       ),
     )
+    promises.push(
+      ...syncStore(
+        prev.reportSchedules,
+        opts.reportSchedules,
+        upsertReportScheduleInSupabase,
+        deleteReportScheduleFromSupabase,
+        sameReportSchedule,
+        'レポート定期配信',
+      ),
+    )
 
     baselineRef.current = {
       sensors: opts.sensors,
@@ -405,6 +435,7 @@ export function useSupabaseWriteSync(opts: {
       checkins: opts.checkins,
       alertLogs: opts.alertLogs,
       gateways: opts.gateways,
+      reportSchedules: opts.reportSchedules,
     }
     void promises
   }, [
@@ -417,6 +448,7 @@ export function useSupabaseWriteSync(opts: {
     opts.checkins,
     opts.alertLogs,
     opts.gateways,
+    opts.reportSchedules,
     opts.hydrationState,
   ])
 }

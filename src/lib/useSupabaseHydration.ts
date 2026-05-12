@@ -24,6 +24,7 @@ import {
   fetchGroupsAsStore,
   fetchNotificationGroupsAsStore,
   fetchReadingsAsDeviceStore,
+  fetchReportSchedulesAsStore,
   upsertDashboardInSupabase,
 } from './supabaseQueries'
 import {
@@ -37,6 +38,7 @@ import type {
   GatewayStore,
   ManualCategoryStore,
   ManualPageStore,
+  ReportScheduleStore,
   SensorNoteStore,
 } from '../types'
 import { isSupabaseConfigured } from './supabase'
@@ -82,6 +84,8 @@ export function useSupabaseHydration(opts: {
   setAlertLogs: (s: AlertLogStore) => void
   /** ゲートウェイ（Block I） */
   setGateways: (s: GatewayStore) => void
+  /** Phase 1.8: レポート定期配信 */
+  setReportSchedules: (s: ReportScheduleStore) => void
   /** 時系列を遡る日数（既定 30 日） */
   readingsSinceDays?: number
 }): { status: HydrationStatus; reload: () => void } {
@@ -99,7 +103,7 @@ export function useSupabaseHydration(opts: {
         const [
           sensors, categories, groups, notifGroups, devices, dashboards,
           notes, checkins, alertLogs, gateways,
-          manualCats, manualPages,
+          manualCats, manualPages, reportSchedules,
         ] = await Promise.all([
           fetchSensorsAsStore(),
           fetchCategoriesAsStore(),
@@ -116,6 +120,8 @@ export function useSupabaseHydration(opts: {
           // マニュアル（全テナント共通）— マイグレーション未適用環境を考慮して失敗時は空に
           fetchManualCategoriesList().catch(() => []),
           fetchManualPagesList().catch(() => []),
+          // レポート定期配信 — マイグレーション未適用環境を考慮して失敗時は空に
+          fetchReportSchedulesAsStore().catch(() => ({})),
         ])
         if (cancelled) return
         opts.setSensors(sensors)
@@ -127,6 +133,7 @@ export function useSupabaseHydration(opts: {
         opts.setCheckins(checkins)
         opts.setAlertLogs(alertLogs)
         opts.setGateways(gateways)
+        opts.setReportSchedules(reportSchedules)
 
         // Manual は React state ではなく localStorage を直接更新
         // (ManualView が loadManualCategories/Pages で都度読む)

@@ -70,3 +70,58 @@ input[type='checkbox'],
 input[type='radio'] {
   accent-color: var(--navy-700);
 }
+
+/* ===== Phase 1.8: 公開レポート閲覧ビュー ===== */
+.public-report-shell {
+  min-height: 100vh;
+  background: var(--gray-50);
+}
+.public-report-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  background: white;
+  border-bottom: 1px solid var(--gray-200);
+}
+.public-report-head h1 {
+  margin: 0 0 0.25rem;
+  color: var(--navy-800);
+  font-size: 1.15rem;
+}
+.public-report-pages {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  align-items: center;
+}
+.public-report-loading,
+.public-report-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  color: var(--gray-700);
+}
+.public-report-loading-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+@media print {
+  .public-report-head,
+  .no-print {
+    display: none !important;
+  }
+  .public-report-shell {
+    background: white;
+  }
+  .public-report-pages {
+    padding: 0;
+    gap: 0;
+  }
+}

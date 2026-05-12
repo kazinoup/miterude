@@ -29,6 +29,9 @@ import type {
   NotificationGroupStore,
   NotificationTiming,
   RecordApproval,
+  ReportKind,
+  ReportSchedule,
+  ReportScheduleStore,
   Sensor,
   SensorCategory,
   SensorCategoryStore,
@@ -525,6 +528,87 @@ export async function upsertNotificationGroupInSupabase(
 export async function deleteNotificationGroupFromSupabase(id: string): Promise<void> {
   await supabase
     .from('notification_groups')
+    .delete()
+    .eq('id', id)
+    .eq('organization_id', getActiveOrgId())
+    .throwOnError()
+}
+
+/* ---------- レポート定期配信（report_schedules） ---------- */
+
+type SupabaseReportScheduleRow = {
+  id: string
+  organization_id: string
+  name: string
+  enabled: boolean | null
+  report_kind: string
+  target_sensor_ids: string[] | null
+  notification_group_id: string | null
+  delivery_time: string
+  weekly_day_of_week: number | null
+  monthly_day_of_month: number | null
+  created_at: string
+  updated_at: string
+}
+
+function asReportKind(v: string): ReportKind {
+  return v === 'monthly' ? 'monthly' : 'weekly'
+}
+
+function rowToReportSchedule(r: SupabaseReportScheduleRow): ReportSchedule {
+  return {
+    id: r.id,
+    name: r.name,
+    enabled: r.enabled !== false,
+    reportKind: asReportKind(r.report_kind),
+    targetSensorIds: r.target_sensor_ids ?? [],
+    notificationGroupId: r.notification_group_id,
+    deliveryTime: r.delivery_time,
+    weeklyDayOfWeek: r.weekly_day_of_week ?? undefined,
+    monthlyDayOfMonth: r.monthly_day_of_month ?? undefined,
+    createdAt: new Date(r.created_at),
+    updatedAt: new Date(r.updated_at),
+  }
+}
+
+export async function fetchReportSchedulesAsStore(): Promise<ReportScheduleStore> {
+  const { data, error } = await supabase
+    .from('report_schedules')
+    .select(
+      'id, organization_id, name, enabled, report_kind, target_sensor_ids, notification_group_id, delivery_time, weekly_day_of_week, monthly_day_of_month, created_at, updated_at',
+    )
+    .eq('organization_id', getActiveOrgId())
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  const store: ReportScheduleStore = {}
+  for (const r of (data ?? []) as SupabaseReportScheduleRow[]) {
+    store[r.id] = rowToReportSchedule(r)
+  }
+  return store
+}
+
+export async function upsertReportScheduleInSupabase(s: ReportSchedule): Promise<void> {
+  await supabase
+    .from('report_schedules')
+    .upsert({
+      id: s.id,
+      organization_id: getActiveOrgId(),
+      name: s.name,
+      enabled: s.enabled,
+      report_kind: s.reportKind,
+      target_sensor_ids: s.targetSensorIds ?? [],
+      notification_group_id: s.notificationGroupId,
+      delivery_time: s.deliveryTime,
+      weekly_day_of_week: s.weeklyDayOfWeek ?? null,
+      monthly_day_of_month: s.monthlyDayOfMonth ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .throwOnError()
+}
+
+export async function deleteReportScheduleFromSupabase(id: string): Promise<void> {
+  await supabase
+    .from('report_schedules')
     .delete()
     .eq('id', id)
     .eq('organization_id', getActiveOrgId())
