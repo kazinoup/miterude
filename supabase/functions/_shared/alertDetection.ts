@@ -60,6 +60,8 @@ type Device = {
   model: string
   serial_number: string
   device_number: string | null
+  /** Phase 1.7a: アラート時に通知配信に使う notification_groups.id */
+  notification_group_id?: string | null
 }
 
 type Reading = {
@@ -167,6 +169,104 @@ function describeDeviation(metric: Metric, value: number, t: Thresholds): string
     return `${label} ${value.toFixed(1)}${unit} が上限 ${m.alert.max.toFixed(1)}${unit} を上回りました`
   }
   return `${label} ${value.toFixed(1)}${unit} が基準を逸脱しました`
+}
+
+// ---- 通知配信レコード作成 ------------------------------------
+
+const TIMING_DELAY_HOURS: Record<string, number> = {
+  immediate: 0,
+  'batch-1h': 1,
+  'batch-6h': 6,
+  'batch-12h': 12,
+  'batch-24h': 24,
+}
+
+type ChannelConfig = {
+  id?: string
+  kind: 'email' | 'slack' | 'webhook'
+  target: string
+  label?: string
+}
+
+/**
+ * Phase 1.7a: alert_logs 1 件に対して、対象センサーの notification_group の
+ * 全 channel ぶん notification_deliveries を INSERT する。
+ * timing === 'immediate' のものは送信 Edge Function (send-notification) を
+ * その場で呼び出して結果を待つ。
+ */
+async function createDeliveriesForAlert(
+  supabase: SupabaseClient,
+  params: {
+    organization_id: string
+    alert_log_id: string
+    notification_group_id: string | null | undefined
+  },
+): Promise<void> {
+  const { organization_id, alert_log_id, notification_group_id } = params
+  if (!notification_group_id) return
+
+  const { data: group, error: gErr } = await supabase
+    .from('notification_groups')
+    .select('id, timing, enabled, channels')
+    .eq('id', notification_group_id)
+    .maybeSingle()
+  if (gErr || !group) {
+    console.warn('[notify] notification_group not found', notification_group_id)
+    return
+  }
+  if (group.enabled === false) return
+  const channels = (group.channels ?? []) as ChannelConfig[]
+  if (channels.length === 0) return
+
+  const timing = group.timing as string
+  const delayHours = TIMING_DELAY_HOURS[timing] ?? 0
+  const scheduledFor = new Date(Date.now() + delayHours * 60 * 60 * 1000).toISOString()
+
+  // 1) deliveries を一括 INSERT（returning で id を取得）
+  const rows = channels
+    .filter((c) => c.target && (c.kind === 'email' || c.kind === 'slack' || c.kind === 'webhook'))
+    .map((c) => ({
+      organization_id,
+      alert_log_id,
+      notification_group_id: group.id,
+      channel_kind: c.kind,
+      target: c.target,
+      status: 'pending',
+      scheduled_for: scheduledFor,
+    }))
+  if (rows.length === 0) return
+
+  const { data: inserted, error: insErr } = await supabase
+    .from('notification_deliveries')
+    .insert(rows)
+    .select('id')
+  if (insErr) {
+    console.error('[notify] insert deliveries failed', insErr)
+    return
+  }
+
+  // 2) immediate なら inline で send-notification を呼ぶ
+  if (timing !== 'immediate' || !inserted) return
+
+  const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  await Promise.all(
+    inserted.map(async (r) => {
+      try {
+        await fetch(`${supabaseUrl}/functions/v1/send-notification`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${serviceKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ delivery_id: r.id }),
+        })
+      } catch (e) {
+        // 失敗しても cron が後で拾うので吸収
+        console.warn('[notify] immediate send failed (will retry via cron)', r.id, e)
+      }
+    }),
+  )
 }
 
 // ---- メイン判定 ----------------------------------------------
@@ -297,7 +397,7 @@ export async function judgeAndInsertAlert(
         ? `${describeDeviation(metric, value, thresholds)}（再アラート ${reAlertIndex}）`
         : describeDeviation(metric, value, thresholds)
 
-    const { error: insErr } = await supabase
+    const { data: insertedAlert, error: insErr } = await supabase
       .from('alert_logs')
       .insert({
         organization_id: device.organization_id,
@@ -315,11 +415,24 @@ export async function judgeAndInsertAlert(
         session_id: sessionId,
         re_alert_index: reAlertIndex,
       })
-    if (insErr) {
+      .select('id')
+      .single()
+    if (insErr || !insertedAlert) {
       console.error('[alert] alert_logs insert error', insErr)
       continue
     }
     fired++
+
+    // Phase 1.7a: 通知配信レコードを作成（immediate ならその場で送信）
+    try {
+      await createDeliveriesForAlert(supabase, {
+        organization_id: device.organization_id,
+        alert_log_id: insertedAlert.id,
+        notification_group_id: device.notification_group_id,
+      })
+    } catch (e) {
+      console.error('[notify] createDeliveriesForAlert failed', e)
+    }
   }
 
   return { fired }

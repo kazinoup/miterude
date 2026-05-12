@@ -55,7 +55,7 @@ type PayloadShape = {
 }
 
 type DeviceLookupResult =
-  | { ok: true; id: string; device_type: string; role: string; manufacturer: string; model: string; serial_number: string; device_number: string | null }
+  | { ok: true; id: string; device_type: string; role: string; manufacturer: string; model: string; serial_number: string; device_number: string | null; notification_group_id: string | null }
   | { ok: false; error: string }
 
 async function findOrRegisterDevice(
@@ -71,7 +71,7 @@ async function findOrRegisterDevice(
 
   const { data: existing, error: lookErr } = await supabase
     .from('devices')
-    .select('id, device_type, role, manufacturer, model, serial_number, device_number')
+    .select('id, device_type, role, manufacturer, model, serial_number, device_number, notification_group_id')
     .eq('organization_id', orgId)
     .eq('manufacturer', 'Milesight')
     .eq('external_key', devEui)
@@ -98,7 +98,7 @@ async function findOrRegisterDevice(
       name,
       device_number: deviceNumber,
     })
-    .select('id, device_type, role, manufacturer, model, serial_number, device_number')
+    .select('id, device_type, role, manufacturer, model, serial_number, device_number, notification_group_id')
     .single()
   if (insErr) return { ok: false, error: `insert-device-error: ${insErr.message}` }
 
@@ -209,6 +209,7 @@ async function processRow(row: {
             model: dev.model,
             serial_number: dev.serial_number,
             device_number: dev.device_number,
+            notification_group_id: dev.notification_group_id,
           },
           sensorProps: props,
           newReading: {
