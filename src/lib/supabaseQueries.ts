@@ -1279,6 +1279,8 @@ type SupabaseAlertLogRow = {
   metric: string | null
   value: number | null
   message: string
+  session_id: string | null
+  re_alert_index: number | null
   confirm_comment: string | null
   confirmed_by: string | null
   confirmed_at: string | null
@@ -1288,7 +1290,7 @@ export async function fetchAlertLogsAsStore(): Promise<AlertLogStore> {
   const { data, error } = await supabase
     .from('alert_logs')
     .select(
-      'id, occurred_at, target_kind, target_id, manufacturer, model, serial_number, sensor_number, kind, metric, value, message, confirm_comment, confirmed_by, confirmed_at',
+      'id, occurred_at, target_kind, target_id, manufacturer, model, serial_number, sensor_number, kind, metric, value, message, session_id, re_alert_index, confirm_comment, confirmed_by, confirmed_at',
     )
     .eq('organization_id', getActiveOrgId())
     .order('occurred_at', { ascending: false })
@@ -1308,6 +1310,8 @@ export async function fetchAlertLogsAsStore(): Promise<AlertLogStore> {
       metric: (r.metric ?? undefined) as AlertLogEntry['metric'],
       value: r.value ?? undefined,
       message: r.message,
+      sessionId: r.session_id ?? undefined,
+      reAlertIndex: r.re_alert_index ?? undefined,
       confirmComment: r.confirm_comment ?? undefined,
       confirmedBy: r.confirmed_by ?? undefined,
       confirmedAt: r.confirmed_at ? new Date(r.confirmed_at) : undefined,
@@ -1334,6 +1338,8 @@ export async function upsertAlertLogInSupabase(e: AlertLogEntry): Promise<void> 
       metric: e.metric ?? null,
       value: e.value ?? null,
       message: e.message,
+      session_id: e.sessionId ?? null,
+      re_alert_index: e.reAlertIndex ?? 0,
       confirm_comment: e.confirmComment ?? null,
       confirmed_by: e.confirmedBy ?? null,
       confirmed_at: asIsoString(e.confirmedAt),

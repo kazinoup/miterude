@@ -13,7 +13,6 @@
  */
 import type {
   AlertLogEntry,
-  AlertLogKind,
   AlertLogStore,
   Gateway,
   Sensor,
@@ -108,45 +107,6 @@ function describeDeviation(
     return `${metricLabel} ${value.toFixed(1)}${unit} が上限 ${t.max.toFixed(1)}${unit} を上回りました`
   }
   return `${metricLabel} ${value.toFixed(1)}${unit} が基準を逸脱しました`
-}
-
-/** センサーの 1 サンプルから、逸脱（危険／注意）のアラートを 0〜2 件生成。
- *  温度・湿度それぞれを判定する。
- *  測定時刻が `alertSettings.exclusionWindows` のいずれかに該当する場合は
- *  抑制（飲食店の閉店中、工場の夜間扉閉めなどに使う）。 */
-export function judgeReadingForAlerts(
-  sensor: Sensor,
-  reading: SensorReading,
-): AlertLogEntry[] {
-  const entries: AlertLogEntry[] = []
-  const t = sensor.thresholds
-  if (!t) return entries
-
-  // 除外時間帯チェック（逸脱アラートのみ）
-  if (isAlertSuppressed(reading.measuredAt, sensor.alertSettings, 'deviation'))
-    return entries
-
-  const target = snapshotSensorTarget(sensor)
-
-  for (const metric of ['temperature', 'humidity'] as const) {
-    if (!isMetricDeviationEnabled(t, metric)) continue
-    const value = reading[metric]
-    if (typeof value !== 'number') continue
-    const level = evaluateMetricLevel(value, metric, t)
-    if (level !== 'alert' && level !== 'warn') continue
-    const kind: AlertLogKind =
-      level === 'alert' ? 'deviation-alert' : 'deviation-warn'
-    entries.push({
-      id: nextEntryId(),
-      occurredAt: reading.measuredAt,
-      ...target,
-      kind,
-      metric,
-      value,
-      message: describeDeviation(metric, value, t, level),
-    })
-  }
-  return entries
 }
 
 /** バッテリー残量低下を判定（Phase C 用）。
@@ -315,20 +275,126 @@ export function computeCurrentDeviationStreak(
   return { count, since, latestLevel, suppressedByExclusion, latestAt }
 }
 
-/** Sensor の readings 配列を一括判定して、逸脱アラートをまとめて返す。 */
+/**
+ * Phase 1.3a: 連続逸脱判定（危険レベル限定）の本実装。
+ *
+ * 仕様:
+ *  - 「注意」レベル (warn) は色変更のみで発火しない（kind='deviation-warn' は生成しない）
+ *  - 「危険」レベル (alert) が `deviationConsecutiveCount` 回連続で発生 → 発火
+ *  - 温度・湿度それぞれ独立にセッション管理
+ *  - 除外時間帯 / 除外日のサンプルは「無かったこと」にして連続カウントから除外
+ *    （連続性は途切れず保たれる）
+ *  - 1 サンプルでも正常値（または逸脱が無くなった状態）があれば、セッション終了 →
+ *    次の発火は新セッション
+ *  - `reAlertEnabled=false` (既定): 1 セッション = 1 件のみ発火
+ *  - `reAlertEnabled=true`: 直近発火から `reAlertHours` 経過するたびに再発火
+ *    （reAlertIndex を 1, 2, ... と増やしながら）
+ *
+ * `readings` は古い順でも新しい順でも OK（内部で sort）。
+ */
 export function judgeAllReadingsForSensor(
   sensor: Sensor,
   readings: SensorReading[],
 ): AlertLogEntry[] {
   if (!sensor.thresholds) return []
   const t = sensor.thresholds
-  const result: AlertLogEntry[] = []
-  for (const r of readings) {
-    // 早期スキップ: 温湿度どちらも逸脱なしなら飛ばす（cellIsDeviation で軽量判定）
-    const tempDev = cellIsDeviation(r.temperature, 'temperature', t)
-    const humDev = cellIsDeviation(r.humidity, 'humidity', t)
-    if (!tempDev && !humDev) continue
-    result.push(...judgeReadingForAlerts(sensor, r))
+  const settings = sensor.alertSettings
+  if (!settings?.deviationEnabled) return []
+
+  const consecutive = Math.max(1, settings.deviationConsecutiveCount ?? 3)
+  const reAlertOn = Boolean(settings.reAlertEnabled)
+  const reAlertMs = Math.max(1, Math.min(24, settings.reAlertHours ?? 6)) * 60 * 60 * 1000
+
+  // 時系列順（古い → 新しい）に並べる
+  const sorted = [...readings].sort((a, b) => {
+    const ta = a.measuredAt instanceof Date ? a.measuredAt.getTime() : new Date(a.measuredAt as unknown as string).getTime()
+    const tb = b.measuredAt instanceof Date ? b.measuredAt.getTime() : new Date(b.measuredAt as unknown as string).getTime()
+    return ta - tb
+  })
+
+  const target = snapshotSensorTarget(sensor)
+  const out: AlertLogEntry[] = []
+
+  // 温度・湿度それぞれで独立のセッション状態を持つ
+  type MetricState = {
+    consecutive: number          // 直近の連続「危険」回数（除外時間中はカウントせず連続性も維持）
+    sessionId: string | null     // 開いているセッションの ID（null = 未発火 or 終了済み）
+    lastFiredAt: number | null   // そのセッション内で最後に発火した時刻（再アラート用）
+    reAlertIndex: number         // そのセッション内で発火した回数 (0=初回)
   }
-  return result
+  const state: Record<'temperature' | 'humidity', MetricState> = {
+    temperature: { consecutive: 0, sessionId: null, lastFiredAt: null, reAlertIndex: 0 },
+    humidity:    { consecutive: 0, sessionId: null, lastFiredAt: null, reAlertIndex: 0 },
+  }
+
+  for (const r of sorted) {
+    const measuredAt = r.measuredAt instanceof Date ? r.measuredAt : new Date(r.measuredAt as unknown as string)
+    const measuredMs = measuredAt.getTime()
+    const suppressed = isAlertSuppressed(measuredAt, settings, 'deviation')
+
+    for (const metric of ['temperature', 'humidity'] as const) {
+      const s = state[metric]
+      if (!isMetricDeviationEnabled(t, metric)) continue
+      const value = r[metric]
+      if (typeof value !== 'number') continue
+
+      const level = evaluateMetricLevel(value, metric, t)
+
+      // 除外時間中: このサンプルは「無かったこと」にする（連続も切らない）
+      if (suppressed) continue
+
+      // 正常値・もしくは「注意」レベル止まり → セッション終了（連続リセット）
+      if (level !== 'alert') {
+        s.consecutive = 0
+        s.sessionId = null
+        s.lastFiredAt = null
+        s.reAlertIndex = 0
+        continue
+      }
+
+      // 危険レベル
+      s.consecutive += 1
+
+      if (s.sessionId == null) {
+        // セッション未発火: N 回到達したら初回発火
+        if (s.consecutive >= consecutive) {
+          const sid = crypto.randomUUID()
+          s.sessionId = sid
+          s.lastFiredAt = measuredMs
+          s.reAlertIndex = 0
+          out.push({
+            id: nextEntryId(),
+            occurredAt: measuredAt,
+            ...target,
+            kind: 'deviation-alert',
+            metric,
+            value,
+            message: describeDeviation(metric, value, t, 'alert'),
+            sessionId: sid,
+            reAlertIndex: 0,
+          })
+        }
+      } else if (reAlertOn) {
+        // セッション継続中 + 再アラート ON: reAlertHours 経過なら再発火
+        if (s.lastFiredAt != null && measuredMs - s.lastFiredAt >= reAlertMs) {
+          s.reAlertIndex += 1
+          s.lastFiredAt = measuredMs
+          out.push({
+            id: nextEntryId(),
+            occurredAt: measuredAt,
+            ...target,
+            kind: 'deviation-alert',
+            metric,
+            value,
+            message: `${describeDeviation(metric, value, t, 'alert')}（再アラート ${s.reAlertIndex}）`,
+            sessionId: s.sessionId,
+            reAlertIndex: s.reAlertIndex,
+          })
+        }
+      }
+    }
+  }
+
+  return out
 }
+

@@ -495,10 +495,16 @@ export type AlertSettings = {
   offlineEnabled: boolean
   /** オフラインと判定するまでの分数（30 / 60 / 360 / 1440 など） */
   offlineThresholdMinutes: number
-  /** 連続逸脱通知の有効化 */
+  /** 連続逸脱通知の有効化（「危険」レベルのみ。「注意」は色変更のみで発火しない） */
   deviationEnabled: boolean
-  /** 何回連続で逸脱したら通知するか */
+  /** 何回連続で「危険」逸脱したら通知するか */
   deviationConsecutiveCount: number
+  /** Phase 1.3a: 同セッション継続中の再アラート設定。
+   *  - false (既定): セッション内で 1 回のみ発火、回復するまで再発火しない
+   *  - true: reAlertHours 経過するごとに再発火 */
+  reAlertEnabled?: boolean
+  /** 再アラートを発火させるまでの時間（時間単位、1〜24）。既定 6 */
+  reAlertHours?: number
   /** 通知チャンネル */
   notifyChannels: NotifyChannels
   /** Phase C: バッテリー残量低下アラート。
@@ -514,6 +520,11 @@ export type AlertSettings = {
    *  古いデータでは undefined → 除外なし。 */
   exclusionDates?: AlertExclusionDate[]
 }
+
+/** 再アラート設定のデフォルト値 */
+export const RE_ALERT_HOURS_DEFAULT = 6
+export const RE_ALERT_HOURS_MIN = 1
+export const RE_ALERT_HOURS_MAX = 24
 
 /* ============================================================
    Phase F-4 (Block D): デバイステーブル統合
@@ -922,6 +933,12 @@ export type AlertLogEntry = {
   value?: number
   /** ユーザ向け 1 行説明（例: "温度 -5.3℃ が下限 -5.0℃ を下回りました"） */
   message: string
+  /** Phase 1.3a: 同一の連続逸脱期間を束ねるセッション ID。
+   *  初回 = 新規生成、同セッション内の再アラートは同じ ID。
+   *  途中で正常値に戻ったら次の発火時に新セッション。 */
+  sessionId?: string
+  /** Phase 1.3a: 同セッション内で何回目の発火か。0=初回、1, 2, ...=再アラート */
+  reAlertIndex?: number
   /** ダッシュボード確認記録から連携されたメモ。
    *  DashboardCheckin の sensorComments / segmentComments を作成すると、
    *  対象期間に該当する AlertLog エントリへ書き戻される。

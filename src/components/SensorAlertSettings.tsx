@@ -154,6 +154,40 @@ export function SensorAlertSettings({
                 enabled={value.deviationEnabled}
               />
             )}
+
+            {/* Phase 1.3a: 再アラート設定 */}
+            <div className="alert-row alert-row-sub">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  disabled={!value.deviationEnabled}
+                  checked={Boolean(value.reAlertEnabled)}
+                  onChange={(e) => update('reAlertEnabled', e.target.checked)}
+                />
+                <span>逸脱が継続しているとき再アラートを発火する</span>
+              </label>
+              <div className="num-input-row">
+                <span className="row-label-inline">間隔</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  step={1}
+                  disabled={!value.deviationEnabled || !value.reAlertEnabled}
+                  value={value.reAlertHours ?? 6}
+                  onChange={(e) =>
+                    update(
+                      'reAlertHours',
+                      Math.max(1, Math.min(24, Number(e.target.value) || 6)),
+                    )
+                  }
+                />
+                <span className="num-input-suffix">時間ごと</span>
+              </div>
+              <p className="alert-help muted">
+                危険レベルの逸脱が継続している間、指定した時間ごとに再アラートを発火します（最大 24 時間）。OFF の場合は同じ逸脱期間中は 1 件のみ。
+              </p>
+            </div>
           </fieldset>
 
           {/* Phase C: バッテリー残量アラート — 機種が取得可能なときのみ表示 */}
