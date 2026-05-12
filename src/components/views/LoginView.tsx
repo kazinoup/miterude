@@ -69,7 +69,7 @@ function applyLoginResult(api: ApiSuccess): { redirectTo: string } {
   if (u.system_role === 'super_admin' || u.system_role === 'support') {
     const session: AuthSession = { kind: 'admin', userId: u.id }
     saveAuthSession(session)
-    return { redirectTo: '/admin/tenants' }
+    return { redirectTo: '/admin/dashboard' }
   }
   // テナントユーザー: organization_members から所属を決定
   // 複数所属なら、ひとまず最初の org に入る（ContextSelectView は別途あるが、

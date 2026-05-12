@@ -6,7 +6,7 @@
  * Phase A-5 でスタッフ管理 + impersonation、A-7 で監査ログを足す。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, Users2, History, ShieldCheck, BookOpen } from 'lucide-react'
+import { Building2, Users2, History, ShieldCheck, BookOpen, LayoutDashboard } from 'lucide-react'
 import { UserMenu } from '../components/UserMenu'
 import { ContextSelectView } from '../components/ContextSelectView'
 import { ToastContainer } from '../components/ToastContainer'
@@ -16,6 +16,7 @@ import { AdminStaffView } from './views/AdminStaffView'
 import { AdminStaffDetailView } from './views/AdminStaffDetailView'
 import { AdminAuditView } from './views/AdminAuditView'
 import { AdminManualView } from './views/AdminManualView'
+import { AdminDashboardView } from './views/AdminDashboardView'
 import {
   loadOrganizations,
   loadUsers,
@@ -59,6 +60,7 @@ import type {
 } from '../types'
 
 export type AdminViewKey =
+  | 'dashboard'
   | 'tenants'
   | 'tenant-detail'
   | 'staff'
@@ -78,7 +80,7 @@ export function AdminApp({ session }: Props) {
   const loggedInUser = loadUsers()[session.userId]
   const isSuper = loggedInUser?.systemRole === 'super_admin'
 
-  const [view, setView] = useState<AdminViewKey>('tenants')
+  const [view, setView] = useState<AdminViewKey>('dashboard')
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
   const [activeStaffId, setActiveStaffId] = useState<string | null>(null)
   const [contextSelectOpen, setContextSelectOpen] = useState(false)
@@ -324,6 +326,14 @@ export function AdminApp({ session }: Props) {
         <nav className="admin-sidebar-nav">
           <button
             type="button"
+            className={`admin-nav-item ${view === 'dashboard' ? 'is-active' : ''}`}
+            onClick={() => setView('dashboard')}
+          >
+            <LayoutDashboard size={16} />
+            <span>ダッシュボード</span>
+          </button>
+          <button
+            type="button"
             className={`admin-nav-item ${view === 'tenants' || view === 'tenant-detail' ? 'is-active' : ''}`}
             onClick={() => {
               setView('tenants')
@@ -391,6 +401,17 @@ export function AdminApp({ session }: Props) {
       </aside>
 
       <main className="admin-main">
+        {view === 'dashboard' && (
+          <AdminDashboardView
+            viewerUserId={session.userId}
+            isSuperAdmin={isSuper}
+            onOpenTenant={openTenantDetail}
+            onGoTenants={() => {
+              setView('tenants')
+              setActiveTenantId(null)
+            }}
+          />
+        )}
         {view === 'tenants' && (
           <AdminTenantsView
             onOpenTenant={openTenantDetail}

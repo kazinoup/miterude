@@ -55,7 +55,7 @@ export type TenantRouteState = {
  *  AdminApp 側で slug → tenant.id の解決を行う。 */
 export type AdminRouteState = {
   kind: 'admin'
-  view: 'tenants' | 'tenant-detail' | 'staff' | 'staff-detail' | 'audit' | 'manual'
+  view: 'dashboard' | 'tenants' | 'tenant-detail' | 'staff' | 'staff-detail' | 'audit' | 'manual'
   activeTenantSlug: string | null
   activeStaffId: string | null
   /** テナント詳細のタブ（contract / members / sensors / gateways / integration / audit） */
@@ -84,9 +84,13 @@ export function parsePath(pathname: string): TenantRouteState | AdminRouteState 
   // Admin
   if (parts[0] === ADMIN_PREFIX) {
     if (parts.length === 1) {
-      return { kind: 'admin', view: 'tenants', activeTenantSlug: null, activeStaffId: null }
+      // デフォルトは新しい運営ダッシュボードへ
+      return { kind: 'admin', view: 'dashboard', activeTenantSlug: null, activeStaffId: null }
     }
     const page = parts[1]
+    if (page === 'dashboard') {
+      return { kind: 'admin', view: 'dashboard', activeTenantSlug: null, activeStaffId: null }
+    }
     if (page === 'tenants') {
       const tenantSlug = parts[2] ?? null
       const tab = parts[3]
@@ -233,6 +237,8 @@ export function pathFromTenantState(s: TenantRouteState): string {
 /** AdminRouteState を URL に戻す。 */
 export function pathFromAdminState(s: AdminRouteState): string {
   switch (s.view) {
+    case 'dashboard':
+      return '/admin/dashboard'
     case 'tenants':
       return '/admin/tenants'
     case 'tenant-detail':
