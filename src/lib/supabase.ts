@@ -19,9 +19,19 @@ if (!url || !anonKey) {
   )
 }
 
-export const supabase: SupabaseClient = createClient(url ?? '', anonKey ?? '', {
-  auth: { persistSession: false, autoRefreshToken: false },
-})
+/**
+ * createClient は空文字や空 URL を渡すと例外を投げる（"supabaseUrl is required"）。
+ * env が未設定の環境（Vercel に env を設定し忘れた等）で **モジュール読み込み自体が失敗** し、
+ * 結果 React がマウントできず真っ白になるのを避けるため、ダミー URL を渡しておく。
+ * 実際の API 呼び出しは isSupabaseConfigured() で UI 側がガードする。
+ */
+export const supabase: SupabaseClient = createClient(
+  url || 'https://invalid.supabase.co',
+  anonKey || 'invalid-anon-key',
+  {
+    auth: { persistSession: false, autoRefreshToken: false },
+  },
+)
 
 /** デフォルトの組織 ID（フォールバック用）。URL から slug を解決できないときに使う。 */
 export const DEMO_ORG_ID =

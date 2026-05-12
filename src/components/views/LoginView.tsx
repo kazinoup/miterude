@@ -38,6 +38,9 @@ const ERROR_LABELS: Record<string, string> = {
   'invalid-body': 'リクエストが不正です。',
   'lookup-failed': 'サーバーエラーが発生しました。時間を置いて再度お試しください。',
   'method-not-allowed': '内部エラー: メソッドが許可されていません。',
+  'no-supabase-url':
+    'Supabase の URL が設定されていません。Vercel の環境変数 VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY を確認してください。',
+  'network-error': 'サーバーに接続できませんでした。ネットワークを確認してください。',
 }
 
 async function callMockLogin(email: string, password: string): Promise<ApiResponse> {
@@ -88,6 +91,8 @@ export function LoginView() {
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Supabase env が無いとき先に警告を出す（送信前に気づけるように）
+  const supabaseUrlMissing = !import.meta.env.VITE_SUPABASE_URL
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -130,6 +135,19 @@ export function LoginView() {
           <span className="login-brand-name">ミテルデ</span>
           <span className="login-brand-sub">IoT モニタリング — モック認証</span>
         </div>
+
+        {supabaseUrlMissing && (
+          <div className="login-error">
+            <AlertCircle size={14} />
+            <span>
+              <strong>Supabase の環境変数が未設定です</strong>
+              <br />
+              Vercel のプロジェクト設定で{' '}
+              <code>VITE_SUPABASE_URL</code> と{' '}
+              <code>VITE_SUPABASE_ANON_KEY</code> を追加してから再デプロイしてください。
+            </span>
+          </div>
+        )}
 
         <form className="login-form" onSubmit={handleSubmit}>
           <div className="form-row">
