@@ -23,6 +23,8 @@ type Props = {
   title: string
   metric: Metric
   deviceId: string
+  /** 表示用ラベル。未指定なら deviceId にフォールバック。 */
+  deviceLabel?: string
   ym: YearMonth
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
@@ -32,6 +34,7 @@ export function MonthlyTableReport({
   title,
   metric,
   deviceId,
+  deviceLabel,
   ym,
   readings,
   thresholds,
@@ -46,7 +49,7 @@ export function MonthlyTableReport({
   return (
     <div className="report-page monthly-page report-numeric">
       <h1 className="monthly-title">{title}</h1>
-      <ReportHeroLine ym={ym} deviceId={deviceId} />
+      <ReportHeroLine ym={ym} deviceId={deviceId} deviceLabel={deviceLabel} />
 
       <div className="monthly-meta">
         <table className="meta-table">

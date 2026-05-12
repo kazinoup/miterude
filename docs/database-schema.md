@@ -455,6 +455,29 @@ create index on staff_audit_logs (organization_id, occurred_at desc);
 create index on staff_audit_logs (action, occurred_at desc);
 ```
 
+#### `manual_categories` / `manual_pages`
+オンラインマニュアル（全テナント共通）。super_admin のみ編集可、テナントユーザーは閲覧のみ。
+
+```sql
+create table manual_categories (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  sort_order integer not null default 0,
+  updated_at timestamptz default now()
+);
+
+create table manual_pages (
+  id uuid primary key default gen_random_uuid(),
+  category_id uuid not null references manual_categories on delete cascade,
+  title text not null,
+  sort_order integer not null default 0,
+  content jsonb,                 -- BlockNote の Block[] を JSON で保持
+  updated_by_user_id uuid references users,
+  updated_at timestamptz default now()
+);
+create index on manual_pages (category_id, sort_order);
+```
+
 ---
 
 ### 4.2 Settings（テナント単位のマスタ）

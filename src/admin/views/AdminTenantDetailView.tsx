@@ -42,11 +42,23 @@ import {
   loadStaffAssignments,
   loadUsers,
   saveOrganizations,
+  saveOrganizationMembers,
   upsertOrganization,
   logStaffAction,
 } from '../lib/adminStorage'
 import { gatewaysFromState, loadState, sensorsFromState } from '../../lib/storage'
 import { toast } from '../../lib/toast'
+import {
+  deleteMemberFromSupabase,
+  upsertOrganizationInSupabase,
+} from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import { InviteMemberDialog } from '../components/InviteMemberDialog'
+import { AssignStaffDialog } from '../components/AssignStaffDialog'
+import { DeleteTenantDialog } from '../components/DeleteTenantDialog'
+import { Trash2, ShieldOff, RotateCcw } from 'lucide-react'
+import { startImpersonation } from '../lib/impersonation'
+import { reactivateOrganizationInSupabase } from '../../lib/supabaseQueries'
 import { AdminAuditView } from './AdminAuditView'
 import {
   buildRow as buildSensorRow,
@@ -86,6 +98,7 @@ import type {
   ContractType,
   InvoiceNotifyRecipient,
   Organization,
+  OrganizationStore,
   PaymentMethod,
   TenantRole,
 } from '../../types'
@@ -98,6 +111,10 @@ type Props = {
   /** テナント側状態（sensors / webhook_inbox 等）を変更したことを親に通知する。
    *  AdminApp 側でサイドバーの「未登録 DevEUI」バッジを recount するのに使う。 */
   onTenantStateChanged?: () => void
+  /** URL から復元される初期タブ。Phase K のルーティング連携用。 */
+  initialTab?: string
+  /** タブ変更を親に通知（URL 反映用） */
+  onTabChange?: (tab: string) => void
 }
 
 type DetailTab =
@@ -177,13 +194,30 @@ export function AdminTenantDetailView({
   adminUserId,
   onBack,
   onTenantStateChanged,
+  initialTab,
+  onTabChange,
 }: Props) {
   const [refreshTick, setRefreshTick] = useState(0)
   function bumpRefresh() {
     setRefreshTick((v) => v + 1)
     onTenantStateChanged?.()
   }
-  const [tab, setTab] = useState<DetailTab>('contract')
+  const [tab, _setTab] = useState<DetailTab>(
+    (initialTab as DetailTab) || 'contract',
+  )
+
+  // initialTab が外側から変わったら追従（URL の戻る/進むで該当）
+  useEffect(() => {
+    if (initialTab && initialTab !== tab) {
+      _setTab(initialTab as DetailTab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialTab])
+
+  function setTab(next: DetailTab) {
+    _setTab(next)
+    onTabChange?.(next)
+  }
 
   const org = useMemo(() => {
     const orgs = loadOrganizations()
@@ -350,12 +384,18 @@ export function AdminTenantDetailView({
     JSON.stringify(editPreNotifyRecipients) !==
       JSON.stringify(org.preNotifyRecipients ?? [])
 
-  function handleSave() {
+  async function handleSave() {
     if (!org) return
     const trimmedName = editName.trim()
     const trimmedSlug = editSlug.trim()
     if (!trimmedName || !trimmedSlug) {
-      alert('名前とスラグは必須です。')
+      alert('名前と契約IDは必須です。')
+      return
+    }
+    if (!/^[a-z0-9](?:[a-z0-9_-]{0,18}[a-z0-9])?$/.test(trimmedSlug)) {
+      alert(
+        '契約IDは半角英小文字・数字・ハイフン/アンダースコアのみ、2〜20文字、先頭末尾は英数字で入力してください。',
+      )
       return
     }
     const orgs = loadOrganizations()
@@ -363,7 +403,7 @@ export function AdminTenantDetailView({
       (o) => o.id !== org.id && o.slug === trimmedSlug,
     )
     if (dup) {
-      alert(`スラグ「${trimmedSlug}」は別テナント「${dup.name}」で使用中です。`)
+      alert(`契約ID「${trimmedSlug}」は別テナント「${dup.name}」で使用中です。`)
       return
     }
     const startedAt = fromDateInputValue(editStartedAt)
@@ -413,9 +453,73 @@ export function AdminTenantDetailView({
         ? editPreNotifyRecipients
         : undefined,
     }
+    // Supabase が真値。先に同期して、成功してから localStorage に反映する。
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertOrganizationInSupabase(next)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toast(`テナント更新に失敗: ${msg.slice(0, 100)}`, 'error')
+        return
+      }
+    }
     saveOrganizations(upsertOrganization(orgs, next))
     toast('テナント情報を更新しました', 'success')
     bumpRefresh()
+  }
+
+  /** 削除（無効化 or 完全削除）の専用モーダルを開く */
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  function handleDelete() {
+    setDeleteOpen(true)
+  }
+
+  /** 無効化済みテナントを復活させる */
+  async function handleReactivate() {
+    if (!org) return
+    if (!confirm(`「${org.name}」の無効化を解除して通常運用に戻しますか？`)) return
+    try {
+      if (isSupabaseConfigured()) {
+        await reactivateOrganizationInSupabase(org.id)
+      }
+      const orgs = loadOrganizations()
+      const next: OrganizationStore = {
+        ...orgs,
+        [org.id]: {
+          ...orgs[org.id],
+          deactivatedAt: undefined,
+          deactivatedByUserId: undefined,
+          deactivationReason: undefined,
+          physicalDeleteAfter: undefined,
+        },
+      }
+      saveOrganizations(next)
+      logStaffAction({
+        staffUserId: adminUserId,
+        organizationId: org.id,
+        action: 'tenant.reactivate',
+        targetTable: 'organizations',
+        targetId: org.id,
+        metadata: { name: org.name },
+      })
+      toast(`テナント「${org.name}」を復活しました`, 'success')
+      bumpRefresh()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast(`復活に失敗: ${msg.slice(0, 100)}`, 'error')
+    }
+  }
+
+  /** super_admin がこのテナントを直接開く（impersonation 起動）。
+   *  reason は固定的に「super_admin によるテナント閲覧」とする。
+   *  redirectTo を渡すことで、テナント URL のダッシュボードに遷移する。 */
+  function handleImpersonate(target: Organization) {
+    startImpersonation({
+      staffUserId: adminUserId,
+      organizationId: target.id,
+      reason: 'super_admin によるテナント閲覧',
+      redirectTo: target.slug ? `/${target.slug}/dashboard` : '/',
+    })
   }
 
   const remainingDays = daysUntil(org.contractExpiresAt)
@@ -445,6 +549,22 @@ export function AdminTenantDetailView({
         <span className="tenant-detail-id mono" title="テナント ID">
           {org.id}
         </span>
+        {org.deactivatedAt && (
+          <span className="tenant-deactivated-pill" title="このテナントは無効化されています">
+            <ShieldOff size={11} />
+            無効化中
+          </span>
+        )}
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm tenant-impersonate-btn"
+          onClick={() => handleImpersonate(org)}
+          disabled={Boolean(org.deactivatedAt)}
+          title={org.deactivatedAt ? '無効化中のテナントには入れません' : 'このテナントを開く（super_admin による impersonation）'}
+        >
+          <Eye size={13} />
+          <span>このテナントに入る</span>
+        </button>
       </header>
 
       <nav className="admin-tabs" role="tablist">
@@ -489,6 +609,8 @@ export function AdminTenantDetailView({
           org={org}
           dirty={dirty}
           onSave={handleSave}
+          onDelete={handleDelete}
+          onReactivate={handleReactivate}
           editName={editName}
           setEditName={setEditName}
           editSlug={editSlug}
@@ -520,8 +642,11 @@ export function AdminTenantDetailView({
 
       {tab === 'members' && (
         <MembersTab
+          org={org}
+          adminUserId={adminUserId}
           memberRows={memberRows}
           supportRows={supportRows}
+          onChanged={bumpRefresh}
         />
       )}
 
@@ -556,6 +681,40 @@ export function AdminTenantDetailView({
         <div className="admin-section admin-section-tab">
           <AdminAuditView fixedOrganizationId={org.id} compact />
         </div>
+      )}
+
+      {deleteOpen && (
+        <DeleteTenantDialog
+          org={org}
+          adminUserId={adminUserId}
+          onClose={() => setDeleteOpen(false)}
+          onDone={(kind) => {
+            setDeleteOpen(false)
+            if (kind === 'destroy') {
+              // 物理削除: localStorage からも除去して一覧に戻る
+              const orgs = loadOrganizations()
+              const nextOrgs: OrganizationStore = { ...orgs }
+              delete nextOrgs[org.id]
+              saveOrganizations(nextOrgs)
+              onBack()
+            } else {
+              // 無効化: localStorage の deactivatedAt をセットして UI に反映
+              const orgs = loadOrganizations()
+              const physicalDeleteAfter = new Date()
+              physicalDeleteAfter.setDate(physicalDeleteAfter.getDate() + 180)
+              saveOrganizations({
+                ...orgs,
+                [org.id]: {
+                  ...orgs[org.id],
+                  deactivatedAt: new Date(),
+                  deactivatedByUserId: adminUserId,
+                  physicalDeleteAfter,
+                },
+              })
+              bumpRefresh()
+            }
+          }}
+        />
       )}
     </div>
   )
@@ -687,6 +846,8 @@ type ContractTabProps = {
   org: Organization
   dirty: boolean
   onSave: () => void
+  onDelete: () => void
+  onReactivate: () => void
   editName: string
   setEditName: (v: string) => void
   editSlug: string
@@ -746,13 +907,26 @@ function ContractTab(p: ContractTabProps) {
           />
         </div>
         <div className="form-row">
-          <label className="form-label">スラグ</label>
+          <label className="form-label">契約ID</label>
           <input
             className="form-input mono"
             type="text"
             value={p.editSlug}
-            onChange={(e) => p.setEditSlug(e.target.value)}
+            onChange={(e) =>
+              p.setEditSlug(
+                e.target.value
+                  .toLowerCase()
+                  .replace(/[^a-z0-9_-]+/g, '')
+                  .slice(0, 20),
+              )
+            }
+            maxLength={20}
+            autoComplete="off"
+            spellCheck={false}
           />
+          <p className="form-help muted">
+            顧客と共有する識別子（URL にも使われます）。半角英小文字・数字・ハイフン/アンダースコアのみ、2〜20 文字。
+          </p>
         </div>
 
         <div className="form-row">
@@ -910,6 +1084,57 @@ function ContractTab(p: ContractTabProps) {
               </span>
             )}
           </span>
+        )}
+      </div>
+
+      {/* 危険な操作エリア（テナント削除 / 復活） */}
+      <div className="admin-danger-zone">
+        <h3>危険な操作</h3>
+        {org.deactivatedAt ? (
+          <>
+            <p>
+              このテナントは <strong>無効化中</strong> です。
+              {' '}復活すると通常の運用状態に戻ります。
+              {' '}完全削除は{' '}
+              {org.physicalDeleteAfter
+                ? new Date(org.physicalDeleteAfter as unknown as string | Date).toLocaleDateString('ja-JP')
+                : '?'}{' '}
+              以降に可能になります。
+            </p>
+            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={p.onReactivate}
+              >
+                <RotateCcw size={13} />
+                <span>無効化を解除（復活）</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger btn-sm"
+                onClick={p.onDelete}
+              >
+                <AlertTriangle size={13} />
+                <span>削除メニューを開く</span>
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="muted">
+              このテナントを削除します。安全のため、まず「無効化（180 日猶予）」されます。
+              組織 ID と組織名の正確な入力を求められます。
+            </p>
+            <button
+              type="button"
+              className="btn btn-danger btn-sm"
+              onClick={p.onDelete}
+            >
+              <AlertTriangle size={13} />
+              <span>このテナントを削除...</span>
+            </button>
+          </>
         )}
       </div>
     </section>
@@ -1117,6 +1342,8 @@ function PreNotifyEditor({
 
 /* ===== メンバータブ ===== */
 type MembersTabProps = {
+  org: Organization
+  adminUserId: string
   memberRows: {
     memberId: string
     displayName: string
@@ -1137,17 +1364,51 @@ type MembersTabProps = {
     grantedAt: Date | string
     expiresAt?: Date | string
   }[]
+  onChanged: () => void
 }
 
-function MembersTab({ memberRows, supportRows }: MembersTabProps) {
+function MembersTab({ org, adminUserId, memberRows, supportRows, onChanged }: MembersTabProps) {
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+
+  async function handleRemoveMember(memberId: string, displayName: string) {
+    if (!confirm(`「${displayName}」のメンバーシップを削除しますか？\nテナントへのアクセス権を失います（ユーザー自体は削除されません）。`)) return
+    try {
+      if (isSupabaseConfigured()) {
+        await deleteMemberFromSupabase(memberId)
+      }
+      const next = { ...loadOrganizationMembers() }
+      delete next[memberId]
+      saveOrganizationMembers(next)
+      logStaffAction({
+        staffUserId: adminUserId,
+        organizationId: org.id,
+        action: 'member.remove',
+        targetTable: 'organization_members',
+        targetId: memberId,
+        metadata: { displayName },
+      })
+      toast(`「${displayName}」のメンバーシップを削除しました`, 'info')
+      onChanged()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      toast(`削除に失敗: ${msg.slice(0, 100)}`, 'error')
+    }
+  }
+
   return (
     <>
       <section className="admin-section admin-section-tab">
         <div className="admin-section-head">
           <h2>顧客メンバー（{memberRows.length} 名）</h2>
-          <div className="admin-section-note">
-            メンバー追加 / 編集は Phase A-5 のスタッフ管理画面で実装予定
-          </div>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={() => setInviteOpen(true)}
+          >
+            <Plus size={14} />
+            <span>メンバーを招待</span>
+          </button>
         </div>
         <div className="admin-table-wrap">
           <table className="admin-table">
@@ -1159,6 +1420,7 @@ function MembersTab({ memberRows, supportRows }: MembersTabProps) {
                 <th>招待日</th>
                 <th>初回ログイン</th>
                 <th>最終ログイン</th>
+                <th aria-label="操作"></th>
               </tr>
             </thead>
             <tbody>
@@ -1200,11 +1462,21 @@ function MembersTab({ memberRows, supportRows }: MembersTabProps) {
                       <span className="muted">—</span>
                     )}
                   </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="icon-btn icon-btn-danger"
+                      title="メンバーシップを削除"
+                      onClick={() => handleRemoveMember(m.memberId, m.displayName)}
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  </td>
                 </tr>
               ))}
               {memberRows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="admin-table-empty">
+                  <td colSpan={7} className="admin-table-empty">
                     まだ顧客メンバーがいません。
                   </td>
                 </tr>
@@ -1220,10 +1492,18 @@ function MembersTab({ memberRows, supportRows }: MembersTabProps) {
             <Eye size={14} className="inline-icon" /> サポート割り当て（
             {supportRows.length} 件）
           </h2>
-          <div className="admin-section-note">
-            このテナントへ入る権限を持つ運営側のサポートスタッフ（有効なものだけ）
-          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setAssignOpen(true)}
+          >
+            <Plus size={14} />
+            <span>サポート追加</span>
+          </button>
         </div>
+        <p className="admin-section-note in-panel">
+          このテナントへ入る権限を持つ運営側のサポートスタッフ（有効なものだけ）
+        </p>
         <div className="admin-table-wrap">
           <table className="admin-table">
             <thead>
@@ -1266,6 +1546,30 @@ function MembersTab({ memberRows, supportRows }: MembersTabProps) {
           </table>
         </div>
       </section>
+
+      {inviteOpen && (
+        <InviteMemberDialog
+          org={org}
+          adminUserId={adminUserId}
+          onClose={() => setInviteOpen(false)}
+          onCreated={() => {
+            setInviteOpen(false)
+            onChanged()
+          }}
+        />
+      )}
+      {assignOpen && (
+        <AssignStaffDialog
+          org={org}
+          grantedByUserId={adminUserId}
+          alreadyAssignedStaffIds={supportRows.map((s) => s.staffUserId)}
+          onClose={() => setAssignOpen(false)}
+          onCreated={() => {
+            setAssignOpen(false)
+            onChanged()
+          }}
+        />
+      )}
     </>
   )
 }

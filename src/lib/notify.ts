@@ -11,10 +11,10 @@ import type {
 } from '../types'
 import { hash16 } from './mock'
 
-let counter = 0
-function genId(prefix: string): string {
-  counter += 1
-  return `${prefix}-${hash16(`${Date.now()}-${counter}-${Math.random()}`).slice(0, 8)}`
+/** 通知グループ ID は Supabase の uuid と整合させるため UUID で採番。
+ *  チャンネル ID は jsonb 内部のキーなので緩めでも OK だが、揃えるため UUID 採用。 */
+function genId(_prefix: string): string {
+  return crypto.randomUUID()
 }
 
 /* ---------- 通知グループ ---------- */

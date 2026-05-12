@@ -20,13 +20,11 @@ import type {
   Widget,
   WidgetSpan,
 } from '../types'
-import { hash16 } from './mock'
-
-let counter = 0
-
-export function genId(prefix: string): string {
-  counter += 1
-  return `${prefix}-${hash16(`${Date.now()}-${counter}-${Math.random()}`).slice(0, 8)}`
+/** Dashboard / Widget の ID。dashboards テーブルが uuid を要求するので
+ *  Supabase 整合のため UUID で採番する。widget ID は jsonb 内部なので緩いが、
+ *  揃えるためここで一括 UUID 化する。 */
+export function genId(_prefix: string): string {
+  return crypto.randomUUID()
 }
 
 /** ウィジェットに表示する有効なセンサーID集合を返す。

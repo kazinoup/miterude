@@ -220,8 +220,8 @@ function ContextChoiceButton({
 
 /* ===== 大量テナント向け combobox =====
  *
- * 6 社以上の所属がある場合に表示。検索ボックスでテナント名 / スラグ /
- * ID で部分一致絞り込み、スクロール領域内に収める。
+ * 6 社以上の所属がある場合に表示。検索ボックスでテナント名 / 契約ID /
+ * UUID で部分一致絞り込み、スクロール領域内に収める。
  */
 function TenantCombobox({
   choices,
@@ -261,7 +261,7 @@ function TenantCombobox({
             className="form-input"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="テナント名・スラグで検索"
+            placeholder="テナント名・契約IDで検索"
             autoFocus
           />
         </div>

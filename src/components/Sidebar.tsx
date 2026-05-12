@@ -7,6 +7,7 @@ import {
   Settings,
   ClipboardCheck,
   AlertTriangle,
+  BookOpen,
 } from 'lucide-react'
 import type {
   Dashboard,
@@ -151,6 +152,14 @@ export function Sidebar({
       {/* sidebar-foot は flex 親で常に画面下端に固定（CSS 側で margin-top:auto +
          position: sticky 相当の挙動。スクロールするのは sidebar-nav のみ）。 */}
       <div className="sidebar-foot">
+        <button
+          type="button"
+          className={`nav-item nav-item-secondary ${current === 'manual' ? 'is-active' : ''}`}
+          onClick={() => onNavigate('manual')}
+        >
+          <BookOpen size={18} strokeWidth={2} />
+          <span>マニュアル</span>
+        </button>
         <UserMenu session={session} onSwitchContext={onSwitchContext} />
       </div>
     </aside>

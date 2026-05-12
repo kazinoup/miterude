@@ -4,7 +4,7 @@
  * 表示要素:
  *  - 検索 / 件数
  *  - 一覧テーブル（13 列、ワイド表示・横スクロール対応）:
- *      名前 / スラグ / 契約種別 / センサー / ゲートウェイ / メンバー / サポート /
+ *      名前 / 契約ID / 契約種別 / センサー / ゲートウェイ / メンバー / サポート /
  *      ツクルデAI / 請求サイクル / 決済 / 契約開始日 / 次回更新（残日数） / 自動送付
  *  - 並び替え:
  *      既定 = 次回更新の残日数 昇順（期限が近い順）
@@ -12,16 +12,25 @@
  *  - 「新規テナント」で CreateTenantDialog を起動
  *  - 行クリックで詳細画面へ
  */
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Plus, Building2, Search, ArrowUp, ArrowDown, Check } from 'lucide-react'
 import {
   loadOrganizations,
   loadOrganizationMembers,
   loadStaffAssignments,
+  saveOrganizations,
 } from '../lib/adminStorage'
 import { gatewaysFromState, loadState, sensorsFromState } from '../../lib/storage'
 import { CreateTenantDialog } from '../components/CreateTenantDialog'
-import type { BillingCycle, ContractType, PaymentMethod } from '../../types'
+import { fetchOrganizationsList } from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
+import type {
+  BillingCycle,
+  ContractType,
+  Organization,
+  OrganizationStore,
+  PaymentMethod,
+} from '../../types'
 
 type Props = {
   onOpenTenant: (tenantId: string) => void
@@ -78,6 +87,29 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
   // 既定: 次回更新の残日数 昇順（期限が近い順）
   const [sortKey, setSortKey] = useState<SortKey>('expiry')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+
+  // Supabase 接続時はマウント時に organizations を取得して localStorage を上書き。
+  // 「Supabase が真値、localStorage はキャッシュ」というモデル。
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const list: Organization[] = await fetchOrganizationsList()
+        if (cancelled) return
+        const local = loadOrganizations()
+        const next: OrganizationStore = {}
+        for (const o of list) next[o.id] = { ...local[o.id], ...o }
+        saveOrganizations(next)
+        setRefreshTick((t) => t + 1)
+      } catch (e) {
+        console.warn('[admin-tenants] fetch failed', e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const tenants = useMemo(() => {
     const orgs = loadOrganizations()
@@ -206,7 +238,7 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
           <input
             type="search"
             className="form-input"
-            placeholder="名前・スラグ・IDで検索"
+            placeholder="名前・契約ID・UUIDで検索"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -226,7 +258,7 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
           <thead>
             <tr>
               <th className="col-tenant-name">名前</th>
-              <th>スラグ</th>
+              <th>契約ID</th>
               <th>契約種別</th>
               <th className="num">センサー</th>
               <th className="num">GW</th>
@@ -276,7 +308,21 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
                   className="admin-table-row"
                   onClick={() => onOpenTenant(t.id)}
                 >
-                  <td className="admin-table-name col-tenant-name">{t.name}</td>
+                  <td className="admin-table-name col-tenant-name">
+                    {t.name}
+                    {t.deactivatedAt && (
+                      <span
+                        className="tenant-deactivated-pill"
+                        title={`無効化中（${
+                          t.physicalDeleteAfter
+                            ? new Date(t.physicalDeleteAfter as unknown as string | Date).toLocaleDateString('ja-JP')
+                            : '?'
+                        } 以降に物理削除可能）`}
+                      >
+                        無効化中
+                      </span>
+                    )}
+                  </td>
                   <td className="mono">{t.slug}</td>
                   <td>
                     <span

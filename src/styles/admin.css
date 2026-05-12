@@ -1519,10 +1519,68 @@
 .tenant-detail-head {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 1rem;
+  flex-wrap: wrap;
   margin: 0 0 0.85rem;
   padding: 0;
+}
+
+.tenant-impersonate-btn {
+  margin-left: auto;
+  align-self: center;
+}
+
+/* テナント削除ダイアログ */
+.delete-tenant-status {
+  margin: 0 0 1rem;
+  padding: 0.7rem 0.9rem;
+  background: rgba(217, 119, 6, 0.06);
+  border: 1px solid #d97706;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.delete-tenant-status p {
+  margin: 0;
+}
+
+.delete-tenant-status p + p {
+  margin-top: 0.35rem;
+}
+
+.delete-tenant-foot {
+  flex-wrap: wrap;
+}
+
+.form-input.is-match {
+  border-color: #15803d;
+  background: rgba(21, 128, 61, 0.04);
+}
+
+.form-input.is-mismatch {
+  border-color: var(--danger);
+  background: rgba(204, 0, 0, 0.04);
+}
+
+.form-help.dim {
+  color: var(--gray-500);
+  font-size: 0.74rem;
+  letter-spacing: 0.01em;
+}
+
+/* 一覧の無効化バッジ */
+.tenant-deactivated-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(217, 119, 6, 0.1);
+  color: #b45309;
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-left: 0.4rem;
 }
 
 .tenant-detail-title {
@@ -2202,4 +2260,314 @@
   display: flex;
   align-items: center;
   min-height: 2.05rem;
+}
+
+/* ===== Manual (Admin / Tenant 共通) ===== */
+.manual-admin-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.manual-admin-head {
+  padding: 0 0 0.6rem;
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: 0.85rem;
+}
+
+.manual-admin-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  color: var(--navy-800);
+  margin: 0 0 0.2rem;
+}
+
+.manual-admin-sub {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* グリッドの列幅はインラインスタイルで指定（リサイザーで動的に変える）。
+   通常 3 列: [左ツリー] [リサイザー 6px] [コンテンツ minmax(0, 1fr)] */
+.manual-admin-body,
+.manual-view-body {
+  display: grid;
+  gap: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* マニュアル画面は横幅をフルに使う（admin-view の max-width: 1100px を解除） */
+.manual-admin-view,
+.manual-view {
+  max-width: none !important;
+}
+
+/* ドラッグ中はテキスト選択を抑制 + iframe overlay の代わり */
+.manual-admin-body.is-dragging,
+.manual-view-body.is-dragging,
+.manual-admin-body.is-dragging *,
+.manual-view-body.is-dragging * {
+  user-select: none;
+  cursor: col-resize !important;
+}
+
+/* 列間のドラッグハンドル */
+.manual-resizer {
+  position: relative;
+  background: transparent;
+  cursor: col-resize;
+  align-self: stretch;
+  /* ハンドル中央に細い線を描画する */
+}
+
+.manual-resizer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  background: var(--gray-200);
+}
+
+.manual-resizer:hover::before,
+.manual-admin-body.is-dragging .manual-resizer::before,
+.manual-view-body.is-dragging .manual-resizer::before {
+  width: 3px;
+  background: var(--navy-500);
+  transition: background 100ms ease;
+}
+
+
+.manual-tree {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.5rem 0.5rem 0.75rem;
+  overflow-y: auto;
+}
+
+.manual-tree-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.4rem 0.55rem;
+  border-bottom: 1px dashed var(--gray-200);
+  margin-bottom: 0.4rem;
+}
+
+.manual-tree-title {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--navy-800);
+}
+
+.manual-tree-empty,
+.manual-tree-empty-sub {
+  padding: 0.5rem 0.4rem;
+  font-size: 0.82rem;
+}
+
+.manual-tree-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.manual-tree-cat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+}
+
+.manual-tree-cat-row:hover {
+  background: var(--gray-50);
+}
+
+.manual-tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: transparent;
+  border: none;
+  padding: 0.2rem 0.1rem;
+  cursor: pointer;
+  font-size: 0.88rem;
+  color: var(--navy-800);
+  font-weight: 600;
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+.manual-tree-cat-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manual-tree-cat-actions,
+.manual-tree-page-actions {
+  display: inline-flex;
+  gap: 0.1rem;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.manual-tree-cat-row:hover .manual-tree-cat-actions,
+.manual-tree-page:hover .manual-tree-page-actions {
+  opacity: 1;
+}
+
+.icon-btn.danger {
+  color: var(--danger, #c00);
+}
+
+.manual-tree-page-list {
+  list-style: none;
+  padding-left: 1.2rem;
+  margin: 0.15rem 0 0.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.manual-tree-page {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+  border-radius: 4px;
+}
+
+.manual-tree-page:hover {
+  background: var(--gray-50);
+}
+
+.manual-tree-page-btn {
+  flex: 1 1 auto;
+  background: transparent;
+  border: none;
+  text-align: left;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.84rem;
+  color: var(--gray-800);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.manual-tree-page-btn.is-active {
+  background: var(--navy-700);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 4px;
+}
+
+.manual-content {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  padding: 0.85rem 1.1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-height: 26rem;
+}
+
+.manual-content-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px dashed var(--gray-200);
+}
+
+.manual-content-title-input {
+  flex: 1 1 auto;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--navy-800);
+  border: 1px solid transparent;
+  padding: 0.3rem 0.4rem;
+  border-radius: 4px;
+  font-family: inherit;
+}
+
+.manual-content-title-input:hover,
+.manual-content-title-input:focus {
+  border-color: var(--gray-300);
+  outline: none;
+}
+
+.manual-content-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.2rem;
+  color: var(--navy-800);
+}
+
+.manual-content-empty {
+  padding: 2rem 0.5rem;
+  text-align: center;
+}
+
+/* BlockNote のデフォルトをアプリの幅に馴染ませる */
+.manual-editor {
+  flex: 1 1 auto;
+  min-height: 18rem;
+}
+
+.manual-editor .bn-container {
+  min-height: 18rem;
+  font-family: inherit;
+}
+
+.manual-editor-view .bn-editor {
+  cursor: default;
+}
+
+/* Tenant 側 manual */
+.manual-view {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.manual-view-head {
+  padding: 0 0 0.6rem;
+  border-bottom: 1px solid var(--gray-200);
+  margin-bottom: 0.85rem;
+}
+
+.manual-view-head h1 {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.25rem;
+  color: var(--navy-800);
+  margin: 0 0 0.2rem;
+}
+
+.manual-view-sub {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+/* Tenant サイドバー下部の「マニュアル」リンク */
+.nav-item-secondary {
+  margin: 0 0 0.4rem;
+  width: 100%;
+  font-weight: 500;
 }

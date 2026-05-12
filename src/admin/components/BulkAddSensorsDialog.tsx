@@ -20,7 +20,6 @@ import {
   type SensorDraft,
   type ValidationIssue,
 } from '../lib/sensorRegistration'
-import { toast } from '../../lib/toast'
 import type { Organization } from '../../types'
 
 type Props = {

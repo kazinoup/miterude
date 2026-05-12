@@ -2,7 +2,7 @@
  * テナント側の「契約・支払い」タブ。
  *
  * 構成（上から）:
- *  1. 契約情報（読み取り専用 — 組織名 / テナント ID / プラン / 請求サイクル
+ *  1. 契約情報（読み取り専用 — 組織名 / 契約ID（UUID 併記） / プラン / 請求サイクル
  *               / 契約開始日 / 次回更新日）
  *  2. 支払い方法（読み取り専用バッジ + 案内）
  *     - 銀行振込 or クレジットの切り替えは Admin 側でのみ操作可能。
@@ -191,12 +191,17 @@ export function BillingTab({
             <dd>{organization.name}</dd>
           </div>
           <div className="billing-info-row">
-            <dt>テナント ID</dt>
-            <dd className="mono">{organization.id}</dd>
+            <dt>契約ID</dt>
+            <dd className="mono">
+              {organization.slug}
+              <div className="billing-info-uuid mono" title="システム内部の UUID">
+                UUID: {organization.id}
+              </div>
+            </dd>
           </div>
           <div className="billing-info-row">
             <dt>プラン</dt>
-            <dd>
+            <dd className="billing-plan-dd">
               <span
                 className={`contract-type-pill contract-type-${organization.contractType ?? 'subscription'}`}
               >
@@ -207,36 +212,38 @@ export function BillingTab({
                   ツクルデAI 連携
                 </span>
               )}
-              <div className="billing-plan-desc muted">
+              <span className="billing-plan-desc muted">
                 {contractTypeDescription(organization.contractType)}
-              </div>
+              </span>
             </dd>
           </div>
           <div className="billing-info-row">
             <dt>請求サイクル</dt>
             <dd>{billingCycleLabel(organization.billingCycle)}</dd>
           </div>
-          <div className="billing-info-row">
-            <dt>契約開始日</dt>
-            <dd>{formatDate(organization.contractStartedAt)}</dd>
-          </div>
-          <div className="billing-info-row">
-            <dt>次回更新日</dt>
+          <div className="billing-info-row billing-info-row-span">
+            <dt>契約期間</dt>
             <dd>
-              <span className={`billing-expiry ${expiryClass}`}>
-                {formatDate(organization.contractExpiresAt)}
-                {remaining !== null && (
-                  <span className="billing-expiry-days">
-                    {' '}
-                    （
-                    {remaining < 0
-                      ? `${-remaining} 日経過`
-                      : remaining === 0
-                        ? '本日'
-                        : `あと ${remaining} 日`}
-                    ）
-                  </span>
-                )}
+              <span className="billing-period">
+                <span>{formatDate(organization.contractStartedAt)}</span>
+                <span className="billing-period-sep" aria-hidden="true">
+                  〜
+                </span>
+                <span className={`billing-expiry ${expiryClass}`}>
+                  {formatDate(organization.contractExpiresAt)}
+                  {remaining !== null && (
+                    <span className="billing-expiry-days">
+                      {' '}
+                      （
+                      {remaining < 0
+                        ? `${-remaining} 日経過`
+                        : remaining === 0
+                          ? '本日'
+                          : `あと ${remaining} 日`}
+                      ）
+                    </span>
+                  )}
+                </span>
               </span>
             </dd>
           </div>

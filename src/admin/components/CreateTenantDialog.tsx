@@ -17,6 +17,12 @@ import {
   upsertOrganization,
 } from '../lib/adminStorage'
 import { toast } from '../../lib/toast'
+import {
+  seedDefaultCategoriesForOrg,
+  seedMilesightIntegrationForOrg,
+  upsertOrganizationInSupabase,
+} from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import type {
   BillingCycle,
   ContractType,
@@ -29,24 +35,39 @@ type Props = {
   onCreated: (orgId: string) => void
 }
 
-/** 入力された name から slug を粗く生成（半角英数とハイフンのみ） */
-function suggestSlug(name: string): string {
-  return name
-    .trim()
+/**
+ * 契約 ID として使える文字: URL セーフな英数字 + `-` / `_`
+ * （RFC 3986 の unreserved に近いが、人が読み上げる場面が多いので `.` / `~` は外す）
+ */
+const CONTRACT_ID_REGEX = /^[a-z0-9](?:[a-z0-9_-]{0,18}[a-z0-9])?$/
+const CONTRACT_ID_MAX_LEN = 20
+
+/**
+ * 5 文字のランダム英数字を生成（基本的に手動入力前提なのでデフォルト値用）。
+ * 読み間違えやすい `0/o`, `1/l/i` を除外。
+ */
+function generateDefaultContractId(): string {
+  const chars = 'abcdefghjkmnpqrstuvwxyz23456789'
+  let out = ''
+  for (let i = 0; i < 5; i += 1) {
+    out += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return out
+}
+
+/** 入力途中の正規化（小文字 + 不正文字除去 + 長さ制限）だけ行う */
+function normalizeContractIdInput(input: string): string {
+  return input
     .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[^a-z0-9\s-]+/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40)
+    .replace(/[^a-z0-9_-]+/g, '')
+    .slice(0, CONTRACT_ID_MAX_LEN)
 }
 
 export function CreateTenantDialog({ onClose, onCreated }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const [name, setName] = useState('')
-  const [slug, setSlug] = useState('')
-  const [slugTouched, setSlugTouched] = useState(false)
+  // 契約 ID は手動入力前提だが、空のままだと手戻りが多いので 5 文字ランダムをデフォルトに置く
+  const [slug, setSlug] = useState(() => generateDefaultContractId())
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual')
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>('bank_transfer')
@@ -58,17 +79,11 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
     const dlg = ref.current
     if (!dlg) return
     if (!dlg.open) dlg.showModal()
-    return () => {
-      if (dlg.open) dlg.close()
-    }
+    // StrictMode 二重マウントで cleanup の dlg.close() が onClose を発火するため、
+    // 明示 close はしない（unmount で DOM ごと外れる）。
   }, [])
 
-  // name を変えたとき、ユーザーが slug を手動編集していなければ自動追従
-  useEffect(() => {
-    if (!slugTouched) setSlug(suggestSlug(name))
-  }, [name, slugTouched])
-
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmedName = name.trim()
     const trimmedSlug = slug.trim()
@@ -77,16 +92,22 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
       return
     }
     if (!trimmedSlug) {
-      alert('スラグを入力してください。')
+      alert('契約IDを入力してください。')
+      return
+    }
+    if (!CONTRACT_ID_REGEX.test(trimmedSlug)) {
+      alert(
+        '契約IDは半角英小文字・数字・ハイフン/アンダースコアのみ、2〜20文字、先頭末尾は英数字で入力してください。',
+      )
       return
     }
 
     const orgs = loadOrganizations()
-    // slug の重複チェック（業務的に slug が衝突するとあとで困る）
+    // 契約 ID の重複チェック（URL 兼用なので衝突は致命的）
     const dup = Object.values(orgs).find((o) => o.slug === trimmedSlug)
     if (dup) {
       alert(
-        `スラグ「${trimmedSlug}」は既に「${dup.name}」で使われています。別のスラグを指定してください。`,
+        `契約ID「${trimmedSlug}」は既に「${dup.name}」で使われています。別のIDを指定してください。`,
       )
       return
     }
@@ -114,6 +135,24 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
       contractType,
       tsukurudeAiEnabled: tsukurudeAi,
     }
+
+    // Supabase 側を先に書く（成功してから localStorage を更新するとリロード時に同期する）。
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertOrganizationInSupabase(org)
+        // デフォルトの 3 区分 + Milesight integration プレースホルダを並列で seed
+        await Promise.all([
+          seedDefaultCategoriesForOrg(id),
+          seedMilesightIntegrationForOrg(id),
+        ])
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error('[create-tenant] supabase write failed', err)
+        toast(`テナント保存に失敗: ${msg.slice(0, 100)}`, 'error')
+        return
+      }
+    }
+
     saveOrganizations(upsertOrganization(orgs, org))
     toast(`テナント「${trimmedName}」を作成しました`, 'success')
     onCreated(id)
@@ -161,21 +200,36 @@ export function CreateTenantDialog({ onClose, onCreated }: Props) {
 
           <div className="form-row">
             <label className="form-label" htmlFor="tenant-slug">
-              スラグ
+              契約ID
             </label>
-            <input
-              id="tenant-slug"
-              className="form-input mono"
-              type="text"
-              value={slug}
-              onChange={(e) => {
-                setSlug(e.target.value)
-                setSlugTouched(true)
-              }}
-              placeholder="abc-foods"
-            />
+            <div className="form-input-with-action">
+              <input
+                id="tenant-slug"
+                className="form-input mono"
+                type="text"
+                value={slug}
+                onChange={(e) =>
+                  setSlug(normalizeContractIdInput(e.target.value))
+                }
+                placeholder="abc-foods"
+                maxLength={CONTRACT_ID_MAX_LEN}
+                inputMode="text"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setSlug(generateDefaultContractId())}
+                title="ランダムな 5 文字を再生成"
+              >
+                ランダム再生成
+              </button>
+            </div>
             <p className="form-help">
-              URL や識別子に使う。半角英数とハイフン推奨。名前から自動生成されますが編集可能です。
+              顧客とのやり取りや URL に使う識別子（例: <code>abc-foods</code>）。
+              半角英数字とハイフン / アンダースコアのみ、2〜20 文字。
+              基本は手動入力推奨。デフォルトはランダム 5 文字。
             </p>
           </div>
 

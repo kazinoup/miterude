@@ -450,11 +450,15 @@ export function ReportView({
                   if (idx >= 0) setPreviewIndex(idx)
                 }}
               >
-                {eligibleDeviceIds.map((id) => (
-                  <option key={id} value={id}>
-                    {id}
-                  </option>
-                ))}
+                {eligibleDeviceIds.map((id) => {
+                  const s = sensors[id]
+                  const label = s?.name?.trim() || s?.deviceNumber || id
+                  return (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  )
+                })}
               </select>
               <button
                 type="button"
@@ -473,25 +477,38 @@ export function ReportView({
             </div>
 
             <div id="screen-preview-root" className="screen-preview-root">
-              {printKind === 'monthly' && printMonth ? (
-                <ReportPreview
-                  key={`m-${previewDevice}-${yearMonthKey(printMonth)}`}
-                  kind="monthly"
-                  ym={printMonth}
-                  deviceId={previewDevice}
-                  readings={devices[previewDevice] ?? []}
-                  thresholds={sensors[previewDevice]?.thresholds}
-                />
-              ) : printKind === 'weekly' && printWeekStart ? (
-                <ReportPreview
-                  key={`w-${previewDevice}-${printWeekStart.toISOString().slice(0, 10)}`}
-                  kind="weekly"
-                  weekStart={printWeekStart}
-                  deviceId={previewDevice}
-                  readings={devices[previewDevice] ?? []}
-                  thresholds={sensors[previewDevice]?.thresholds}
-                />
-              ) : null}
+              {(() => {
+                const ps = sensors[previewDevice]
+                const previewLabel =
+                  ps?.name?.trim() || ps?.deviceNumber || previewDevice
+                if (printKind === 'monthly' && printMonth) {
+                  return (
+                    <ReportPreview
+                      key={`m-${previewDevice}-${yearMonthKey(printMonth)}`}
+                      kind="monthly"
+                      ym={printMonth}
+                      deviceId={previewDevice}
+                      deviceLabel={previewLabel}
+                      readings={devices[previewDevice] ?? []}
+                      thresholds={ps?.thresholds}
+                    />
+                  )
+                }
+                if (printKind === 'weekly' && printWeekStart) {
+                  return (
+                    <ReportPreview
+                      key={`w-${previewDevice}-${printWeekStart.toISOString().slice(0, 10)}`}
+                      kind="weekly"
+                      weekStart={printWeekStart}
+                      deviceId={previewDevice}
+                      deviceLabel={previewLabel}
+                      readings={devices[previewDevice] ?? []}
+                      thresholds={ps?.thresholds}
+                    />
+                  )
+                }
+                return null
+              })()}
 
               {/* Phase A-4: 任意で記録履歴・運用メモのページをプレビュー末尾に表示 */}
               {includeRecordsPage &&

@@ -111,20 +111,22 @@ export function ThresholdMetricEditor({
         </span>
       </legend>
 
-      <ThresholdLevelEditor
-        kind="alert"
-        title="危険"
-        unit={unit}
-        level={metric.alert}
-        onChange={patchAlert}
-      />
-      <ThresholdLevelEditor
-        kind="warn"
-        title="注意"
-        unit={unit}
-        level={metric.warn}
-        onChange={patchWarn}
-      />
+      <div className="threshold-level-grid">
+        <ThresholdLevelEditor
+          kind="warn"
+          title="注意"
+          unit={unit}
+          level={metric.warn}
+          onChange={patchWarn}
+        />
+        <ThresholdLevelEditor
+          kind="alert"
+          title="危険"
+          unit={unit}
+          level={metric.alert}
+          onChange={patchAlert}
+        />
+      </div>
 
       <ValidationHint metric={metric} />
     </fieldset>
@@ -171,27 +173,6 @@ function ThresholdLevelEditor({
       <div className="threshold-row-inputs" aria-hidden={!level.enabled}>
         <label
           className="threshold-input-pair"
-          title="この値を下回ると発動します。設定しなければ下限の判定はしません。"
-        >
-          <ArrowDownToLine
-            size={11}
-            strokeWidth={2.4}
-            className="threshold-arrow-down"
-            aria-hidden="true"
-          />
-          <span className="threshold-input-pair-label">下限</span>
-          <input
-            type="number"
-            step="0.1"
-            value={level.min ?? ''}
-            disabled={!level.enabled}
-            onChange={(e) => onChange({ min: parseNumOrUndef(e.target.value) })}
-            placeholder="—"
-          />
-          <span className="threshold-input-unit">{unit}</span>
-        </label>
-        <label
-          className="threshold-input-pair"
           title="この値を上回ると発動します。設定しなければ上限の判定はしません。"
         >
           <ArrowUpToLine
@@ -207,6 +188,27 @@ function ThresholdLevelEditor({
             value={level.max ?? ''}
             disabled={!level.enabled}
             onChange={(e) => onChange({ max: parseNumOrUndef(e.target.value) })}
+            placeholder="—"
+          />
+          <span className="threshold-input-unit">{unit}</span>
+        </label>
+        <label
+          className="threshold-input-pair"
+          title="この値を下回ると発動します。設定しなければ下限の判定はしません。"
+        >
+          <ArrowDownToLine
+            size={11}
+            strokeWidth={2.4}
+            className="threshold-arrow-down"
+            aria-hidden="true"
+          />
+          <span className="threshold-input-pair-label">下限</span>
+          <input
+            type="number"
+            step="0.1"
+            value={level.min ?? ''}
+            disabled={!level.enabled}
+            onChange={(e) => onChange({ min: parseNumOrUndef(e.target.value) })}
             placeholder="—"
           />
           <span className="threshold-input-unit">{unit}</span>

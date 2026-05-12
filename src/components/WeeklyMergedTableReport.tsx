@@ -38,6 +38,8 @@ type Metric = 'temperature' | 'humidity'
 
 type Props = {
   deviceId: string
+  /** 表示用ラベル。未指定なら deviceId にフォールバック。 */
+  deviceLabel?: string
   weekStart: Date
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
@@ -123,6 +125,7 @@ function MetricStatsBlock({
 
 export function WeeklyMergedTableReport({
   deviceId,
+  deviceLabel,
   weekStart,
   readings,
   thresholds,
@@ -176,7 +179,7 @@ export function WeeklyMergedTableReport({
       <div className="report-hero-wrap">
         <p className="report-hero-line">
           <span className="report-hero-ym">【{heroPeriodLabel}】</span>
-          <span className="report-hero-device">{deviceId}</span>
+          <span className="report-hero-device">{deviceLabel || deviceId}</span>
         </p>
       </div>
 

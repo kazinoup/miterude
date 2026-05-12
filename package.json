@@ -10,6 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@blocknote/core": "^0.50.0",
+    "@blocknote/mantine": "^0.50.0",
+    "@blocknote/react": "^0.50.0",
+    "@supabase/supabase-js": "^2.105.4",
     "jszip": "^3.10.1",
     "lucide-react": "^1.14.0",
     "react": "^19.2.5",

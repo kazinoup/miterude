@@ -176,7 +176,7 @@ export function UserMenu({ session, onSwitchContext }: Props) {
                     onClick={() => handleSwitch(c.session)}
                   >
                     <span className="user-menu-switch-icon" aria-hidden="true">
-                      {c.session.kind === 'admin' ? (
+                      {c.session?.kind === 'admin' ? (
                         <ShieldCheck size={12} />
                       ) : (
                         <Building2 size={12} />

@@ -12,12 +12,11 @@ import type {
   SensorStore,
   StorageKind,
 } from '../types'
-import { hash16 } from './mock'
 
-let counter = 0
-function genId(prefix: string): string {
-  counter += 1
-  return `${prefix}-${hash16(`${Date.now()}-${counter}-${Math.random()}`).slice(0, 8)}`
+/** 新規エンティティは UUID で採番する（Supabase の uuid カラムと整合させるため）。
+ *  既存の `cat-default-*` 等の固定 ID はそのまま温存（マイグレーション用）。 */
+function genId(_prefix: string): string {
+  return crypto.randomUUID()
 }
 
 /* ---------- アイコン ---------- */

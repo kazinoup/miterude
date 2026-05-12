@@ -25,12 +25,11 @@ import {
   extractDeviationSegments,
   type DeviationSegment,
 } from './report'
-import { ensureDate, hash16 } from './mock'
+import { ensureDate } from './mock'
 
-let counter = 0
-function genId(prefix: string): string {
-  counter += 1
-  return `${prefix}-${hash16(`${Date.now()}-${counter}-${Math.random()}`).slice(0, 8)}`
+/** Supabase の uuid カラムと整合させるため UUID で採番。 */
+function genId(_prefix: string): string {
+  return crypto.randomUUID()
 }
 
 /* ---------- ダッシュボードのセンサー集約 ---------- */
@@ -39,7 +38,14 @@ function genId(prefix: string): string {
 export function collectDashboardSensorIds(dashboard: Dashboard): string[] {
   const set = new Set<string>()
   for (const w of dashboard.widgets as Widget[]) {
-    for (const sid of w.sensorIds) set.add(sid)
+    if (w.sensorIds.length === 0) {
+      // widget.sensorIds が空 = 「ダッシュボード全体」を意味する。
+      // effectiveSensorIds (lib/dashboard.ts) と同じ規則に従って、
+      // ダッシュボードの targetSensorIds を全て採用する。
+      for (const sid of dashboard.targetSensorIds) set.add(sid)
+    } else {
+      for (const sid of w.sensorIds) set.add(sid)
+    }
   }
   return Array.from(set).sort()
 }

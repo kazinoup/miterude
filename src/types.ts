@@ -183,6 +183,7 @@ export type ViewKey =
   | 'records'
   | 'alerts'
   | 'settings'
+  | 'manual'
 
 /* ---------- センサー種別（Phase 7） ---------- */
 /** 将来複数種類のセンサーに対応するためのタイプ識別子 */
@@ -760,6 +761,12 @@ export type Dashboard = {
   targetSensorIds: string[]
   /** 既定の対象期間（固定期間モード時） */
   defaultPeriod: DashboardDefaultPeriod
+  /** Phase F-5: 公開 URL のトークン。
+   *  値があると `/share/dashboard/<token>` で読み取り専用閲覧できる想定。
+   *  未発行 / 取り消し済みは undefined。 */
+  publicShareToken?: string
+  /** 公開 URL を発行した日時（取り消し時に消す） */
+  publicShareIssuedAt?: Date
   createdAt: Date
   updatedAt: Date
 }
@@ -1079,6 +1086,17 @@ export type Organization = {
     finishedAt?: Date
   }
 
+  /* ---------- 論理削除（無効化）---------- *
+   * deactivatedAt がセットされたら無効化中。physicalDeleteAfter 以降は完全削除可。 */
+  /** 無効化（論理削除）した日時。null = 通常運用中。 */
+  deactivatedAt?: Date
+  /** 無効化を実行した admin user の id */
+  deactivatedByUserId?: string
+  /** 無効化の理由（監査用） */
+  deactivationReason?: string
+  /** この日時以降、admin が物理削除を実行できる（既定: 無効化から 180 日後）。 */
+  physicalDeleteAfter?: Date
+
   /** 請求書を顧客へ送る何日前に営業担当へ事前通知するか（既定 3）。
    *  paymentMethod='bank_transfer' かつ autoInvoice=true のときだけ意味を持つ。 */
   preNotifyDaysBefore?: number
@@ -1195,6 +1213,31 @@ export type StaffAuditLog = {
 }
 
 export type StaffAuditLogStore = Record<string, StaffAuditLog>
+
+/** マニュアル: カテゴリ（左サイドバーの第 1 階層）。
+ *  super_admin のみ編集可。全テナント共通コンテンツ。 */
+export type ManualCategory = {
+  id: string
+  name: string
+  sortOrder: number
+  updatedAt: Date
+}
+
+export type ManualCategoryStore = Record<string, ManualCategory>
+
+/** マニュアル: ページ（第 2 階層）。content は BlockNote の JSON。 */
+export type ManualPage = {
+  id: string
+  categoryId: string
+  title: string
+  sortOrder: number
+  /** BlockNote の Block[] を JSON シリアライズ可能な形で保持 */
+  content: unknown
+  updatedAt: Date
+  updatedByUserId?: string
+}
+
+export type ManualPageStore = Record<string, ManualPage>
 
 /** 認証セッション。
  *  - tenant: 顧客ユーザーが所属組織にいる

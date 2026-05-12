@@ -143,7 +143,7 @@ export function SensorPicker({
           選択中: <strong>{selected.length}</strong> /{' '}
           {Object.keys(candidateSensors).length} 台
           {filteredList.length !== candidateList.length && (
-            <> ・ 表示中の選択 {filteredSelectedCount} / {filteredList.length}</>
+            <> ・ 表示 {filteredSelectedCount} / {filteredList.length}</>
           )}
         </span>
         <div className="sensor-picker-quick">
@@ -152,10 +152,10 @@ export function SensorPicker({
             className="btn btn-secondary btn-sm"
             onClick={addAllFiltered}
             disabled={filteredList.length === 0 || allFilteredSelected}
-            title="表示中のすべてを選択に追加"
+            title="表示中をすべて選択に追加"
           >
             <Plus size={13} />
-            <span>表示中をすべて追加</span>
+            <span>表示分を追加</span>
           </button>
           <button
             type="button"
@@ -165,15 +165,16 @@ export function SensorPicker({
             title="表示中の選択を解除"
           >
             <Minus size={13} />
-            <span>表示中を解除</span>
+            <span>表示分を解除</span>
           </button>
           <button
             type="button"
             className="btn btn-ghost btn-sm"
             onClick={() => onChange([])}
             disabled={selected.length === 0}
+            title="すべての選択を解除"
           >
-            すべて解除
+            全解除
           </button>
         </div>
       </div>
@@ -190,17 +191,23 @@ export function SensorPicker({
             const checked = selectedSet.has(s.id)
             const cat = s.categoryId && categories ? categories[s.categoryId] : undefined
             const CatIcon = cat ? CATEGORY_ICON_COMPONENTS[cat.icon] : null
+            const displayName = s.name?.trim() || s.deviceNumber || s.id
+            const showDeviceNumber =
+              s.deviceNumber && s.deviceNumber !== displayName
+            const groupName = s.groupId ? groups[s.groupId]?.name : undefined
+            const tagCount = (s.tags ?? []).length
             return (
               <button
                 key={s.id}
                 type="button"
                 className={`sensor-picker-row ${checked ? 'is-checked' : ''}`}
                 onClick={() => toggleOne(s.id)}
+                title={displayName}
               >
                 {checked ? (
-                  <CheckSquare size={15} strokeWidth={2.2} />
+                  <CheckSquare size={14} strokeWidth={2.2} />
                 ) : (
-                  <Square size={15} strokeWidth={2.2} />
+                  <Square size={14} strokeWidth={2.2} />
                 )}
                 {CatIcon && (
                   <span
@@ -208,28 +215,28 @@ export function SensorPicker({
                     title={cat?.name}
                     aria-hidden="true"
                   >
-                    <CatIcon size={12} strokeWidth={2.2} />
+                    <CatIcon size={11} strokeWidth={2.2} />
                   </span>
                 )}
-                <span className="sensor-picker-name">{s.id}</span>
-                <span className="sensor-picker-sub">
-                  {s.deviceNumber}
-                  {s.groupId && groups[s.groupId] && (
-                    <> ・ {groups[s.groupId].name}</>
-                  )}
-                </span>
-                <span className="sensor-picker-tags">
-                  {(s.tags ?? []).slice(0, 3).map((t) => (
-                    <span key={t} className="cell-tag-pill">
-                      {t}
-                    </span>
-                  ))}
-                  {(s.tags ?? []).length > 3 && (
-                    <span className="cell-tag-more">
-                      +{(s.tags ?? []).length - 3}
-                    </span>
-                  )}
-                </span>
+                <span className="sensor-picker-name">{displayName}</span>
+                {(showDeviceNumber || groupName) && (
+                  <span className="sensor-picker-sub">
+                    {showDeviceNumber ? s.deviceNumber : ''}
+                    {showDeviceNumber && groupName ? ' ・ ' : ''}
+                    {groupName ?? ''}
+                  </span>
+                )}
+                {tagCount > 0 && (
+                  <span className="sensor-picker-tags">
+                    {tagCount <= 2 ? (
+                      (s.tags ?? []).map((t) => (
+                        <span key={t} className="cell-tag-pill">{t}</span>
+                      ))
+                    ) : (
+                      <span className="cell-tag-more">+{tagCount}</span>
+                    )}
+                  </span>
+                )}
               </button>
             )
           })

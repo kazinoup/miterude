@@ -19,6 +19,10 @@ import type {
   AppUser,
   AppUserStore,
   AuthSession,
+  ManualCategory,
+  ManualCategoryStore,
+  ManualPage,
+  ManualPageStore,
   Organization,
   OrganizationMember,
   OrganizationMemberStore,
@@ -35,6 +39,8 @@ const KEY_MEMBERS = 'miterude:admin:organization_members'
 const KEY_ASSIGNMENTS = 'miterude:admin:staff_assignments'
 const KEY_AUDIT = 'miterude:admin:audit_logs'
 const KEY_SESSION = 'miterude:auth:session'
+const KEY_MANUAL_CATEGORIES = 'miterude:admin:manual_categories'
+const KEY_MANUAL_PAGES = 'miterude:admin:manual_pages'
 
 /* ---------- 共通 JSON 化ヘルパ ---------- */
 
@@ -93,8 +99,40 @@ export function upsertUser(store: AppUserStore, user: AppUser): AppUserStore {
 
 /* ---------- Organizations ---------- */
 
+/** JSON 経由で string になっている可能性のあるフィールドを Date に戻す。 */
+function reviveOrgDates(o: Organization): Organization {
+  const toDate = (v: unknown): Date | undefined => {
+    if (!v) return undefined
+    if (v instanceof Date) return v
+    if (typeof v === 'string') {
+      const d = new Date(v)
+      return Number.isNaN(d.getTime()) ? undefined : d
+    }
+    return undefined
+  }
+  return {
+    ...o,
+    createdAt: toDate(o.createdAt) ?? new Date(),
+    contractStartedAt: toDate(o.contractStartedAt),
+    contractExpiresAt: toDate(o.contractExpiresAt),
+    deactivatedAt: toDate(o.deactivatedAt),
+    physicalDeleteAfter: toDate(o.physicalDeleteAfter),
+    migrationMode: o.migrationMode
+      ? {
+          startedAt: toDate(o.migrationMode.startedAt) ?? new Date(),
+          finishedAt: toDate(o.migrationMode.finishedAt),
+        }
+      : undefined,
+  }
+}
+
 export function loadOrganizations(): OrganizationStore {
-  return readJson<OrganizationStore>(KEY_ORGS, {})
+  const raw = readJson<OrganizationStore>(KEY_ORGS, {})
+  const out: OrganizationStore = {}
+  for (const [id, o] of Object.entries(raw)) {
+    out[id] = reviveOrgDates(o as Organization)
+  }
+  return out
 }
 
 export function saveOrganizations(store: OrganizationStore): void {
@@ -181,14 +219,14 @@ export function appendAuditLog(
   return { ...store, [entry.id]: entry }
 }
 
-/** 短い ID 生成（モック用） */
-export function newId(prefix = 'id'): string {
-  return `${prefix}-${Date.now().toString(36)}-${Math.random()
-    .toString(36)
-    .slice(2, 8)}`
+/** ID 生成。Supabase の uuid カラムと整合させるため UUID で採番する。
+ *  prefix 引数は呼び出し側互換のため残しているが利用しない。 */
+export function newId(_prefix = 'id'): string {
+  return crypto.randomUUID()
 }
 
-/** 監査ログを 1 件記録するヘルパ（保存まで一気にやる） */
+/** 監査ログを 1 件記録するヘルパ（保存まで一気にやる）。
+ *  Supabase が設定されていれば fire-and-forget で Supabase 側にも書き込む。 */
 export function logStaffAction(params: {
   staffUserId: string
   organizationId?: string
@@ -209,6 +247,18 @@ export function logStaffAction(params: {
   }
   const store = loadAuditLogs()
   saveAuditLogs(appendAuditLog(store, entry))
+
+  // Supabase 同期は fire-and-forget。失敗しても本体動作には影響させない。
+  void (async () => {
+    try {
+      const supabaseModule = await import('../../lib/supabaseQueries')
+      const supabaseRoot = await import('../../lib/supabase')
+      if (!supabaseRoot.isSupabaseConfigured()) return
+      await supabaseModule.appendAuditLogInSupabase(entry)
+    } catch (e) {
+      console.warn('[audit-log] supabase write failed', e)
+    }
+  })()
 }
 
 /* ---------- Auth Session ---------- */
@@ -230,4 +280,108 @@ export function saveAuthSession(session: AuthSession): void {
  *  既存の miterude:state:v3 はマイグレーションで demo テナントに移行する。 */
 export function tenantStateKey(organizationId: string): string {
   return `miterude:tenant:${organizationId}:state:v4`
+}
+
+/* ---------- Manual Categories ---------- */
+
+function reviveManualCategory(c: ManualCategory): ManualCategory {
+  return {
+    ...c,
+    updatedAt:
+      c.updatedAt instanceof Date
+        ? c.updatedAt
+        : new Date(c.updatedAt as unknown as string),
+  }
+}
+
+export function loadManualCategories(): ManualCategoryStore {
+  const raw = readJson<ManualCategoryStore>(KEY_MANUAL_CATEGORIES, {})
+  const out: ManualCategoryStore = {}
+  for (const [id, c] of Object.entries(raw)) {
+    out[id] = reviveManualCategory(c as ManualCategory)
+  }
+  return out
+}
+
+export function saveManualCategories(store: ManualCategoryStore): void {
+  writeJson(KEY_MANUAL_CATEGORIES, store)
+  // 同一ウィンドウ内の購読者（AdminManualView / ManualView）に変更を伝える
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('miterude:manual-changed'))
+  }
+}
+
+export function upsertManualCategory(
+  store: ManualCategoryStore,
+  c: ManualCategory,
+): ManualCategoryStore {
+  return { ...store, [c.id]: c }
+}
+
+export function deleteManualCategory(
+  store: ManualCategoryStore,
+  id: string,
+): ManualCategoryStore {
+  const out = { ...store }
+  delete out[id]
+  return out
+}
+
+/* ---------- Manual Pages ---------- */
+
+function reviveManualPage(p: ManualPage): ManualPage {
+  return {
+    ...p,
+    updatedAt:
+      p.updatedAt instanceof Date
+        ? p.updatedAt
+        : new Date(p.updatedAt as unknown as string),
+  }
+}
+
+export function loadManualPages(): ManualPageStore {
+  const raw = readJson<ManualPageStore>(KEY_MANUAL_PAGES, {})
+  const out: ManualPageStore = {}
+  for (const [id, p] of Object.entries(raw)) {
+    out[id] = reviveManualPage(p as ManualPage)
+  }
+  return out
+}
+
+export function saveManualPages(store: ManualPageStore): void {
+  writeJson(KEY_MANUAL_PAGES, store)
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('miterude:manual-changed'))
+  }
+}
+
+export function upsertManualPage(
+  store: ManualPageStore,
+  p: ManualPage,
+): ManualPageStore {
+  return { ...store, [p.id]: p }
+}
+
+export function deleteManualPage(
+  store: ManualPageStore,
+  id: string,
+): ManualPageStore {
+  const out = { ...store }
+  delete out[id]
+  return out
+}
+
+/** 指定カテゴリ配下のページを sortOrder 昇順で返す */
+export function pagesInCategory(
+  store: ManualPageStore,
+  categoryId: string,
+): ManualPage[] {
+  return Object.values(store)
+    .filter((p) => p.categoryId === categoryId)
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+}
+
+/** カテゴリを sortOrder 昇順で返す */
+export function sortedCategories(store: ManualCategoryStore): ManualCategory[] {
+  return Object.values(store).sort((a, b) => a.sortOrder - b.sortOrder)
 }

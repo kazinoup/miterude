@@ -10,12 +10,9 @@ import type {
   SensorGroupStore,
   SensorStore,
 } from '../types'
-import { hash16 } from './mock'
-
-let counter = 0
-function genId(prefix: string): string {
-  counter += 1
-  return `${prefix}-${hash16(`${Date.now()}-${counter}-${Math.random()}`).slice(0, 8)}`
+/** Supabase の uuid カラムに合わせて UUID で採番する。 */
+function genId(_prefix: string): string {
+  return crypto.randomUUID()
 }
 
 /* ---------- グループ ---------- */

@@ -155,7 +155,7 @@ export function ChartWidget({
               key={id}
               type="monotone"
               dataKey={id}
-              name={sensors[id]?.id ?? id}
+              name={sensors[id]?.name?.trim() || sensors[id]?.deviceNumber || id}
               stroke={SENSOR_COLORS[idx % SENSOR_COLORS.length]}
               strokeWidth={1.6}
               dot={false}

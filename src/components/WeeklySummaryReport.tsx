@@ -23,6 +23,8 @@ const CHART_H_SCREEN = 260
 
 type Props = {
   deviceId: string
+  /** 表示用ラベル。未指定なら deviceId にフォールバック。 */
+  deviceLabel?: string
   weekStart: Date
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
@@ -59,6 +61,7 @@ const xAxisTimeProps = {
 
 export function WeeklySummaryReport({
   deviceId,
+  deviceLabel,
   weekStart,
   readings,
   thresholds,
@@ -103,7 +106,7 @@ export function WeeklySummaryReport({
         <div className="report-hero-wrap">
           <p className="report-hero-line">
             <span className="report-hero-ym">【{heroPeriodLabel}】</span>
-            <span className="report-hero-device">{deviceId}</span>
+            <span className="report-hero-device">{deviceLabel || deviceId}</span>
           </p>
         </div>
         <p className="meta meta-sub">

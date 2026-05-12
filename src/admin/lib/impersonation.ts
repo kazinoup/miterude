@@ -28,6 +28,8 @@ export function startImpersonation(params: {
   organizationId: string
   reason: string
   durationMs?: number
+  /** リロード時に開くテナント URL。未指定なら現在の URL のまま reload。 */
+  redirectTo?: string
 }): void {
   // Phase A-6: 起動前のセッションを退避（解除時に戻すため）
   const current = loadAuthSession()
@@ -63,8 +65,13 @@ export function startImpersonation(params: {
       expiresAt: expiresAt.toISOString(),
     },
   })
-  // 画面状態が大きく変わるため reload で反映（テナント UI に切替）
-  window.location.reload()
+  // 画面状態が大きく変わるため reload で反映（テナント UI に切替）。
+  // redirectTo があれば assign で URL ごと飛ばす。
+  if (params.redirectTo) {
+    window.location.assign(params.redirectTo)
+  } else {
+    window.location.reload()
+  }
 }
 
 /**

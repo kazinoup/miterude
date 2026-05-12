@@ -12,6 +12,8 @@ import { WeeklySummaryReport } from './WeeklySummaryReport'
 
 type CommonProps = {
   deviceId: string
+  /** 表示用ラベル（センサー名 / デバイス番号）。未指定なら deviceId が出る。 */
+  deviceLabel?: string
   readings: SensorReading[]
   /** 該当センサーの個別閾値。未設定なら逸脱判定なし。 */
   thresholds: SensorThresholds | undefined
@@ -24,7 +26,7 @@ type Props = CommonProps &
   )
 
 export function ReportPreview(props: Props) {
-  const { deviceId, readings, thresholds } = props
+  const { deviceId, deviceLabel, readings, thresholds } = props
   const kind: ReportKind = props.kind ?? 'monthly'
 
   if (kind === 'weekly' && props.weekStart) {
@@ -38,12 +40,14 @@ export function ReportPreview(props: Props) {
       <article className="report-bundle" data-report-key={key}>
         <WeeklySummaryReport
           deviceId={deviceId}
+          deviceLabel={deviceLabel}
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
         />
         <WeeklyMergedTableReport
           deviceId={deviceId}
+          deviceLabel={deviceLabel}
           weekStart={weekStart}
           readings={readings}
           thresholds={thresholds}
@@ -60,6 +64,7 @@ export function ReportPreview(props: Props) {
     <article className="report-bundle" data-report-key={key}>
       <SummaryReport
         deviceId={deviceId}
+        deviceLabel={deviceLabel}
         ym={ym}
         readings={readings}
         thresholds={thresholds}
@@ -68,6 +73,7 @@ export function ReportPreview(props: Props) {
         title="温度月報"
         metric="temperature"
         deviceId={deviceId}
+        deviceLabel={deviceLabel}
         ym={ym}
         readings={readings}
         thresholds={thresholds}
@@ -76,6 +82,7 @@ export function ReportPreview(props: Props) {
         title="湿度月報"
         metric="humidity"
         deviceId={deviceId}
+        deviceLabel={deviceLabel}
         ym={ym}
         readings={readings}
         thresholds={thresholds}

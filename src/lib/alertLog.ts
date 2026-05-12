@@ -36,8 +36,8 @@ function entryDedupKey(e: AlertLogEntry): string {
 }
 
 function nextEntryId(): string {
-  // 短いランダム ID（UUID は不要）
-  return `al-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  // Supabase の alert_logs.id は uuid。整合させるため UUID で採番する。
+  return crypto.randomUUID()
 }
 
 /** ログストアにエントリを追加（重複は無視）。

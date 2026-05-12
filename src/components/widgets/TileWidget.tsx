@@ -92,9 +92,12 @@ export function TileWidget({
             className={`widget-tile ${tDev || hDev ? 'has-deviation' : ''}`}
             onClick={() => onOpenSensor(sid)}
           >
-            {/* Row 1: センサー名 */}
-            <div className="widget-tile-name" title={sensor.id}>
-              {sensor.id}
+            {/* Row 1: センサー名（name > deviceNumber > id の順で表示） */}
+            <div
+              className="widget-tile-name"
+              title={sensor.id}
+            >
+              {sensor.name?.trim() || sensor.deviceNumber || sensor.id}
             </div>
 
             {/* Row 2: 温度・湿度（最新／太字） */}

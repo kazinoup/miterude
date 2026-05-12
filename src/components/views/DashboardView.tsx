@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Plus,
   Pencil,
@@ -14,7 +14,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  Copy,
   History,
+  Link2,
+  Link2Off,
   Wrench,
   Check,
   CalendarDays,
@@ -43,12 +46,12 @@ import { DeviationWidget } from '../widgets/DeviationWidget'
 import { WidgetEditDialog } from '../widgets/WidgetEditDialog'
 import { DashboardEditDialog } from '../DashboardEditDialog'
 import { DashboardConfirmDialog } from '../DashboardConfirmDialog'
-import { EmptyState } from '../EmptyState'
 import { effectiveSensorIds as resolveEffective } from '../../lib/dashboard'
 import { findLatestCheckin } from '../../lib/records'
 import { formatRelativeAgo } from '../../lib/jp'
 import { fromDateInputValue, toDateInputValue } from '../../lib/period'
 import { canEdit } from '../../lib/permissions'
+import { toast } from '../../lib/toast'
 
 type Props = {
   devices: DeviceStore
@@ -74,6 +77,8 @@ type Props = {
       defaultPeriod: DashboardDefaultPeriod
     },
   ) => void
+  /** Phase F-5: ダッシュボードの公開 URL トークンを発行/取り消し */
+  onSetDashboardShareToken: (id: string, token: string | null) => void
   onDeleteDashboard: (id: string) => void
   onAddWidget: (dashboardId: string, widget: Widget) => void
   onUpdateWidget: (dashboardId: string, widget: Widget) => void
@@ -83,6 +88,8 @@ type Props = {
   onGoRecords: () => void
   /** Phase E-1: 初期画面の「連携設定へ」リンクで使う */
   onGoSettings: () => void
+  /** マニュアル画面へ遷移（ダッシュボード 0 件のときに使う） */
+  onGoManual: () => void
   /** Phase G: ダッシュボード確認リマインド一覧（バナー表示用） */
   dashboardReminders: import('../../types').DashboardReminderStore
 }
@@ -142,10 +149,10 @@ export function DashboardView({
   sensorCategories,
   savedFilters,
   onUpsertSavedFilter,
-  onDevicesChange,
   onOpenSensor,
   onCreateDashboard,
   onUpdateDashboard,
+  onSetDashboardShareToken,
   onDeleteDashboard,
   onAddWidget,
   onUpdateWidget,
@@ -154,9 +161,9 @@ export function DashboardView({
   onCreateCheckin,
   onGoRecords,
   onGoSettings,
+  onGoManual,
   dashboardReminders,
 }: Props) {
-  const sensorList = useMemo(() => Object.values(sensors), [sensors])
   const allowEdit = canEdit(session.effectiveRole)
 
   const [widgetDialog, setWidgetDialog] = useState<{
@@ -185,6 +192,46 @@ export function DashboardView({
   /** Phase 9.6: ダッシュボードのビュー / 編集モード */
   const [editMode, setEditMode] = useState(false)
 
+  /** Phase F-5: 公開 URL を組み立てる。トークンが無ければ null を返す。 */
+  function buildShareUrl(token: string | undefined): string | null {
+    if (!token) return null
+    return `${window.location.origin}/share/dashboard/${token}`
+  }
+
+  /** クリップボードにコピー（toast 付き）。
+   *  navigator.clipboard が使えないブラウザは textarea にフォールバック。 */
+  async function copyToClipboard(text: string, successMessage: string) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      toast(successMessage, 'success')
+    } catch (e) {
+      console.warn('[miterude] clipboard copy failed:', e)
+      toast('コピーに失敗しました', 'error')
+    }
+  }
+
+  /** 公開 URL を発行する（既に発行済みなら再発行はせず既存トークンを使う） */
+  function issueShareToken(dashboardId: string, current?: string): string {
+    if (current) return current
+    const token =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID().replace(/-/g, '').slice(0, 24)
+        : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    onSetDashboardShareToken(dashboardId, token)
+    return token
+  }
+
   // ダッシュボード切り替え時に編集モードは解除する
   useEffect(() => {
     setEditMode(false)
@@ -194,21 +241,19 @@ export function DashboardView({
     savePreferredMode(periodMode)
   }, [periodMode])
 
-  if (sensorList.length === 0) {
-    return (
-      <EmptyState
-        devices={devices}
-        onDevicesChange={onDevicesChange}
-        onGoSettings={onGoSettings}
-      />
-    )
-  }
-
   const dashboard: Dashboard | null = activeDashboardId
     ? dashboards[activeDashboardId] ?? null
     : null
 
   const dashboardCount = Object.keys(dashboards).length
+
+  // ダッシュボード 0 件のテナントは、最初に「マニュアル」へ誘導する。
+  // 連携設定 / CSV 取込は admin 側でのみ可能なので、テナント自身の onboarding は
+  // マニュアルで動画を見てもらってから「新しいダッシュボード」を作る流れに統一する。
+  useEffect(() => {
+    if (dashboardCount === 0) onGoManual()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dashboardCount])
 
   if (!dashboard) {
     return (
@@ -339,6 +384,21 @@ export function DashboardView({
             </>
           ) : (
             <>
+              {/* Phase F-5: View モードでも公開 URL があればコピー可能 */}
+              {dashboard.publicShareToken && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    const url = buildShareUrl(dashboard.publicShareToken)
+                    if (url) copyToClipboard(url, '公開 URL をコピーしました')
+                  }}
+                  title="このダッシュボードの公開 URL をコピー"
+                >
+                  <Copy size={16} />
+                  <span>公開 URL をコピー</span>
+                </button>
+              )}
               {allowEdit && (
                 <button
                   type="button"
@@ -364,13 +424,81 @@ export function DashboardView({
       </header>
 
       {editMode && (
-        <div className="edit-mode-banner">
-          <Wrench size={14} />
-          <span>
-            <strong>編集モード中</strong>{' '}
-            ・ ウィジェットの追加・編集・並び替え・削除ができます
-          </span>
-        </div>
+        <>
+          <div className="edit-mode-banner">
+            <Wrench size={14} />
+            <span>
+              <strong>編集モード中</strong>{' '}
+              ・ ウィジェットの追加・編集・並び替え・削除ができます
+            </span>
+          </div>
+
+          {/* Phase F-5: 公開 URL 発行パネル */}
+          <div className="dashboard-share-panel">
+            <div className="dashboard-share-head">
+              <Link2 size={14} className="head-icon" />
+              <strong>公開 URL</strong>
+              <span className="muted small">
+                発行するとログイン不要の読み取り専用 URL でこのダッシュボードを共有できます。
+              </span>
+            </div>
+            {dashboard.publicShareToken ? (
+              <div className="dashboard-share-row">
+                <input
+                  type="text"
+                  className="form-input dashboard-share-url"
+                  value={buildShareUrl(dashboard.publicShareToken) ?? ''}
+                  readOnly
+                  onFocus={(e) => e.currentTarget.select()}
+                />
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    const url = buildShareUrl(dashboard.publicShareToken)
+                    if (url) copyToClipboard(url, '公開 URL をコピーしました')
+                  }}
+                >
+                  <Copy size={14} />
+                  <span>コピー</span>
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm bulk-danger"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        '公開 URL を取り消しますか？取り消すと現在の URL からはアクセスできなくなります。',
+                      )
+                    ) {
+                      onSetDashboardShareToken(dashboard.id, null)
+                      toast('公開 URL を取り消しました', 'info')
+                    }
+                  }}
+                  title="公開 URL を取り消す"
+                >
+                  <Link2Off size={14} />
+                  <span>取り消す</span>
+                </button>
+              </div>
+            ) : (
+              <div className="dashboard-share-row">
+                <span className="muted">未発行</span>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => {
+                    issueShareToken(dashboard.id, dashboard.publicShareToken)
+                    toast('公開 URL を発行しました', 'success')
+                  }}
+                >
+                  <Link2 size={14} />
+                  <span>公開 URL を発行</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       {/* Phase G: 確認リマインド設定の有無を 1 行で示す。クリックで通知設定へ */}

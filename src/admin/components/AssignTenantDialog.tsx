@@ -16,6 +16,8 @@ import {
   upsertStaffAssignment,
 } from '../lib/adminStorage'
 import { toast } from '../../lib/toast'
+import { upsertStaffAssignmentInSupabase } from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import type { StaffAssignment } from '../../types'
 
 type Props = {
@@ -62,12 +64,10 @@ export function AssignTenantDialog({
     const dlg = ref.current
     if (!dlg) return
     if (!dlg.open) dlg.showModal()
-    return () => {
-      if (dlg.open) dlg.close()
-    }
+    // StrictMode 二重マウントの cleanup-close 回避のため明示 close はしない
   }, [])
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!orgId) {
       alert('割り当てるテナントを選択してください。')
@@ -103,6 +103,15 @@ export function AssignTenantDialog({
       grantedAt: new Date(),
       expiresAt,
       notes: reason.trim(),
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertStaffAssignmentInSupabase(a)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        alert(`スタッフ割り当ての保存に失敗しました: ${msg.slice(0, 100)}`)
+        return
+      }
     }
     const store = loadStaffAssignments()
     saveStaffAssignments(upsertStaffAssignment(store, a))

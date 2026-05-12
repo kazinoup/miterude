@@ -9,6 +9,7 @@ import { ReportView } from './components/views/ReportView'
 import { SettingsView } from './components/views/SettingsView'
 import { RecordsView } from './components/views/RecordsView'
 import { AlertsView } from './components/views/AlertsView'
+import { ManualView } from './components/views/ManualView'
 import { ReportPreview } from './components/ReportPreview'
 import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
@@ -130,6 +131,17 @@ import {
   upsertTemplate as upsertTemplateInStore,
 } from './lib/thresholdTemplates'
 import { toast } from './lib/toast'
+import { useSupabaseHydration } from './lib/useSupabaseHydration'
+import { useSupabaseRealtime } from './lib/useSupabaseRealtime'
+import { useSupabaseWriteSync } from './lib/useSupabaseWriteSync'
+import {
+  parsePath,
+  pathFromTenantState,
+  pushPath,
+  replacePath,
+  useCurrentPath,
+} from './lib/router'
+import { getActiveOrgSlug } from './lib/supabase'
 import './App.css'
 import './styles/dashboard.css'
 import './styles/report.css'
@@ -162,9 +174,30 @@ export default function App() {
     return loadAuthSession()
   }, [])
 
-  // Phase A-4: super_admin が /admin にいる場合は専用シェルに分岐
+  // Phase A-4 / Phase K: super_admin が /admin にいる場合は AdminApp。
+  // URL が /admin/* で session がまだ admin でない場合（例えば seed 直後で
+  // tenant kind が残っている等）も、admin として表示できるよう URL も判定材料に入れる。
+  //  - session.kind === 'admin' → 常に AdminApp
+  //  - session.userId のユーザが super_admin で URL が /admin/* → AdminApp に切替（session 上書き）
+  const urlIsAdmin =
+    typeof window !== 'undefined' &&
+    window.location.pathname.startsWith('/admin')
   if (session?.kind === 'admin') {
     return <AdminApp session={session} />
+  }
+  if (urlIsAdmin && session?.userId) {
+    // localStorage の users で super_admin かどうかを判定
+    try {
+      const usersRaw = localStorage.getItem('miterude:admin:users')
+      const users = usersRaw ? JSON.parse(usersRaw) : {}
+      const u = users[session.userId]
+      if (u?.systemRole === 'super_admin') {
+        const adminSession = { kind: 'admin' as const, userId: session.userId }
+        return <AdminApp session={adminSession} />
+      }
+    } catch {
+      /* noop */
+    }
   }
 
   const activeOrgId = activeTenantIdFrom(session) ?? DEMO_ORG_ID
@@ -277,6 +310,74 @@ export default function App() {
   const [dashboardReminders, setDashboardReminders] =
     useState<DashboardReminderStore>(initial?.dashboardReminders ?? {})
 
+  // Phase G (Block B): Supabase が設定されていればマウント時に
+  // sensors / categories / groups を Supabase 由来で上書きする。
+  // 失敗してもアプリ動作は継続（localStorage がフォールバック）。
+  const supabaseHydration = useSupabaseHydration({
+    setSensors,
+    setSensorCategories,
+    setSensorGroups,
+    setNotificationGroups,
+    setDevices,
+    setDashboards,
+    setActiveDashboardId,
+    setSensorNotes,
+    setCheckins,
+    setAlertLogs,
+    setGateways,
+  })
+
+  // Phase G (Block C): Realtime 購読 — webhook → DB に書き込まれた
+  // 新規 sensor_readings / devices 状態変化を UI に即時反映する。
+  const supabaseRealtime = useSupabaseRealtime({
+    setDevices,
+    setSensors,
+  })
+
+  const realtimeStatusRef = useRef<string>('idle')
+  useEffect(() => {
+    if (supabaseRealtime.status === realtimeStatusRef.current) return
+    if (supabaseRealtime.status === 'subscribed') {
+      toast('Realtime 接続: 計測値の更新をリアルタイムで反映します', 'info')
+    } else if (supabaseRealtime.status === 'error') {
+      toast('Realtime 接続でエラーが発生しました', 'error')
+    }
+    realtimeStatusRef.current = supabaseRealtime.status
+  }, [supabaseRealtime.status])
+
+  // Phase G (Block D): センサー設定の書き戻し同期。
+  // sensors state の差分を検知して、Supabase の devices / sensor_props に反映する。
+  useSupabaseWriteSync({
+    sensors,
+    sensorCategories,
+    sensorGroups,
+    notificationGroups,
+    dashboards,
+    sensorNotes,
+    checkins,
+    alertLogs,
+    gateways,
+    hydrationState: supabaseHydration.status.state,
+  })
+
+  // 結果をトーストで通知（初回 ready / error のときだけ）
+  const supabaseStatusRef = useRef<'loading' | 'ready' | 'error' | 'disabled'>(
+    'disabled',
+  )
+  useEffect(() => {
+    const s = supabaseHydration.status.state
+    if (s === supabaseStatusRef.current) return
+    if (supabaseStatusRef.current === 'loading' && s === 'ready') {
+      toast('Supabase から最新データを反映しました', 'success')
+    } else if (s === 'error' && supabaseHydration.status.state === 'error') {
+      toast(
+        `Supabase 同期に失敗: ${supabaseHydration.status.error.slice(0, 80)}`,
+        'error',
+      )
+    }
+    supabaseStatusRef.current = s
+  }, [supabaseHydration.status])
+
   const [view, setView] = useState<ViewKey>('dashboard')
   const [activeSensorId, setActiveSensorId] = useState<string | null>(null)
   const [activeGatewayId, setActiveGatewayId] = useState<string | null>(null)
@@ -286,6 +387,69 @@ export default function App() {
   const [settingsInitialTab, setSettingsInitialTab] = useState<
     'integrations' | 'notifications' | 'thresholds' | undefined
   >(undefined)
+  /** マニュアル: 選択中カテゴリ / ページ */
+  const [manualCategoryId, setManualCategoryId] = useState<string | null>(null)
+  const [manualPageId, setManualPageId] = useState<string | null>(null)
+
+  /* ---------------- Phase K: URL <-> view state 同期 ----------------
+   * - マウント時 / popstate: URL を parse して view / activeXxx に反映
+   * - state 変化時: pushPath で URL を更新（同じパスなら no-op）
+   * - 別テナントへの遷移は main.tsx のブート時 resolveActiveOrgFromUrl で処理
+   */
+  const currentPath = useCurrentPath()
+  const initialUrlAppliedRef = useRef(false)
+
+  useEffect(() => {
+    const parsed = parsePath(currentPath)
+    if (!parsed || parsed.kind !== 'tenant') return
+    setView(parsed.view)
+    setActiveSensorId(parsed.activeSensorId)
+    setActiveGatewayId(parsed.activeGatewayId)
+    if (parsed.activeDashboardId) setActiveDashboardId(parsed.activeDashboardId)
+    if (parsed.settingsTab) setSettingsInitialTab(parsed.settingsTab)
+    setManualCategoryId(parsed.manualCategoryId ?? null)
+    setManualPageId(parsed.manualPageId ?? null)
+    initialUrlAppliedRef.current = true
+  }, [currentPath])
+
+  useEffect(() => {
+    if (!initialUrlAppliedRef.current) return
+    const slug = getActiveOrgSlug()
+    if (!slug) return
+    const nextPath = pathFromTenantState({
+      kind: 'tenant',
+      slug,
+      view,
+      activeSensorId,
+      activeGatewayId,
+      activeDashboardId,
+      settingsTab: settingsInitialTab,
+      manualCategoryId,
+      manualPageId,
+    })
+    pushPath(nextPath)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, activeSensorId, activeGatewayId, activeDashboardId, settingsInitialTab, manualCategoryId, manualPageId])
+
+  // 初回マウント時、URL に slug が無いケースを replaceState で正規化
+  useEffect(() => {
+    const slug = getActiveOrgSlug()
+    if (!slug) return
+    const parsed = parsePath(window.location.pathname)
+    if (parsed && parsed.kind === 'tenant' && parsed.slug) return
+    if (parsed && parsed.kind === 'admin') return
+    const initial = pathFromTenantState({
+      kind: 'tenant',
+      slug,
+      view,
+      activeSensorId,
+      activeGatewayId,
+      activeDashboardId,
+      settingsTab: settingsInitialTab,
+    })
+    replacePath(initial)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Phase 9.11: 共通 ReportThresholds は廃止。閾値はセンサー個別 (sensor.thresholds) で管理。
   // Phase A-2 (Phase 10): 「欠損表示の設定」は撤去。未計測セルはハイフン固定。
@@ -1018,6 +1182,29 @@ export default function App() {
     toast('ダッシュボードを更新しました', 'success')
   }
 
+  /** Phase F-5: ダッシュボードの公開 URL トークンを発行 / 取り消し。
+   *  token=null で取り消し、文字列で発行。 */
+  function handleSetDashboardShareToken(id: string, token: string | null) {
+    setDashboards((prev) => {
+      const cur = prev[id]
+      if (!cur) return prev
+      const updated = token
+        ? {
+            ...cur,
+            publicShareToken: token,
+            publicShareIssuedAt: new Date(),
+          }
+        : (() => {
+            const { publicShareToken: _t, publicShareIssuedAt: _at, ...rest } =
+              cur
+            void _t
+            void _at
+            return rest
+          })()
+      return upsertDashboard(prev, updated)
+    })
+  }
+
   function handleDeleteDashboard(id: string) {
     setDashboards((prev) => {
       const next = removeDashboard(prev, id)
@@ -1172,6 +1359,7 @@ export default function App() {
               onOpenSensor={openSensor}
               onCreateDashboard={openCreateDashboard}
               onUpdateDashboard={handleUpdateDashboard}
+              onSetDashboardShareToken={handleSetDashboardShareToken}
               onDeleteDashboard={handleDeleteDashboard}
               onAddWidget={handleAddWidget}
               onUpdateWidget={handleUpdateWidget}
@@ -1180,6 +1368,7 @@ export default function App() {
               onCreateCheckin={handleCreateCheckin}
               onGoRecords={() => navigate('records')}
               onGoSettings={() => navigate('settings')}
+              onGoManual={() => navigate('manual')}
               dashboardReminders={dashboardReminders}
             />
           )}
@@ -1323,6 +1512,17 @@ export default function App() {
             />
           )}
 
+          {view === 'manual' && (
+            <ManualView
+              activeCategoryId={manualCategoryId}
+              activePageId={manualPageId}
+              onSelectionChange={(catId, pageId) => {
+                setManualCategoryId(catId)
+                setManualPageId(pageId)
+              }}
+            />
+          )}
+
           {view === 'report' && (
             <ReportView
               devices={devices}
@@ -1366,15 +1566,18 @@ export default function App() {
 
         {printingBulk && bulkPrintDeviceIds.length > 0 && (
           <div id="bulk-print-root" className="bulk-print-root" aria-hidden="true">
-            {bulkPrintDeviceIds.map((deviceId) =>
-              printingBulk.kind === 'monthly' ? (
+            {bulkPrintDeviceIds.map((deviceId) => {
+              const s = sensors[deviceId]
+              const label = s?.name?.trim() || s?.deviceNumber || deviceId
+              return printingBulk.kind === 'monthly' ? (
                 <ReportPreview
                   key={`print-m-${deviceId}-${yearMonthKey(printingBulk.ym)}`}
                   kind="monthly"
                   ym={printingBulk.ym}
                   deviceId={deviceId}
+                  deviceLabel={label}
                   readings={devices[deviceId] ?? []}
-                  thresholds={sensors[deviceId]?.thresholds}
+                  thresholds={s?.thresholds}
                 />
               ) : (
                 <ReportPreview
@@ -1382,11 +1585,12 @@ export default function App() {
                   kind="weekly"
                   weekStart={printingBulk.weekStart}
                   deviceId={deviceId}
+                  deviceLabel={label}
                   readings={devices[deviceId] ?? []}
-                  thresholds={sensors[deviceId]?.thresholds}
+                  thresholds={s?.thresholds}
                 />
-              ),
-            )}
+              )
+            })}
             {/* Phase A-4: includeRecords ON のとき、対象デバイス全体に対して
              *   記録履歴・運用メモページを末尾に 1 ページ追加 */}
             {printingBulk.includeRecords &&

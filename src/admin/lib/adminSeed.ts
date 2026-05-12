@@ -27,14 +27,15 @@ import {
   upsertUser,
 } from './adminStorage'
 
-/** 既定のテナント ID（demo データ用） */
-export const DEMO_ORG_ID = 'org-demo-001'
-/** 既定のユーザー ID（モック既存ユーザー） */
-export const DEMO_SUPER_ADMIN_ID = 'user-super-admin-001'
-export const DEMO_EDITOR_ID = 'user-editor-001'
-export const DEMO_CONFIRMER_ID = 'user-confirmer-001'
-export const DEMO_SUPPORT_ID = 'user-support-001'
-export const DEMO_SALES_ID = 'user-sales-001'
+/** 既定のテナント ID（demo データ用）。Supabase の organizations.id (uuid) と整合。 */
+export const DEMO_ORG_ID = '00000000-0000-0000-0000-00000000d001'
+/** 既定のユーザー ID（モック既存ユーザー）。
+ *  Supabase の users.id (uuid) と整合させるため UUID 形式で固定。 */
+export const DEMO_SUPER_ADMIN_ID = '00000000-0000-0000-0000-00000000a001'
+export const DEMO_EDITOR_ID = '00000000-0000-0000-0000-00000000a002'
+export const DEMO_CONFIRMER_ID = '00000000-0000-0000-0000-00000000a003'
+export const DEMO_SUPPORT_ID = '00000000-0000-0000-0000-00000000a004'
+export const DEMO_SALES_ID = '00000000-0000-0000-0000-00000000a005'
 
 const LEGACY_STATE_KEY = 'miterude:state:v3'
 /** Phase A-5 で support スタッフのシードを追加 → v2、
@@ -44,7 +45,7 @@ const LEGACY_STATE_KEY = 'miterude:state:v3'
  *  staffCategory(support/sales) と請求書事前通知設定を追加 → v6。
  *  既存ユーザーの localStorage は idempotent マージ + 不足フィールドの補完のみ走るため、
  *  以前作ったテナント / メンバー / アサインメントは保持される。 */
-const SEED_FLAG_KEY = 'miterude:admin:seeded:v6'
+const SEED_FLAG_KEY = 'miterude:admin:seeded:v9'
 
 function nowFloor(): Date {
   // 日付だけ揃える（テストの差分が出にくいよう）
@@ -60,7 +61,7 @@ function buildDefaultUsers(): AppUser[] {
     {
       id: DEMO_SUPER_ADMIN_ID,
       email: 'inoue@canbright.co.jp',
-      displayName: '井上 太郎',
+      displayName: '井上 和馬',
       systemRole: 'super_admin',
       createdAt: now,
     },
@@ -106,7 +107,7 @@ function buildDefaultOrgs(): Organization[] {
     {
       id: DEMO_ORG_ID,
       name: 'CanBright（デモ組織）',
-      slug: 'canbright-demo',
+      slug: 'demo-canbright',
       createdAt: now,
       billingCycle: 'annual',
       contractStartedAt,
@@ -267,11 +268,13 @@ export function ensureSeedData(): void {
   migrateLegacyTenantState()
 
   // 5) セッション既定値
+  //  super_admin の井上 和馬を admin セッションとしてログインさせる。
+  //  これで /?reset=demo 後すぐに Admin Console を触れる。
+  //  顧客テナント UI を見たい場合は admin から impersonation で入る運用。
   if (!loadAuthSession()) {
     saveAuthSession({
-      kind: 'tenant',
+      kind: 'admin',
       userId: DEMO_SUPER_ADMIN_ID,
-      organizationId: DEMO_ORG_ID,
     })
   }
 

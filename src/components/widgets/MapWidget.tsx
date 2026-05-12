@@ -268,10 +268,12 @@ export function MapWidget({
               }}
               onPointerDown={(e) => startInteraction(idx, e)}
               onClick={(e) => handleOpenSensor(pin.sensorId, e)}
-              title={sensor.id}
+              title={sensor.name?.trim() || sensor.deviceNumber || sensor.id}
             >
-              {/* Row 1: 機種名 */}
-              <div className="map-pin-name">{sensor.id}</div>
+              {/* Row 1: 表示名（name > deviceNumber > id） */}
+              <div className="map-pin-name">
+                {sensor.name?.trim() || sensor.deviceNumber || sensor.id}
+              </div>
 
               {/* Row 2: 編集中は表示項目のラベル、通常時は実際の値 */}
               <div className="map-pin-readings">

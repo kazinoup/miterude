@@ -101,6 +101,19 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     kind: 'temperature-humidity',
   },
   {
+    id: 'milesight-em300-th',
+    manufacturerKey: 'milesight',
+    category: 'sensor',
+    model: 'EM300-TH',
+    typeLabel: '温湿度センサー（屋内型）',
+    description:
+      'LCD ディスプレイを備えた屋内向け LoRaWAN 温湿度センサー。事務所・店舗・倉庫の常温帯モニタリングに使う。',
+    supported: true,
+    imageUrl: '/devices/milesight-em320-th.png',
+    capabilities: { battery: true },
+    kind: 'temperature-humidity',
+  },
+  {
     id: 'milesight-am102',
     manufacturerKey: 'milesight',
     category: 'sensor',
@@ -108,7 +121,7 @@ export const SUPPORTED_DEVICES: SupportedDevice[] = [
     typeLabel: '室内用温湿度センサー',
     description:
       '事務所・店舗・倉庫の室内環境向け LoRaWAN センサー。壁掛け設置で温度・湿度を計測する。',
-    supported: false,
+    supported: true,
     imageUrl: '/devices/milesight-am102.png',
     capabilities: { battery: true },
     kind: 'temperature-humidity',

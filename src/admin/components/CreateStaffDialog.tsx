@@ -14,6 +14,8 @@ import {
   upsertUser,
 } from '../lib/adminStorage'
 import { toast } from '../../lib/toast'
+import { upsertUserInSupabase } from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import type { AppUser, StaffCategory } from '../../types'
 
 type Props = {
@@ -31,12 +33,10 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
     const dlg = ref.current
     if (!dlg) return
     if (!dlg.open) dlg.showModal()
-    return () => {
-      if (dlg.open) dlg.close()
-    }
+    // StrictMode 二重マウントの cleanup-close 回避のため明示 close はしない
   }, [])
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     const trimmedName = displayName.trim()
     const trimmedEmail = email.trim().toLowerCase()
@@ -68,6 +68,15 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
       systemRole: 'support',
       staffCategory,
       createdAt: new Date(),
+    }
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertUserInSupabase(u)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toast(`スタッフ追加に失敗: ${msg.slice(0, 100)}`, 'error')
+        return
+      }
     }
     saveUsers(upsertUser(users, u))
     toast(`スタッフ「${trimmedName}」を追加しました`, 'success')

@@ -36,6 +36,8 @@ const xAxisTimeProps = {
 
 type Props = {
   deviceId: string
+  /** 表示用ラベル（name / deviceNumber など）。未指定なら deviceId にフォールバック。 */
+  deviceLabel?: string
   ym: YearMonth
   readings: SensorReading[]
   thresholds: SensorThresholds | undefined
@@ -43,6 +45,7 @@ type Props = {
 
 export function SummaryReport({
   deviceId,
+  deviceLabel,
   ym,
   readings,
   thresholds,
@@ -70,7 +73,7 @@ export function SummaryReport({
     <div className="report-page summary-page">
       <header className="summary-header">
         <h1 className="report-title">温湿度 月間レポート</h1>
-        <ReportHeroLine ym={ym} deviceId={deviceId} />
+        <ReportHeroLine ym={ym} deviceId={deviceId} deviceLabel={deviceLabel} />
         <p className="meta meta-sub">
           対象期間: {formatPeriodLongJp(ym.year, ym.month, lastDay)} / 出力日: {outputDate}
         </p>

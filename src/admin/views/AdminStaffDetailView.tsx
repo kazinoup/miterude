@@ -30,6 +30,8 @@ import {
 import { startImpersonation } from '../lib/impersonation'
 import { AssignTenantDialog } from '../components/AssignTenantDialog'
 import { toast } from '../../lib/toast'
+import { upsertStaffAssignmentInSupabase } from '../../lib/supabaseQueries'
+import { isSupabaseConfigured } from '../../lib/supabase'
 import type { StaffAssignment } from '../../types'
 
 type Props = {
@@ -110,10 +112,19 @@ export function AdminStaffDetailView({
     [rows],
   )
 
-  function handleRevoke(a: AssignmentRow) {
+  async function handleRevoke(a: AssignmentRow) {
     if (!confirm(`割り当て「${a.organizationName}」を取り消しますか？`)) return
     const store = loadStaffAssignments()
     const updated: StaffAssignment = { ...a, revokedAt: new Date() }
+    if (isSupabaseConfigured()) {
+      try {
+        await upsertStaffAssignmentInSupabase(updated)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        toast(`取消の保存に失敗: ${msg.slice(0, 100)}`, 'error')
+        return
+      }
+    }
     saveStaffAssignments(upsertStaffAssignment(store, updated))
     logStaffAction({
       staffUserId: adminUserId,

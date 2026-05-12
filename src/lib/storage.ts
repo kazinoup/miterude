@@ -605,6 +605,10 @@ export function loadState(organizationId: string): PersistedState | null {
           if (!d.defaultPeriod || typeof d.defaultPeriod !== 'object') {
             d.defaultPeriod = { type: 'day' }
           }
+          // Phase F-5: 公開 URL の発行日時は Date 化
+          if (d.publicShareIssuedAt) {
+            d.publicShareIssuedAt = ensureDate(d.publicShareIssuedAt)
+          }
           // マップウィジェットのピンに size / display が無い場合の補完
           if (Array.isArray(d.widgets)) {
             for (const w of d.widgets) {
@@ -630,6 +634,13 @@ export function loadState(organizationId: string): PersistedState | null {
         if (c) {
           c.timestamp = ensureDate(c.timestamp)
           if (c.approval) c.approval.approvedAt = ensureDate(c.approval.approvedAt)
+          // Phase F-6: snapshot 内の rangeStart/End を Date 化
+          if (c.snapshot?.rangeStart) {
+            c.snapshot.rangeStart = ensureDate(c.snapshot.rangeStart)
+          }
+          if (c.snapshot?.rangeEnd) {
+            c.snapshot.rangeEnd = ensureDate(c.snapshot.rangeEnd)
+          }
         }
       }
     }
