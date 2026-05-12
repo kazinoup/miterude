@@ -83,15 +83,14 @@ import {
   processInbox,
   seedMockWebhooks,
   ignoreUnmatchedDevEUI,
-  loadWebhookInbox,
   type UnmatchedSummary,
-  type WebhookInboxItem,
 } from '../lib/webhookInbox'
 import {
   ensureMilesightIntegration,
   updateMilesightCredentials,
   buildWebhookUrl,
 } from '../lib/milesightIntegration'
+import { supabase } from '../../lib/supabase'
 import type { ManufacturerIntegration } from '../../types'
 import type {
   BillingCycle,
@@ -2236,9 +2235,7 @@ function MilesightIntegrationPanel({
   const [uuidDraft, setUuidDraft] = useState<string>('')
   const [secretDraft, setSecretDraft] = useState<string>('')
   const [showSecret, setShowSecret] = useState<boolean>(false)
-  const [rawViewerEvent, setRawViewerEvent] = useState<WebhookInboxItem | null>(
-    null,
-  )
+  const [rawViewerEvent, setRawViewerEvent] = useState<InboxRow | null>(null)
   const webhookUrl = buildWebhookUrl(org.id)
 
   // テナント切替・初回ロードで Supabase から取得 / 未登録なら空行を作る
@@ -2451,7 +2448,73 @@ function MilesightIntegrationPanel({
   )
 }
 
-/* ===== Webhook 受信ログ（期間絞り込み + ページネーション）===== */
+/* ===== Webhook 受信ログ（Supabase webhook_inbox 連動・期間絞り込み + ページネーション）===== */
+
+/** Supabase `webhook_inbox` 1 行を UI 用に整形したもの。
+ *  payload_raw の中の値（devEUI, eventType, dataType, eventId）も都度抽出する。 */
+type InboxRow = {
+  id: string
+  receivedAt: Date
+  parseStatus: 'pending' | 'parsed' | 'failed' | 'ignored'
+  parseError: string | null
+  parsedReadingCount: number | null
+  payloadRaw: Record<string, unknown> | null
+  signatureValid: boolean | null
+  sourceIp: string | null
+}
+
+type RawWebhookInboxRow = {
+  id: string
+  received_at: string
+  parse_status: string | null
+  parse_error: string | null
+  parsed_reading_count: number | null
+  payload_raw: unknown
+  signature_valid: boolean | null
+  source_ip: string | null
+}
+
+function toInboxRow(r: RawWebhookInboxRow): InboxRow {
+  const status = (r.parse_status ?? 'pending') as InboxRow['parseStatus']
+  return {
+    id: r.id,
+    receivedAt: new Date(r.received_at),
+    parseStatus: status,
+    parseError: r.parse_error ?? null,
+    parsedReadingCount: r.parsed_reading_count ?? null,
+    payloadRaw: (r.payload_raw && typeof r.payload_raw === 'object')
+      ? (r.payload_raw as Record<string, unknown>)
+      : null,
+    signatureValid: r.signature_valid ?? null,
+    sourceIp: r.source_ip ?? null,
+  }
+}
+
+function getPayloadField<T = unknown>(
+  payload: Record<string, unknown> | null,
+  path: string[],
+): T | undefined {
+  let cur: unknown = payload
+  for (const k of path) {
+    if (cur && typeof cur === 'object' && k in (cur as Record<string, unknown>)) {
+      cur = (cur as Record<string, unknown>)[k]
+    } else {
+      return undefined
+    }
+  }
+  return cur as T
+}
+
+function extractDevEUI(payload: Record<string, unknown> | null): string {
+  return getPayloadField<string>(payload, ['data', 'deviceProfile', 'devEUI']) ?? '—'
+}
+function extractEventType(payload: Record<string, unknown> | null): string {
+  return getPayloadField<string>(payload, ['eventType']) ?? ''
+}
+function extractDataType(payload: Record<string, unknown> | null): string | undefined {
+  return getPayloadField<string>(payload, ['data', 'type'])
+}
+
 function WebhookEventsPanel({
   org,
   tenantStateRev,
@@ -2459,7 +2522,7 @@ function WebhookEventsPanel({
 }: {
   org: Organization
   tenantStateRev: ReturnType<typeof loadState>
-  onShowRaw: (ev: WebhookInboxItem) => void
+  onShowRaw: (ev: InboxRow) => void
 }) {
   // 期間フィルタ（HH:MM 抜き、日付のみ）
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -2467,37 +2530,57 @@ function WebhookEventsPanel({
   const [pageSize, setPageSize] = useState<number>(25)
   const [page, setPage] = useState<number>(0)
 
-  // 全イベント（このテナントぶん、新しい順）
-  const allEvents: WebhookInboxItem[] = useMemo(() => {
-    const inbox = loadWebhookInbox()
-    return Object.values(inbox)
-      .filter((it) => it.organizationId === org.id)
-      .sort((a, b) => b.receivedAt.getTime() - a.receivedAt.getTime())
-    // tenantStateRev は外部からの再描画トリガ
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [org.id, tenantStateRev])
+  // Supabase から取得した現ページぶん
+  const [rows, setRows] = useState<InboxRow[]>([])
+  const [total, setTotal] = useState<number>(0)
+  const [loading, setLoading] = useState<boolean>(true)
 
-  // 期間フィルタ適用
-  const filtered: WebhookInboxItem[] = useMemo(() => {
-    if (!dateFrom && !dateTo) return allEvents
-    const fromMs = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : -Infinity
-    const toMs = dateTo
-      ? new Date(`${dateTo}T23:59:59.999`).getTime()
-      : Infinity
-    return allEvents.filter((ev) => {
-      const t = ev.receivedAt.getTime()
-      return t >= fromMs && t <= toMs
+  // org / フィルタ / ページが変わるたびに Supabase から取り直す
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    const fromTs = dateFrom
+      ? new Date(`${dateFrom}T00:00:00`).toISOString()
+      : null
+    const toTs = dateTo
+      ? new Date(`${dateTo}T23:59:59.999`).toISOString()
+      : null
+
+    let q = supabase
+      .from('webhook_inbox')
+      .select(
+        'id, received_at, parse_status, parse_error, parsed_reading_count, payload_raw, signature_valid, source_ip',
+        { count: 'exact' },
+      )
+      .eq('organization_id', org.id)
+      .order('received_at', { ascending: false })
+      .range(page * pageSize, page * pageSize + pageSize - 1)
+    if (fromTs) q = q.gte('received_at', fromTs)
+    if (toTs) q = q.lte('received_at', toTs)
+
+    q.then(({ data, count, error }) => {
+      if (cancelled) return
+      if (error) {
+        console.error('[webhook_inbox] fetch error', error)
+        toast('Webhook 受信ログの取得に失敗しました', 'error')
+        setRows([])
+        setTotal(0)
+      } else {
+        setRows((data ?? []).map((r) => toInboxRow(r as RawWebhookInboxRow)))
+        setTotal(count ?? 0)
+      }
+      setLoading(false)
     })
-  }, [allEvents, dateFrom, dateTo])
 
-  const total = filtered.length
+    return () => {
+      cancelled = true
+    }
+    // tenantStateRev は外部からの再描画トリガ（疑似 webhook 投入後など）
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [org.id, dateFrom, dateTo, page, pageSize, tenantStateRev])
+
   const totalPages = Math.max(1, Math.ceil(total / pageSize))
-  // フィルタ条件 / ページサイズ変更でページがはみ出したら戻す
   const safePage = Math.min(page, totalPages - 1)
-  const pageEvents = filtered.slice(
-    safePage * pageSize,
-    safePage * pageSize + pageSize,
-  )
   const startIdx = total === 0 ? 0 : safePage * pageSize + 1
   const endIdx = Math.min((safePage + 1) * pageSize, total)
 
@@ -2569,10 +2652,12 @@ function WebhookEventsPanel({
         </div>
       </div>
 
-      {total === 0 ? (
+      {loading ? (
+        <div className="admin-empty-block">読み込み中…</div>
+      ) : total === 0 ? (
         <div className="admin-empty-block">
-          {allEvents.length === 0
-            ? 'まだ Webhook を受信していません。センサータブの kebab メニュー「擬似 Webhook を投入」で動作確認できます。'
+          {!dateFrom && !dateTo
+            ? 'まだ Webhook を受信していません。MDP 側 Application の Callback URI に上の Webhook URL を貼り付け、Secret/UUID を保存すると届きはじめます。'
             : '指定した期間に Webhook 受信はありません。'}
         </div>
       ) : (
@@ -2589,41 +2674,43 @@ function WebhookEventsPanel({
                 </tr>
               </thead>
               <tbody>
-                {pageEvents.map((ev) => (
-                  <tr key={ev.id}>
-                    <td>{formatDateTime(ev.receivedAt)}</td>
-                    <td>
-                      <code className="mono">{ev.devEUI}</code>
-                    </td>
-                    <td>
-                      {ev.eventType}
-                      {ev.dataType ? ` / ${ev.dataType}` : ''}
-                    </td>
-                    <td>
-                      <span
-                        className={`integration-status integration-status-${ev.parseStatus}`}
-                      >
-                        {parseStatusLabel(ev.parseStatus)}
-                      </span>
-                    </td>
-                    <td className="num">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => onShowRaw(ev)}
-                        disabled={!ev.payloadRaw}
-                        title={
-                          ev.payloadRaw
-                            ? '生 JSON を表示'
-                            : '古いデータには生 JSON が含まれません'
-                        }
-                      >
-                        <Code size={13} />
-                        <span>詳細</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {rows.map((ev) => {
+                  const devEUI = extractDevEUI(ev.payloadRaw)
+                  const evType = extractEventType(ev.payloadRaw)
+                  const dataType = extractDataType(ev.payloadRaw)
+                  return (
+                    <tr key={ev.id}>
+                      <td>{formatDateTime(ev.receivedAt)}</td>
+                      <td>
+                        <code className="mono">{devEUI}</code>
+                      </td>
+                      <td>
+                        {evType}
+                        {dataType ? ` / ${dataType}` : ''}
+                      </td>
+                      <td>
+                        <span
+                          className={`integration-status integration-status-${ev.parseStatus}`}
+                          title={ev.parseError ?? undefined}
+                        >
+                          {parseStatusLabel(ev.parseStatus)}
+                        </span>
+                      </td>
+                      <td className="num">
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => onShowRaw(ev)}
+                          disabled={!ev.payloadRaw}
+                          title="生 JSON を表示"
+                        >
+                          <Code size={13} />
+                          <span>詳細</span>
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -2679,15 +2766,14 @@ function WebhookEventsPanel({
 
 /* ===== 生 payload ビューア =====
  *
- * webhook_inbox.payload_raw（実 Supabase スキーマ）相当を見るためのダイアログ。
- * Milesight が送ってきた JSON 1 イベント分をそのまま表示する。
+ * Supabase `webhook_inbox.payload_raw` を 1 イベント分そのまま見せる。
  * パース失敗時の調査・現場でのトラブルシュート用にコピー機能つき。
  */
 function RawPayloadDialog({
   event,
   onClose,
 }: {
-  event: WebhookInboxItem
+  event: InboxRow
   onClose: () => void
 }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -2699,7 +2785,12 @@ function RawPayloadDialog({
 
   const json = event.payloadRaw
     ? JSON.stringify(event.payloadRaw, null, 2)
-    : '(生 JSON が保存されていません — モック投入前のデータです)'
+    : '(生 JSON が保存されていません)'
+  const eventId =
+    (event.payloadRaw &&
+      typeof (event.payloadRaw as { eventId?: unknown }).eventId === 'string')
+      ? (event.payloadRaw as { eventId: string }).eventId
+      : null
 
   async function handleCopy() {
     try {
@@ -2742,23 +2833,36 @@ function RawPayloadDialog({
             </div>
             <div>
               <strong>eventId:</strong>{' '}
-              <code className="mono">{event.payloadRaw?.eventId ?? '—'}</code>
+              <code className="mono">{eventId ?? '—'}</code>
             </div>
             <div>
               <strong>状態:</strong>{' '}
               <span
                 className={`integration-status integration-status-${event.parseStatus}`}
+                title={event.parseError ?? undefined}
               >
                 {parseStatusLabel(event.parseStatus)}
               </span>
-              {event.matchedSensorId && (
+              {event.parsedReadingCount != null && event.parsedReadingCount > 0 && (
                 <>
                   {' / '}
-                  <strong>マッチ先:</strong>{' '}
-                  <code className="mono">{event.matchedSensorId}</code>
+                  <strong>読み取り:</strong>{' '}
+                  <code className="mono">{event.parsedReadingCount} 件</code>
+                </>
+              )}
+              {event.sourceIp && (
+                <>
+                  {' / '}
+                  <strong>送信元 IP:</strong>{' '}
+                  <code className="mono">{event.sourceIp}</code>
                 </>
               )}
             </div>
+            {event.parseError && (
+              <div className="raw-payload-error">
+                <strong>エラー:</strong> {event.parseError}
+              </div>
+            )}
           </div>
           <pre className="raw-payload-json mono">{json}</pre>
         </div>
@@ -2786,9 +2890,9 @@ function RawPayloadDialog({
   )
 }
 
-function parseStatusLabel(s: WebhookInboxItem['parseStatus']): string {
-  if (s === 'pending') return '未仕分け'
-  if (s === 'processed') return '反映済み'
-  if (s === 'unmatched') return '未登録 DevEUI'
+function parseStatusLabel(s: InboxRow['parseStatus']): string {
+  if (s === 'pending') return '未処理'
+  if (s === 'parsed') return '反映済み'
+  if (s === 'failed') return 'パース失敗'
   return '無視'
 }
