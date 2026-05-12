@@ -1240,6 +1240,66 @@
   background: rgba(255, 255, 255, 0.3);
 }
 
+/* =====================================================
+   Phase 1.5a: support/sales 用 読み取り専用バナー + テナント詳細の編集 UI 隠蔽
+   ===================================================== */
+
+.readonly-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  margin-bottom: 1rem;
+  line-height: 1.45;
+}
+
+.readonly-banner svg {
+  margin-top: 0.15rem;
+  flex: 0 0 auto;
+  color: #c2410c;
+}
+
+/* read-only 化されたテナント詳細ページでは、編集ボタンと危険ゾーンを非表示にする。
+   閲覧と impersonation だけ残す。 */
+.tenant-detail-readonly .admin-danger-zone,
+.tenant-detail-readonly .contract-save-btn,
+.tenant-detail-readonly .tenant-detail-edit-bar,
+.tenant-detail-readonly .admin-grid-form button[type='submit'],
+.tenant-detail-readonly .admin-grid-form .btn-primary:not(.tenant-impersonate-btn),
+.tenant-detail-readonly .tenant-detail-actions .btn-primary,
+.tenant-detail-readonly .tenant-detail-actions .btn-danger,
+.tenant-detail-readonly .admin-view-actions .btn-primary,
+.tenant-detail-readonly .admin-view-actions .btn-danger,
+.tenant-detail-readonly button[data-edit-action='delete'],
+.tenant-detail-readonly button[data-edit-action='invite'],
+.tenant-detail-readonly button[data-edit-action='create'] {
+  display: none !important;
+}
+
+/* フォーム入力は表示するが、編集不可。 */
+.tenant-detail-readonly .admin-grid-form input,
+.tenant-detail-readonly .admin-grid-form select,
+.tenant-detail-readonly .admin-grid-form textarea,
+.tenant-detail-readonly .form-input,
+.tenant-detail-readonly .select {
+  pointer-events: none;
+  background: var(--gray-50, #f8fafc);
+  color: var(--gray-700);
+  border-color: var(--gray-200);
+}
+
+.tenant-detail-readonly .form-checkbox input,
+.tenant-detail-readonly input[type='checkbox'],
+.tenant-detail-readonly input[type='radio'] {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
 /* モバイル: バナーを 1 行に詰め、余分な情報を畳む */
 @media (max-width: 720px) {
   .impersonation-banner {
@@ -1728,6 +1788,18 @@
   border: 1px solid transparent;
   letter-spacing: 0.04em;
   white-space: nowrap;
+}
+
+.staff-category-pill.staff-category-system_admin {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+/* マニュアル: support/sales の読み取り専用モードでは編集ボタンを全部隠す */
+.manual-admin-readonly .manual-tree-cat-actions,
+.manual-admin-readonly .manual-tree-page-actions {
+  display: none !important;
 }
 
 .staff-category-pill.staff-category-support {

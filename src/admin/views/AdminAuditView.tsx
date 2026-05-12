@@ -13,6 +13,7 @@ import { History, Search, Filter as FilterIcon } from 'lucide-react'
 import {
   loadAuditLogs,
   loadOrganizations,
+  loadStaffAssignments,
   loadUsers,
 } from '../lib/adminStorage'
 
@@ -21,6 +22,10 @@ type Props = {
   fixedOrganizationId?: string
   /** 余白などをコンパクトにしたい場合（タブ内描画用） */
   compact?: boolean
+  /** Phase 1.5a: 閲覧者の userId。super_admin 以外は割当て済テナントのログのみ */
+  viewerUserId?: string
+  /** super_admin かどうか。true ならフィルタなし、false なら割当てフィルタ */
+  isSuperAdmin?: boolean
 }
 
 /** action 種別 → 日本語ラベル + 色クラス。未知のものはそのまま表示。 */
@@ -90,6 +95,8 @@ function summarizeMetadata(
 export function AdminAuditView({
   fixedOrganizationId,
   compact = false,
+  viewerUserId,
+  isSuperAdmin = true,
 }: Props) {
   const [actionFilter, setActionFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -99,10 +106,28 @@ export function AdminAuditView({
     const logs = loadAuditLogs()
     const users = loadUsers()
     const orgs = loadOrganizations()
+    // Phase 1.5a: super_admin 以外は staff_assignments を見て割当て済 org のみ
+    const assignedOrgIds: Set<string> | null = (() => {
+      if (isSuperAdmin || !viewerUserId) return null
+      const now = Date.now()
+      const assignments = loadStaffAssignments()
+      return new Set(
+        Object.values(assignments)
+          .filter((a) => a.staffUserId === viewerUserId)
+          .filter((a) => !a.revokedAt)
+          .filter((a) => !a.expiresAt || new Date(a.expiresAt).getTime() > now)
+          .map((a) => a.organizationId),
+      )
+    })()
     const all = Object.values(logs)
       .filter((l) =>
         fixedOrganizationId ? l.organizationId === fixedOrganizationId : true,
       )
+      .filter((l) => {
+        if (assignedOrgIds === null) return true
+        // 割当てされた org のログのみ。組織紐付けが無いログ（global）も非表示。
+        return l.organizationId ? assignedOrgIds.has(l.organizationId) : false
+      })
       .map((l) => {
         const actor = users[l.staffUserId]
         const org = l.organizationId ? orgs[l.organizationId] : null
@@ -120,7 +145,7 @@ export function AdminAuditView({
         return bt - at
       })
     return { rows: all, totalCount: all.length }
-  }, [fixedOrganizationId])
+  }, [fixedOrganizationId, viewerUserId, isSuperAdmin])
 
   const orgOptions = useMemo(() => {
     const set = new Set<string>()

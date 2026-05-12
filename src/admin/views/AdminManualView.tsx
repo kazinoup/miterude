@@ -52,6 +52,8 @@ import type {
 
 type Props = {
   adminUserId: string
+  /** Phase 1.5a: super_admin なら編集可、support/sales は読み取り専用 */
+  isSuperAdmin: boolean
   activeCategoryId: string | null
   activePageId: string | null
   onSelectionChange: (categoryId: string | null, pageId: string | null) => void
@@ -59,6 +61,7 @@ type Props = {
 
 export function AdminManualView({
   adminUserId,
+  isSuperAdmin,
   activeCategoryId,
   activePageId,
   onSelectionChange,
@@ -337,14 +340,17 @@ export function AdminManualView({
   }
 
   return (
-    <div className="admin-view manual-admin-view">
+    <div className={`admin-view manual-admin-view ${!isSuperAdmin ? 'manual-admin-readonly' : ''}`}>
       <header className="manual-admin-head">
         <h1 className="manual-admin-title">
           <BookOpen size={20} />
           <span>マニュアル</span>
         </h1>
         <p className="manual-admin-sub muted">
-          全テナント共通のマニュアル。super_admin のみが編集でき、テナント側では閲覧のみ可能です。
+          全テナント共通のマニュアル。
+          {isSuperAdmin
+            ? 'super_admin が編集でき、support/sales および テナントは閲覧のみ可能です。'
+            : 'システム管理者のみが編集可。あなたは閲覧のみできます。'}
         </p>
       </header>
 
@@ -357,15 +363,17 @@ export function AdminManualView({
         <aside className="manual-tree">
           <div className="manual-tree-head">
             <span className="manual-tree-title">カテゴリ / ページ</span>
-            <button
-              type="button"
-              className="btn btn-secondary btn-sm"
-              onClick={addCategory}
-              title="新規カテゴリ"
-            >
-              <FolderPlus size={14} />
-              <span>カテゴリ</span>
-            </button>
+            {isSuperAdmin && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={addCategory}
+                title="新規カテゴリ"
+              >
+                <FolderPlus size={14} />
+                <span>カテゴリ</span>
+              </button>
+            )}
           </div>
           {catList.length === 0 ? (
             <div className="manual-tree-empty muted">
@@ -510,33 +518,41 @@ export function AdminManualView({
           {activePage ? (
             <>
               <div className="manual-content-head">
-                <input
-                  className="manual-content-title-input"
-                  type="text"
-                  value={editingTitle}
-                  onChange={handleTitleChange}
-                  placeholder="ページタイトル"
-                />
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={handleSave}
-                  disabled={!dirty}
-                >
-                  <Save size={14} />
-                  <span>保存</span>
-                </button>
+                {isSuperAdmin ? (
+                  <input
+                    className="manual-content-title-input"
+                    type="text"
+                    value={editingTitle}
+                    onChange={handleTitleChange}
+                    placeholder="ページタイトル"
+                  />
+                ) : (
+                  <h2 className="manual-content-title">{activePage.title}</h2>
+                )}
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={handleSave}
+                    disabled={!dirty}
+                  >
+                    <Save size={14} />
+                    <span>保存</span>
+                  </button>
+                )}
               </div>
               <ManualEditor
                 key={activePage.id}
                 initialContent={activePage.content}
-                mode="edit"
+                mode={isSuperAdmin ? 'edit' : 'view'}
                 onChange={handleEditorChange}
               />
             </>
           ) : (
             <div className="manual-content-empty muted">
-              左の一覧からページを選ぶか、「ページ追加」で作成してください。
+              {isSuperAdmin
+                ? '左の一覧からページを選ぶか、「ページ追加」で作成してください。'
+                : '左の一覧からページを選択してください。'}
             </div>
           )}
         </section>

@@ -41,13 +41,21 @@ export function AdminStaffView({ onOpenStaff }: Props) {
       activeCountByStaff[a.staffUserId] =
         (activeCountByStaff[a.staffUserId] ?? 0) + 1
     }
+    // Phase 1.5a: super_admin も一覧に含める。
+    // staff_category=system_admin (super_admin) → support → sales の順で表示。
+    const order: Record<string, number> = { system_admin: 0, support: 1, sales: 2 }
     return Object.values(users)
-      .filter((u) => u.systemRole === 'support')
+      .filter((u) => u.systemRole === 'super_admin' || u.systemRole === 'support')
       .map((u) => ({
         ...u,
         activeAssignments: activeCountByStaff[u.id] ?? 0,
       }))
-      .sort((a, b) => a.displayName.localeCompare(b.displayName, 'ja'))
+      .sort((a, b) => {
+        const ao = order[a.staffCategory ?? 'support'] ?? 9
+        const bo = order[b.staffCategory ?? 'support'] ?? 9
+        if (ao !== bo) return ao - bo
+        return a.displayName.localeCompare(b.displayName, 'ja')
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshTick])
 
@@ -130,7 +138,11 @@ export function AdminStaffView({ onOpenStaff }: Props) {
                   <span
                     className={`staff-category-pill staff-category-${u.staffCategory ?? 'support'}`}
                   >
-                    {u.staffCategory === 'sales' ? '営業' : 'サポート'}
+                    {u.staffCategory === 'system_admin'
+                      ? 'システム管理者'
+                      : u.staffCategory === 'sales'
+                        ? '営業'
+                        : 'サポート'}
                   </span>
                 </td>
                 <td className="mono">{u.email}</td>

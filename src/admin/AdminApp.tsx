@@ -72,6 +72,12 @@ type Props = {
 }
 
 export function AdminApp({ session }: Props) {
+  // Phase 1.5a: Admin Console の権限分離。
+  //  super_admin: フルアクセス / support (= support or sales staff): 制限付き
+  //  ログインユーザーの systemRole から判定。AppUser を localStorage から引く。
+  const loggedInUser = loadUsers()[session.userId]
+  const isSuper = loggedInUser?.systemRole === 'super_admin'
+
   const [view, setView] = useState<AdminViewKey>('tenants')
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
   const [activeStaffId, setActiveStaffId] = useState<string | null>(null)
@@ -175,6 +181,10 @@ export function AdminApp({ session }: Props) {
         for (const p of manualPagesList) manualPageStore[p.id] = p
         saveManualCategories(manualCatStore)
         saveManualPages(manualPageStore)
+
+        // Phase 1.5a: hydration 完了を子ビューに通知（同タブ内では storage event が
+        // 発火しないため、custom event で再評価を促す）
+        window.dispatchEvent(new CustomEvent('miterude:admin-hydrated'))
       } catch (e) {
         console.warn('[admin-hydration] failed', e)
       }
@@ -188,6 +198,14 @@ export function AdminApp({ session }: Props) {
   useEffect(() => {
     setUnmatchedCount(globalUnmatchedDeviceCount())
   }, [view, activeTenantId])
+
+  // 非 super_admin が /admin/staff 系に URL 直アクセスしたらテナント一覧に戻す
+  useEffect(() => {
+    if (!isSuper && (view === 'staff' || view === 'staff-detail')) {
+      setView('tenants')
+      setActiveStaffId(null)
+    }
+  }, [view, isSuper])
 
   /* ---------------- Phase K: URL <-> view state 同期 ----------------
    * テナント URL は slug ベース。slug ↔ tenant.id の解決は localStorage の
@@ -318,17 +336,20 @@ export function AdminApp({ session }: Props) {
               </span>
             )}
           </button>
-          <button
-            type="button"
-            className={`admin-nav-item ${view === 'staff' || view === 'staff-detail' ? 'is-active' : ''}`}
-            onClick={() => {
-              setView('staff')
-              setActiveStaffId(null)
-            }}
-          >
-            <Users2 size={16} />
-            <span>スタッフ</span>
-          </button>
+          {/* スタッフ一覧は super_admin のみ */}
+          {isSuper && (
+            <button
+              type="button"
+              className={`admin-nav-item ${view === 'staff' || view === 'staff-detail' ? 'is-active' : ''}`}
+              onClick={() => {
+                setView('staff')
+                setActiveStaffId(null)
+              }}
+            >
+              <Users2 size={16} />
+              <span>スタッフ</span>
+            </button>
+          )}
           <button
             type="button"
             className={`admin-nav-item ${view === 'audit' ? 'is-active' : ''}`}
@@ -361,12 +382,17 @@ export function AdminApp({ session }: Props) {
 
       <main className="admin-main">
         {view === 'tenants' && (
-          <AdminTenantsView onOpenTenant={openTenantDetail} />
+          <AdminTenantsView
+            onOpenTenant={openTenantDetail}
+            viewerUserId={session.userId}
+            isSuperAdmin={isSuper}
+          />
         )}
         {view === 'tenant-detail' && activeTenantId && (
           <AdminTenantDetailView
             tenantId={activeTenantId}
             adminUserId={session.userId}
+            isSuperAdmin={isSuper}
             initialTab={tenantTab}
             onTabChange={setTenantTab}
             onBack={() => {
@@ -379,8 +405,11 @@ export function AdminApp({ session }: Props) {
             }
           />
         )}
-        {view === 'staff' && <AdminStaffView onOpenStaff={openStaffDetail} />}
-        {view === 'staff-detail' && activeStaffId && (
+        {/* スタッフ一覧 / 詳細は super_admin のみ。直 URL アクセスもブロック。 */}
+        {view === 'staff' && isSuper && (
+          <AdminStaffView onOpenStaff={openStaffDetail} />
+        )}
+        {view === 'staff-detail' && activeStaffId && isSuper && (
           <AdminStaffDetailView
             staffUserId={activeStaffId}
             adminUserId={session.userId}
@@ -390,10 +419,16 @@ export function AdminApp({ session }: Props) {
             }}
           />
         )}
-        {view === 'audit' && <AdminAuditView />}
+        {view === 'audit' && (
+          <AdminAuditView
+            viewerUserId={session.userId}
+            isSuperAdmin={isSuper}
+          />
+        )}
         {view === 'manual' && (
           <AdminManualView
             adminUserId={session.userId}
+            isSuperAdmin={isSuper}
             activeCategoryId={manualCategoryId}
             activePageId={manualPageId}
             onSelectionChange={(catId, pageId) => {

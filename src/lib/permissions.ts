@@ -44,3 +44,21 @@ export function canEdit(role: EffectiveRole): boolean {
 export function isConfirmer(role: EffectiveRole): boolean {
   return role === 'dashboard_confirmer'
 }
+
+/** Admin Console の権限を返す。
+ *  - 'super_admin': フルアクセス（全テナント・スタッフ・監査・マニュアル CRUD）
+ *  - 'support': 制限付き（割当テナントのみ閲覧 + impersonation、編集不可、スタッフ非表示）
+ *  - null: Admin Console にアクセス不可
+ */
+export type AdminRole = 'super_admin' | 'support'
+export function getAdminRole(): AdminRole | null {
+  const role = getEffectiveRole()
+  if (role === 'super_admin') return 'super_admin'
+  if (role === 'support') return 'support'
+  return null
+}
+
+/** super_admin のみがアクセスできる Admin Console 機能か判定 */
+export function isSuperAdminOnly(role: AdminRole | null): boolean {
+  return role === 'super_admin'
+}

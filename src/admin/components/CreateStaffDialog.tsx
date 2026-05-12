@@ -61,11 +61,13 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
     }
 
     const id = newId('user')
+    // Phase 1.5a: staff_category='system_admin' を選ぶと system_role=super_admin で作成
+    const isSystemAdmin = staffCategory === 'system_admin'
     const u: AppUser = {
       id,
       email: trimmedEmail,
       displayName: trimmedName,
-      systemRole: 'support',
+      systemRole: isSystemAdmin ? 'super_admin' : 'support',
       staffCategory,
       createdAt: new Date(),
     }
@@ -151,12 +153,15 @@ export function CreateStaffDialog({ onClose, onCreated }: Props) {
                 setStaffCategory(e.target.value as StaffCategory)
               }
             >
+              <option value="system_admin">システム管理者</option>
               <option value="support">サポート</option>
               <option value="sales">営業</option>
             </select>
             <p className="form-help">
-              権限はどちらも同じ（テナントへの impersonation 可）。
-              請求書事前通知の宛先候補や一覧表示の見分けに使います。
+              <strong>システム管理者</strong>: Admin Console フルアクセス（super_admin）。
+              <br />
+              <strong>サポート / 営業</strong>: 割当て済テナントのみ閲覧 + impersonation 可。
+              請求書事前通知の宛先候補や一覧表示の見分けにも使います。
             </p>
           </div>
         </div>

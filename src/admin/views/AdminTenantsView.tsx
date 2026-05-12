@@ -34,6 +34,10 @@ import type {
 
 type Props = {
   onOpenTenant: (tenantId: string) => void
+  /** 閲覧中のユーザー ID（support/sales は割当て済みテナントだけ表示） */
+  viewerUserId: string
+  /** super_admin なら全テナント、support/sales なら割当て済みのみ */
+  isSuperAdmin: boolean
 }
 
 type SortKey = 'created' | 'expiry'
@@ -80,7 +84,7 @@ function paymentLabel(p: PaymentMethod | undefined): string {
   return '—'
 }
 
-export function AdminTenantsView({ onOpenTenant }: Props) {
+export function AdminTenantsView({ onOpenTenant, viewerUserId, isSuperAdmin }: Props) {
   const [refreshTick, setRefreshTick] = useState(0)
   const [search, setSearch] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
@@ -111,11 +115,48 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
     }
   }, [])
 
+  // AdminApp 側の hydration（staff_assignments / members / organizations 等を
+  // Supabase から取得して localStorage に書く処理）が遅れて完了したとき、
+  // tenants useMemo を再評価するために storage イベントで refresh tick を bump する。
+  useEffect(() => {
+    function onStorage(e: StorageEvent) {
+      if (
+        e.key === 'miterude:admin:staff_assignments' ||
+        e.key === 'miterude:admin:organizations' ||
+        e.key === 'miterude:admin:organization_members'
+      ) {
+        setRefreshTick((t) => t + 1)
+      }
+    }
+    // 同一タブ内の write は storage イベントを起こさないので、custom event でも待つ
+    function onCustom() {
+      setRefreshTick((t) => t + 1)
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('miterude:admin-hydrated', onCustom)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('miterude:admin-hydrated', onCustom)
+    }
+  }, [])
+
   const tenants = useMemo(() => {
     const orgs = loadOrganizations()
     const members = loadOrganizationMembers()
     const assignments = loadStaffAssignments()
     const now = Date.now()
+
+    // Phase 1.5a: support/sales は自分の有効な staff_assignments の対象テナントだけ
+    // を表示する。super_admin は全テナント。
+    const visibleOrgIds = isSuperAdmin
+      ? null // null = 全件
+      : new Set(
+          Object.values(assignments)
+            .filter((a) => a.staffUserId === viewerUserId)
+            .filter((a) => !a.revokedAt)
+            .filter((a) => !a.expiresAt || new Date(a.expiresAt).getTime() > now)
+            .map((a) => a.organizationId),
+        )
 
     // 顧客メンバー数を組織別に集計
     const memberCountByOrg: Record<string, number> = {}
@@ -133,25 +174,27 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
         (supportCountByOrg[a.organizationId] ?? 0) + 1
     }
 
-    return Object.values(orgs).map((o) => {
-      const tenantState = loadState(o.id)
-      const sensorCount = tenantState
-        ? Object.keys(sensorsFromState(tenantState)).length
-        : 0
-      const gatewayCount = tenantState
-        ? Object.keys(gatewaysFromState(tenantState)).length
-        : 0
-      return {
-        ...o,
-        memberCount: memberCountByOrg[o.id] ?? 0,
-        supportCount: supportCountByOrg[o.id] ?? 0,
-        sensorCount,
-        gatewayCount,
-        remainingDays: daysUntil(o.contractExpiresAt),
-      }
-    })
+    return Object.values(orgs)
+      .filter((o) => visibleOrgIds === null || visibleOrgIds.has(o.id))
+      .map((o) => {
+        const tenantState = loadState(o.id)
+        const sensorCount = tenantState
+          ? Object.keys(sensorsFromState(tenantState)).length
+          : 0
+        const gatewayCount = tenantState
+          ? Object.keys(gatewaysFromState(tenantState)).length
+          : 0
+        return {
+          ...o,
+          memberCount: memberCountByOrg[o.id] ?? 0,
+          supportCount: supportCountByOrg[o.id] ?? 0,
+          sensorCount,
+          gatewayCount,
+          remainingDays: daysUntil(o.contractExpiresAt),
+        }
+      })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [refreshTick])
+  }, [refreshTick, isSuperAdmin, viewerUserId])
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -221,14 +264,17 @@ export function AdminTenantsView({ onOpenTenant }: Props) {
           </p>
         </div>
         <div className="admin-view-actions">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus size={16} />
-            <span>新規テナント</span>
-          </button>
+          {/* 新規テナント作成は super_admin のみ */}
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => setCreateOpen(true)}
+            >
+              <Plus size={16} />
+              <span>新規テナント</span>
+            </button>
+          )}
         </div>
       </header>
 

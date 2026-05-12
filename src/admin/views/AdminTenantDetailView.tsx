@@ -107,6 +107,8 @@ type Props = {
   tenantId: string
   /** 操作中の admin の userId（CSV インポート等の監査ログに使う） */
   adminUserId: string
+  /** Phase 1.5a: super_admin なら編集可、support/sales は読み取り専用 */
+  isSuperAdmin: boolean
   onBack: () => void
   /** テナント側状態（sensors / webhook_inbox 等）を変更したことを親に通知する。
    *  AdminApp 側でサイドバーの「未登録 DevEUI」バッジを recount するのに使う。 */
@@ -192,6 +194,7 @@ function daysUntil(d: Date | string | number | undefined): number | null {
 export function AdminTenantDetailView({
   tenantId,
   adminUserId,
+  isSuperAdmin,
   onBack,
   onTenantStateChanged,
   initialTab,
@@ -536,13 +539,24 @@ export function AdminTenantDetailView({
   const isWide = tab === 'sensors' || tab === 'gateways'
 
   return (
-    <div className={`admin-view ${isWide ? 'admin-view-wide' : ''}`}>
+    <div className={`admin-view ${isWide ? 'admin-view-wide' : ''} ${!isSuperAdmin ? 'tenant-detail-readonly' : ''}`}>
       <div className="tenant-detail-back">
         <button type="button" className="btn btn-ghost btn-sm" onClick={onBack}>
           <ArrowLeft size={14} />
           <span>テナント一覧へ戻る</span>
         </button>
       </div>
+
+      {!isSuperAdmin && (
+        <div className="readonly-banner">
+          <ShieldOff size={13} />
+          <span>
+            <strong>閲覧専用モード</strong>{' '}
+            ・ 編集と削除はシステム管理者のみ可能です。「このテナントに入る」で
+            運用画面の確認・support 対応ができます。
+          </span>
+        </div>
+      )}
 
       <header className="tenant-detail-head">
         <h1 className="tenant-detail-title">{org.name}</h1>
