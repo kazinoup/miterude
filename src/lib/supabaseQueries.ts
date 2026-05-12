@@ -328,6 +328,46 @@ export async function fetchReadingsAsDeviceStore(opts: {
   return store
 }
 
+/** CSV エクスポート用に、指定 sensor × 期間の sensor_readings を全件取得する。
+ *  Supabase の 1 リクエスト上限（1000 行）を超える期間でも安全に取りきれるよう、
+ *  1000 件ずつページングして連結して返す。 */
+export async function fetchReadingsForCsvExport(opts: {
+  sensorId: string
+  fromIso: string
+  /** 排他的（< toIso）。呼び出し側で「終了日 + 1日 00:00」を渡す前提。 */
+  toIso: string
+}): Promise<SensorReading[]> {
+  const PAGE = 1000
+  const all: SensorReading[] = []
+  let offset = 0
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await supabase
+      .from('sensor_readings')
+      .select('sensor_id, measured_at, temperature, humidity, battery')
+      .eq('sensor_id', opts.sensorId)
+      .gte('measured_at', opts.fromIso)
+      .lt('measured_at', opts.toIso)
+      .order('measured_at', { ascending: true })
+      .range(offset, offset + PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as SupabaseReadingRow[]
+    for (const r of rows) {
+      if (r.temperature == null && r.humidity == null) continue
+      all.push({
+        deviceId: r.sensor_id,
+        measuredAt: new Date(r.measured_at),
+        temperature: r.temperature ?? NaN,
+        humidity: r.humidity ?? NaN,
+        battery: r.battery ?? undefined,
+      })
+    }
+    if (rows.length < PAGE) break
+    offset += PAGE
+  }
+  return all
+}
+
 /* ============================================================
    書き込み（UPDATE のみ。CREATE/DELETE は別フェーズ）
    ============================================================ */

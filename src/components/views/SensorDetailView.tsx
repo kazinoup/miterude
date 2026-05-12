@@ -858,7 +858,28 @@ export function SensorDetailView({
                       ? toMonthInputValue(anchor)
                       : `${customStart}_${customEnd}`
               const filename = `${deviceId}_${periodTag}.csv`
-              const csv = buildHistoryCsv(deviceId, periodReadings, sensorThresholds)
+              if (!sensor) {
+                toast('センサー情報が読み込めていません', 'error')
+                return
+              }
+              const categoryName = sensor.categoryId
+                ? categories[sensor.categoryId]?.name ?? null
+                : null
+              const groupName = sensor.groupId
+                ? groups[sensor.groupId]?.name ?? null
+                : null
+              const csv = buildHistoryCsv(
+                {
+                  deviceNumber: sensor.deviceNumber ?? sensor.id,
+                  manufacturer: sensor.manufacturer,
+                  model: sensor.model,
+                  serialNumber: sensor.serialNumber,
+                  categoryName,
+                  groupName,
+                },
+                periodReadings,
+                sensorThresholds,
+              )
               downloadCsv(filename, csv)
               toast(`${filename} をダウンロードしました`, 'success')
             }}

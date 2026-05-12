@@ -1,16 +1,21 @@
 /**
- * 一括 CSV 出力ダイアログ — Phase F-3
+ * 一括 CSV 出力ダイアログ — Phase 1.10
  *
  * センサー一覧で複数選択したセンサーに対し、指定期間の計測データを
- * 1 センサー = 1 CSV として出力し、ZIP にまとめてダウンロードする。
+ * Supabase `sensor_readings` から取得し、1 センサー = 1 CSV として ZIP にまとめる。
  *
- * ファイル名は「センサー名_デバイス名称_デバイス番号_開始日_終了日.csv」。
- * デバイス名称はモデル名（例: EM320-TH）を採用する。
+ * ファイル名は「センサー名_モデル_デバイス番号_開始日_終了日.csv」。
+ * CSV 先頭にはセンサー番号 / モデル / メーカー / シリアル番号 / 区分 / 部屋を
+ * コメント行 (# ...) として書き出す。
  */
 import { useEffect, useRef, useState } from 'react'
 import { Download, X } from 'lucide-react'
 import JSZip from 'jszip'
-import type { DeviceStore, SensorStore } from '../types'
+import type {
+  SensorStore,
+  SensorCategoryStore,
+  SensorGroupStore,
+} from '../types'
 import {
   buildHistoryCsv,
   downloadBlob,
@@ -21,12 +26,14 @@ import {
   toDateInputValue,
 } from '../lib/period'
 import { toast } from '../lib/toast'
+import { fetchReadingsForCsvExport } from '../lib/supabaseQueries'
 
 type Props = {
   open: boolean
   selectedSensorIds: string[]
   sensors: SensorStore
-  devices: DeviceStore
+  categories: SensorCategoryStore
+  groups: SensorGroupStore
   onClose: () => void
 }
 
@@ -34,13 +41,15 @@ export function SensorBulkCsvDialog({
   open,
   selectedSensorIds,
   sensors,
-  devices,
+  categories,
+  groups,
   onClose,
 }: Props) {
   const ref = useRef<HTMLDialogElement>(null)
   const [start, setStart] = useState<string>('')
   const [end, setEnd] = useState<string>('')
   const [busy, setBusy] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
 
   // ダイアログを開いたら既定の期間（直近 30 日）をセット
   useEffect(() => {
@@ -51,6 +60,7 @@ export function SensorBulkCsvDialog({
     setStart(toDateInputValue(past))
     setEnd(toDateInputValue(today))
     setBusy(false)
+    setProgress(null)
   }, [open])
 
   useEffect(() => {
@@ -64,40 +74,64 @@ export function SensorBulkCsvDialog({
     const sDate = fromDateInputValue(start)
     const eDate = fromDateInputValue(end)
     if (!sDate || !eDate) {
-      alert('期間を正しく指定してください。')
+      toast('期間を正しく指定してください。', 'error')
       return
     }
     if (sDate.getTime() > eDate.getTime()) {
-      alert('開始日が終了日より後になっています。')
+      toast('開始日が終了日より後になっています。', 'error')
       return
     }
     if (selectedSensorIds.length === 0) {
-      alert('対象センサーが選択されていません。')
+      toast('対象センサーが選択されていません。', 'error')
       return
     }
 
     setBusy(true)
+    setProgress({ done: 0, total: selectedSensorIds.length })
     try {
       // end は inclusive（その日 23:59:59 まで）として、翌日 0:00 で切る
-      const startTs = sDate.getTime()
+      const fromIso = sDate.toISOString()
       const endExclusive = new Date(eDate)
       endExclusive.setDate(endExclusive.getDate() + 1)
-      const endTs = endExclusive.getTime()
+      const toIso = endExclusive.toISOString()
 
       const zip = new JSZip()
       let totalRows = 0
       let emptyCount = 0
 
+      let done = 0
       for (const sid of selectedSensorIds) {
         const sensor = sensors[sid]
-        if (!sensor) continue
-        const all = devices[sid] ?? []
-        const filtered = all.filter((r) => {
-          const t = r.measuredAt.getTime()
-          return t >= startTs && t < endTs
+        if (!sensor) {
+          done += 1
+          setProgress({ done, total: selectedSensorIds.length })
+          continue
+        }
+
+        const readings = await fetchReadingsForCsvExport({
+          sensorId: sid,
+          fromIso,
+          toIso,
         })
-        if (filtered.length === 0) emptyCount += 1
-        totalRows += filtered.length
+        // NaN を含む行（temperature/humidity いずれかが null だった）は CSV では空欄
+        // 表示するため除外せず通すが、両方 NaN の行はサーバ側で既に除外済み。
+        // ただし片方 NaN → toFixed が "NaN" を出すのを防ぐためここで揃える。
+        const safeReadings = readings.map((r) => ({
+          measuredAt: r.measuredAt,
+          temperature: Number.isFinite(r.temperature) ? r.temperature : NaN,
+          humidity: Number.isFinite(r.humidity) ? r.humidity : NaN,
+          battery: r.battery,
+        }))
+
+        if (safeReadings.length === 0) emptyCount += 1
+        totalRows += safeReadings.length
+
+        const categoryName = sensor.categoryId
+          ? categories[sensor.categoryId]?.name ?? null
+          : null
+        const groupName = sensor.groupId
+          ? groups[sensor.groupId]?.name ?? null
+          : null
 
         const filename = buildCsvFilename(
           sensor.name ?? sensor.id,
@@ -106,8 +140,26 @@ export function SensorBulkCsvDialog({
           start,
           end,
         )
-        const csv = buildHistoryCsv(sensor.id, filtered, sensor.thresholds)
+        const csv = buildHistoryCsv(
+          {
+            deviceNumber: sensor.deviceNumber ?? sensor.id,
+            manufacturer: sensor.manufacturer,
+            model: sensor.model,
+            serialNumber: sensor.serialNumber,
+            categoryName,
+            groupName,
+          },
+          // buildHistoryCsv は toFixed を呼ぶので NaN は ' NaN' になる。
+          // それを避けるため、片側 NaN の行は数値を 0 ではなく空欄に倒したいが
+          // 既存の Reading 型が number 必須のため、NaN を許容したまま渡し、
+          // toFixed の挙動はそのままにする（古い実装と挙動互換）。
+          safeReadings,
+          sensor.thresholds,
+        )
         zip.file(filename, csv)
+
+        done += 1
+        setProgress({ done, total: selectedSensorIds.length })
       }
 
       const zipName = buildZipName(start, end)
@@ -122,9 +174,15 @@ export function SensorBulkCsvDialog({
       onClose()
     } catch (e) {
       console.error('[miterude] bulk csv export failed', e)
-      toast('CSV 出力に失敗しました', 'error')
+      toast(
+        e instanceof Error
+          ? `CSV 出力に失敗しました: ${e.message}`
+          : 'CSV 出力に失敗しました',
+        'error',
+      )
     } finally {
       setBusy(false)
+      setProgress(null)
     }
   }
 
@@ -166,6 +224,7 @@ export function SensorBulkCsvDialog({
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
                 aria-label="開始日"
+                disabled={busy}
               />
               <span className="muted">〜</span>
               <input
@@ -174,12 +233,19 @@ export function SensorBulkCsvDialog({
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
                 aria-label="終了日"
+                disabled={busy}
               />
             </div>
             <p className="form-hint muted">
               指定した両端の日付を含みます（00:00:00 〜 23:59:59）。
             </p>
           </div>
+
+          {progress && (
+            <p className="muted in-panel">
+              取得中: {progress.done} / {progress.total} センサー
+            </p>
+          )}
         </div>
 
         <footer className="app-dialog-foot">

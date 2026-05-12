@@ -1178,7 +1178,8 @@ export function SensorsView({
         open={bulkCsvOpen}
         selectedSensorIds={Array.from(selected)}
         sensors={sensors}
-        devices={devices}
+        categories={categories}
+        groups={groups}
         onClose={() => setBulkCsvOpen(false)}
       />
 

@@ -5,7 +5,9 @@
  * - センサー一覧の「一括 CSV 出力（ZIP）」
  * の双方から呼び出される。
  *
- * Excel が日本語を文字化けせず開けるよう先頭に BOM を付与する。
+ * Excel が日本語を文字化けせず開けるよう先頭に BOM を付与し、改行は CRLF。
+ * センサー番号 / モデル / メーカー / シリアル番号 / 区分 / 部屋は
+ * 1 行目以降のコメント行 (# ...) として書き出し、各データ行で繰り返さない。
  */
 import type { SensorThresholds } from '../types'
 import { getThresholdForMetric } from './report'
@@ -15,6 +17,18 @@ type Reading = {
   temperature: number
   humidity: number
   battery?: number
+}
+
+/** CSV の先頭メタコメントに書き出すセンサー情報。 */
+export type CsvSensorMeta = {
+  deviceNumber: string
+  manufacturer: string
+  model: string
+  serialNumber: string
+  /** 区分（カテゴリ）名。未設定なら '(未設定)' を書く。 */
+  categoryName?: string | null
+  /** 部屋 / グループ名。未設定なら '(未設定)' を書く。 */
+  groupName?: string | null
 }
 
 /** 計測値が「危険 / 注意 / 正常 / 判定なし」のどれに該当するか文字列で返す。
@@ -40,10 +54,13 @@ function classifyValue(
   return '正常'
 }
 
+const LINE_BREAK = '\r\n'
+const BOM = '﻿'
+
 /** 履歴データを CSV 文字列に変換する。
- *  先頭行は `# {deviceId}` のメタ、続いてヘッダ、各行が計測値。 */
+ *  先頭にメタ情報（# センサー番号: ...）、続いてヘッダ、各行が計測値。 */
 export function buildHistoryCsv(
-  deviceId: string,
+  sensorMeta: CsvSensorMeta,
   readings: Reading[],
   thresholds: SensorThresholds | undefined,
 ): string {
@@ -68,8 +85,16 @@ export function buildHistoryCsv(
     return [ts, t, h, b, tJ, hJ].join(',')
   })
 
-  // BOM 付き UTF-8 で出力（Excel での文字化け防止）
-  return '﻿' + [`# ${deviceId}`, header, ...rows].join('\n')
+  const metaLines = [
+    `# センサー番号: ${sensorMeta.deviceNumber}`,
+    `# モデル: ${sensorMeta.model}`,
+    `# メーカー: ${sensorMeta.manufacturer}`,
+    `# シリアル番号: ${sensorMeta.serialNumber}`,
+    `# 区分: ${sensorMeta.categoryName ?? '(未設定)'}`,
+    `# 部屋: ${sensorMeta.groupName ?? '(未設定)'}`,
+  ]
+
+  return BOM + [...metaLines, header, ...rows].join(LINE_BREAK) + LINE_BREAK
 }
 
 /** Blob を生成してブラウザにダウンロードさせる */
