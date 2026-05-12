@@ -1,15 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import {
-  ChevronDown,
-  LogOut,
-  UserCog,
-  ShieldCheck,
-  Building2,
-  Repeat,
-  Users,
-} from 'lucide-react'
-import type { AuthSession, UserSession } from '../types'
+import { ChevronDown, LogOut, UserCog } from 'lucide-react'
+import type { UserSession } from '../types'
 import { toast } from '../lib/toast'
 import {
   loadAuthSession,
@@ -21,16 +13,17 @@ import {
 
 type Props = {
   session: UserSession
-  /** Phase A-2: 「コンテキストを切り替え」クリック時の挙動（選択画面を開く） */
-  onSwitchContext: () => void
+  /** 後方互換のため残置（コンテキスト切り替えは UserMenu からは廃止）。
+   *  AdminApp 等が引き続き渡しているが UserMenu 内では使わない。 */
+  onSwitchContext?: () => void
 }
 
 /**
- * Clerk によるサインイン UI のモック。
- * Phase A-1 の間はポップオーバー内に「モックのログイン切り替え」を埋め込み、
- * Phase A-2（正式ログイン画面）導入時にこのセクションを取り除く。
+ * サインイン中のユーザー情報 + プロフィール変更 + ログアウト のみ提供。
+ * Phase 1.5a で「コンテキスト切り替え」「モックのログイン切り替え」は撤去
+ * （正式なログイン画面 /login が出来たため）。
  */
-export function UserMenu({ session, onSwitchContext }: Props) {
+export function UserMenu({ session }: Props) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
@@ -83,7 +76,6 @@ export function UserMenu({ session, onSwitchContext }: Props) {
     () => (open ? buildCurrentRoleLabel() : null),
     [open],
   )
-  const candidates = useMemo(() => (open ? buildCandidates() : []), [open])
 
   function handleProfile() {
     setOpen(false)
@@ -95,12 +87,6 @@ export function UserMenu({ session, onSwitchContext }: Props) {
     // localStorage の auth session を消して /login へ遷移。
     saveAuthSession(null)
     window.location.href = '/login'
-  }
-
-  function handleSwitch(s: AuthSession) {
-    saveAuthSession(s)
-    setOpen(false)
-    window.location.reload()
   }
 
   return (
@@ -146,54 +132,10 @@ export function UserMenu({ session, onSwitchContext }: Props) {
             <UserCog size={14} />
             <span>プロフィール変更</span>
           </button>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={() => {
-              setOpen(false)
-              onSwitchContext()
-            }}
-          >
-            <Users size={14} />
-            <span>コンテキストを切り替え</span>
-          </button>
           <button type="button" className="user-menu-item" onClick={handleLogout}>
             <LogOut size={14} />
             <span>ログアウト</span>
           </button>
-
-          {/* Phase A-1: モックのログイン切り替え（Phase A-2 で削除） */}
-          {candidates.length > 0 && (
-            <>
-              <div className="user-menu-divider" />
-              <div className="user-menu-section-head">
-                <Repeat size={11} />
-                <span>ログインを切り替え（モック）</span>
-              </div>
-              <div className="user-menu-switch-list">
-                {candidates.map((c, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    className="user-menu-switch-item"
-                    onClick={() => handleSwitch(c.session)}
-                  >
-                    <span className="user-menu-switch-icon" aria-hidden="true">
-                      {c.session?.kind === 'admin' ? (
-                        <ShieldCheck size={12} />
-                      ) : (
-                        <Building2 size={12} />
-                      )}
-                    </span>
-                    <span className="user-menu-switch-text">
-                      <span className="user-menu-switch-label">{c.label}</span>
-                      <span className="user-menu-switch-sub">{c.sub}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
 
           <div className="user-menu-foot">
             <small>認証は Clerk で連携</small>
@@ -222,40 +164,6 @@ function buildCurrentRoleLabel(): string | null {
     if (m?.role === 'dashboard_confirmer') return '確認者'
   }
   return null
-}
-
-/** モック切り替え候補（user × 所属組織 + super_admin の admin 候補） */
-function buildCandidates(): {
-  label: string
-  sub: string
-  session: AuthSession
-}[] {
-  const users = loadUsers()
-  const orgs = loadOrganizations()
-  const members = loadOrganizationMembers()
-
-  const list: { label: string; sub: string; session: AuthSession }[] = []
-  for (const u of Object.values(users)) {
-    if (u.systemRole === 'super_admin') {
-      list.push({
-        label: u.displayName,
-        sub: 'スーパーアドミン',
-        session: { kind: 'admin', userId: u.id },
-      })
-    }
-    const userMems = Object.values(members).filter((m) => m.userId === u.id)
-    for (const m of userMems) {
-      const o = orgs[m.organizationId]
-      if (!o) continue
-      const roleLabel = m.role === 'editor' ? '編集メンバー' : '確認者'
-      list.push({
-        label: u.displayName,
-        sub: `${roleLabel} ・ ${o.name}`,
-        session: { kind: 'tenant', userId: u.id, organizationId: o.id },
-      })
-    }
-  }
-  return list
 }
 
 /** 補助: AppUser / Organization の取得（DEV ツール用） */
