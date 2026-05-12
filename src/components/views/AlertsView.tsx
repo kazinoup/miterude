@@ -21,8 +21,12 @@ import {
   Filter as FilterIcon,
   Router as RouterIcon,
   Settings2,
+  CheckCircle2,
+  X as XIcon,
 } from 'lucide-react'
 import { PaginationControls } from '../PaginationControls'
+import { ConfirmAlertsDialog } from '../ConfirmAlertsDialog'
+import { toast } from '../../lib/toast'
 import type {
   AlertLogEntry,
   AlertLogKind,
@@ -57,6 +61,10 @@ type Props = {
   sensorGroups: SensorGroupStore
   sensorCategories: SensorCategoryStore
   savedFilters: SavedFilterStore
+  /** Phase 1.9: アラート確認用。指定 ID のアラートに confirm_comment / confirmed_by / confirmed_at を書き込む。 */
+  onConfirmAlerts: (ids: string[], comment: string) => void
+  /** confirmed_by として記録する表示名 */
+  currentUserName: string
 }
 
 const PAGE_SIZE = 50
@@ -106,6 +114,8 @@ export function AlertsView({
   sensorGroups,
   sensorCategories,
   savedFilters,
+  onConfirmAlerts,
+  currentUserName,
 }: Props) {
   /** 下段フィルタ（センサー一覧と同じパターン） */
   const [conditions, setConditions] = useState<FilterConditions>({})
@@ -121,6 +131,20 @@ export function AlertsView({
 
   /** 1-based の現在ページ。PaginationControls が 1-based を期待するため。 */
   const [page, setPage] = useState(1)
+
+  /** Phase 1.9: 確認フィルタ。既定は「未確認のみ」表示。 */
+  const [confirmFilter, setConfirmFilter] = useState<'unconfirmed' | 'all'>(
+    'unconfirmed',
+  )
+
+  /** Phase 1.9: 一括選択中の alert.id */
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  /** Phase 1.9: 確認ダイアログ */
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    ids: string[]
+  }>({ open: false, ids: [] })
 
   /** 列の表示・並び順設定 */
   const [columnVisibility, setColumnVisibility] =
@@ -159,7 +183,9 @@ export function AlertsView({
   // フィルタ条件が変わったら 1 ページ目に戻す
   useEffect(() => {
     setPage(1)
-  }, [conditions, selectedKinds, fromDate, toDate])
+    // 選択も解除（見えてないアラートが選択されたままにならないように）
+    setSelected(new Set())
+  }, [conditions, selectedKinds, fromDate, toDate, confirmFilter])
 
   // ワイド表示固定
   useEffect(() => {
@@ -214,6 +240,8 @@ export function AlertsView({
         const t = entryTime(e)
         if (fromTs != null && t < fromTs) return false
         if (toTs != null && t >= toTs) return false
+        // 4) 確認状態（未確認のみフィルタ）
+        if (confirmFilter === 'unconfirmed' && e.confirmedAt) return false
         return true
       })
       .sort((a, b) => entryTime(b) - entryTime(a))
@@ -223,6 +251,7 @@ export function AlertsView({
     selectedKinds,
     fromDate,
     toDate,
+    confirmFilter,
   ])
 
   const totalPages = Math.max(1, Math.ceil(filteredEntries.length / PAGE_SIZE))
@@ -246,6 +275,44 @@ export function AlertsView({
     setSelectedKinds(new Set(KIND_ORDER))
     setFromDate('')
     setToDate('')
+  }
+
+  // ---- Phase 1.9: 確認フロー ----
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAllOnPage(checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      for (const e of pageEntries) {
+        // 既に確認済みは除外
+        if (e.confirmedAt) continue
+        if (checked) next.add(e.id)
+        else next.delete(e.id)
+      }
+      return next
+    })
+  }
+
+  function openConfirmDialog(ids: string[]) {
+    const unconfirmedIds = ids.filter((id) => !alertLogs[id]?.confirmedAt)
+    if (unconfirmedIds.length === 0) {
+      toast('確認可能なアラートがありません', 'info')
+      return
+    }
+    setConfirmDialog({ open: true, ids: unconfirmedIds })
+  }
+
+  function handleConfirmSubmit(comment: string) {
+    onConfirmAlerts(confirmDialog.ids, comment)
+    setConfirmDialog({ open: false, ids: [] })
+    setSelected(new Set())
   }
 
   const totalCount = Object.keys(alertLogs).length
@@ -364,6 +431,51 @@ export function AlertsView({
 
       {/* ===== グリッド（列カスタマイズ対応） ===== */}
       <section className="panel-card alerts-grid-card">
+        {/* Phase 1.9: 確認フィルタ切替 + 一括バー */}
+        <div className="alerts-confirm-toolbar">
+          <div className="alerts-confirm-toggle">
+            <button
+              type="button"
+              className={`badge-outline ${confirmFilter === 'unconfirmed' ? 'is-active' : ''}`}
+              onClick={() => setConfirmFilter('unconfirmed')}
+            >
+              未確認のみ
+            </button>
+            <button
+              type="button"
+              className={`badge-outline ${confirmFilter === 'all' ? 'is-active' : ''}`}
+              onClick={() => setConfirmFilter('all')}
+            >
+              すべて
+            </button>
+          </div>
+          {selected.size > 0 && (
+            <div className="bulk-bar">
+              <div className="bulk-bar-info">
+                <strong>{selected.size}</strong> 件選択中
+                <button
+                  type="button"
+                  className="link-btn"
+                  onClick={() => setSelected(new Set())}
+                >
+                  <XIcon size={12} />
+                  <span>解除</span>
+                </button>
+              </div>
+              <div className="bulk-bar-actions-primary">
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={() => openConfirmDialog(Array.from(selected))}
+                >
+                  <CheckCircle2 size={14} />
+                  <span>選択した {selected.size} 件を確認</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         <div className="alerts-pagination-bar alerts-pagination-bar-top">
           <PaginationControls
             page={currentPage}
@@ -383,6 +495,19 @@ export function AlertsView({
           <table className="alerts-grid">
             <thead>
               <tr>
+                <th className="col-select">
+                  <input
+                    type="checkbox"
+                    aria-label="このページのアラートを全選択"
+                    checked={
+                      pageEntries.filter((e) => !e.confirmedAt).length > 0 &&
+                      pageEntries
+                        .filter((e) => !e.confirmedAt)
+                        .every((e) => selected.has(e.id))
+                    }
+                    onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
+                  />
+                </th>
                 <th className="col-time">発生日時</th>
                 {visibleColumns.map((key) => {
                   const def = ALERT_DEFS_MAP[key]
@@ -393,6 +518,7 @@ export function AlertsView({
                     </th>
                   )
                 })}
+                <th className="col-confirm-action">確認</th>
               </tr>
             </thead>
             <tbody>
@@ -415,8 +541,18 @@ export function AlertsView({
                 const TargetIcon = e.targetKind === 'sensor' ? Cpu : RouterIcon
                 const targetTitle =
                   e.targetKind === 'sensor' ? 'センサー' : 'ゲートウェイ'
+                const isConfirmed = Boolean(e.confirmedAt)
                 return (
-                  <tr key={e.id}>
+                  <tr key={e.id} className={isConfirmed ? 'is-confirmed' : ''}>
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        aria-label="このアラートを選択"
+                        checked={selected.has(e.id)}
+                        disabled={isConfirmed}
+                        onChange={() => toggleSelect(e.id)}
+                      />
+                    </td>
                     <td className="col-time">{formatDateTime(e.occurredAt)}</td>
                     {visibleColumns.map((key) => {
                       const cls = columnClass[key]
@@ -508,6 +644,31 @@ export function AlertsView({
                           return null
                       }
                     })}
+                    <td className="col-confirm-action">
+                      {isConfirmed ? (
+                        <span
+                          className="alert-confirmed-badge"
+                          title={
+                            (e.confirmedBy ? `${e.confirmedBy} が ` : '') +
+                            (e.confirmedAt
+                              ? `${formatDateTime(e.confirmedAt)} に確認`
+                              : '確認済み')
+                          }
+                        >
+                          <CheckCircle2 size={12} />
+                          <span>確認済</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => openConfirmDialog([e.id])}
+                        >
+                          <CheckCircle2 size={13} />
+                          <span>確認</span>
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )
               })}
@@ -534,6 +695,14 @@ export function AlertsView({
         order={columnOrder}
         onOrderChange={setColumnOrder}
         onClose={() => setColumnSettingsOpen(false)}
+      />
+
+      <ConfirmAlertsDialog
+        open={confirmDialog.open}
+        targetCount={confirmDialog.ids.length}
+        confirmerName={currentUserName}
+        onClose={() => setConfirmDialog({ open: false, ids: [] })}
+        onSubmit={handleConfirmSubmit}
       />
     </div>
   )

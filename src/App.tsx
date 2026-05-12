@@ -758,6 +758,37 @@ export default function App() {
     toast(`通知グループ「${g?.name ?? id}」を削除しました`, 'info')
   }
 
+  /** Phase 1.9: アラート一覧から「確認」を実行する。
+   *  指定 ID の alert_logs に confirm_comment / confirmed_by / confirmed_at を書き込む。
+   *  既存の確認済みは上書きしない（一度確認したら追記不可）。 */
+  function handleConfirmAlerts(ids: string[], comment: string) {
+    const now = new Date()
+    const userName = MOCK_SESSION.userName
+    let actualCount = 0
+    setAlertLogs((prev) => {
+      const next = { ...prev }
+      for (const id of ids) {
+        const e = next[id]
+        if (!e || e.confirmedAt) continue
+        next[id] = {
+          ...e,
+          confirmComment: comment || undefined,
+          confirmedBy: userName,
+          confirmedAt: now,
+        }
+        actualCount += 1
+      }
+      return actualCount > 0 ? next : prev
+    })
+    if (actualCount === 0) {
+      toast('確認可能なアラートがありませんでした', 'info')
+    } else if (actualCount === 1) {
+      toast('アラートを確認しました', 'success')
+    } else {
+      toast(`${actualCount} 件のアラートを確認しました`, 'success')
+    }
+  }
+
   /* -------- Phase 8: 確認チェックイン・運用メモ -------- */
 
   function handleCreateCheckin(c: DashboardCheckin) {
@@ -1511,6 +1542,8 @@ export default function App() {
               sensorGroups={sensorGroups}
               sensorCategories={sensorCategories}
               savedFilters={savedFilters}
+              onConfirmAlerts={handleConfirmAlerts}
+              currentUserName={MOCK_SESSION.userName}
             />
           )}
 
