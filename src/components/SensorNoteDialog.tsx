@@ -8,6 +8,7 @@ import type {
 } from '../types'
 import { SENSOR_NOTE_CATEGORY_LABELS } from '../types'
 import { createSensorNote } from '../lib/records'
+import { formatSensorLabel } from '../lib/sensorLabel'
 
 type Props = {
   open: boolean
@@ -92,7 +93,7 @@ export function SensorNoteDialog({
           <div className="checkin-meta">
             <div>
               <span className="checkin-meta-label">対象センサー</span>
-              <strong>{sensor.id}</strong>
+              <strong>{formatSensorLabel(sensor)}</strong>
             </div>
             <div>
               <span className="checkin-meta-label">記録者</span>

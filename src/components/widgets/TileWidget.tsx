@@ -11,6 +11,7 @@ import { cellIsDeviation } from '../../lib/report'
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import { ensureDate } from '../../lib/mock'
 import { formatRelativeAgo } from '../../lib/jp'
+import { formatSensorLabel } from '../../lib/sensorLabel'
 
 type Props = {
   widget: TileWidgetT
@@ -92,12 +93,12 @@ export function TileWidget({
             className={`widget-tile ${tDev || hDev ? 'has-deviation' : ''}`}
             onClick={() => onOpenSensor(sid)}
           >
-            {/* Row 1: センサー名（name > deviceNumber > id の順で表示） */}
+            {/* Row 1: センサー名（name - deviceNumber 形式で統一） */}
             <div
               className="widget-tile-name"
-              title={sensor.id}
+              title={formatSensorLabel(sensor)}
             >
-              {sensor.name?.trim() || sensor.deviceNumber || sensor.id}
+              {formatSensorLabel(sensor)}
             </div>
 
             {/* Row 2: 温度・湿度（最新／太字） */}

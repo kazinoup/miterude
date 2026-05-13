@@ -249,10 +249,10 @@ export function GatewaysView({
                     className="device-row"
                     onClick={() => onOpenGateway(gw.id)}
                   >
-                    <td className="col-name" title={gw.name ?? gw.id}>
+                    <td className="col-name" title={gw.name ?? gw.deviceNumber ?? '—'}>
                       <span className="device-id-name">
                         <RouterIcon size={14} className="row-icon" />
-                        {gw.name ?? gw.id}
+                        {gw.name ?? gw.deviceNumber ?? '—'}
                       </span>
                     </td>
                     {visibleColumns.map((key) =>
@@ -555,7 +555,7 @@ export function GatewayDetailView({
             </button>
             <span className="detail-title-sep">ゲートウェイ</span>
             <ChevronRight size={14} className="bc-sep" />
-            <span className="device-title-id">{gateway.name ?? gateway.id}</span>
+            <span className="device-title-id">{gateway.name ?? gateway.deviceNumber ?? '—'}</span>
           </h1>
         </div>
       </header>
@@ -784,7 +784,7 @@ export function GatewayDetailView({
                         >
                           <td>
                             <span className="device-id-name">
-                              {s.name ?? s.id}
+                              {s.name ?? '—'}
                             </span>
                           </td>
                           <td>
@@ -805,7 +805,7 @@ export function GatewayDetailView({
                             <button
                               type="button"
                               className="icon-btn"
-                              aria-label={`${s.name ?? s.id} を開く`}
+                              aria-label={`${s.name ?? s.deviceNumber ?? '—'} を開く`}
                               onClick={() => onOpenSensor(s.id)}
                             >
                               <ChevronRight size={18} />

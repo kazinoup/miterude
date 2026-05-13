@@ -134,15 +134,15 @@ export function SensorBulkCsvDialog({
           : null
 
         const filename = buildCsvFilename(
-          sensor.name ?? sensor.id,
+          sensor.name ?? sensor.deviceNumber ?? sensor.serialNumber,
           sensor.model,
-          sensor.deviceNumber ?? sensor.id,
+          sensor.deviceNumber ?? sensor.serialNumber,
           start,
           end,
         )
         const csv = buildHistoryCsv(
           {
-            deviceNumber: sensor.deviceNumber ?? sensor.id,
+            deviceNumber: sensor.deviceNumber ?? sensor.serialNumber,
             manufacturer: sensor.manufacturer,
             model: sensor.model,
             serialNumber: sensor.serialNumber,

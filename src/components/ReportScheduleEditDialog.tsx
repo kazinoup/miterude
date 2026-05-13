@@ -13,6 +13,7 @@ import type {
   SensorStore,
 } from '../types'
 import { NOTIFICATION_TIMING_LABELS } from '../types'
+import { formatSensorLabel } from '../lib/sensorLabel'
 
 type Props = {
   open: boolean
@@ -332,7 +333,7 @@ export function ReportScheduleEditDialog({
                           checked={targetSensorIds.includes(s.id)}
                           onChange={() => toggleSensor(s.id)}
                         />
-                        <span>{s.name ?? s.id}</span>
+                        <span>{formatSensorLabel(s)}</span>
                       </label>
                     ))}
                 </>

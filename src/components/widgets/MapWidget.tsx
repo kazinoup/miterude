@@ -22,6 +22,7 @@ import { cellIsDeviation } from '../../lib/report'
 import { CATEGORY_ICON_COMPONENTS } from '../../lib/categories'
 import { ensureDate } from '../../lib/mock'
 import { formatRelativeAgo } from '../../lib/jp'
+import { formatSensorLabel } from '../../lib/sensorLabel'
 
 type Props = {
   widget: MapWidgetT
@@ -268,11 +269,11 @@ export function MapWidget({
               }}
               onPointerDown={(e) => startInteraction(idx, e)}
               onClick={(e) => handleOpenSensor(pin.sensorId, e)}
-              title={sensor.name?.trim() || sensor.deviceNumber || sensor.id}
+              title={formatSensorLabel(sensor)}
             >
-              {/* Row 1: 表示名（name > deviceNumber > id） */}
+              {/* Row 1: 表示名（name - deviceNumber 統一） */}
               <div className="map-pin-name">
-                {sensor.name?.trim() || sensor.deviceNumber || sensor.id}
+                {formatSensorLabel(sensor)}
               </div>
 
               {/* Row 2: 編集中は表示項目のラベル、通常時は実際の値 */}
@@ -330,7 +331,7 @@ export function MapWidget({
           >
             <div className="properties-head">
               <span className="properties-label">選択中</span>
-              <strong className="properties-name">{selectedSensor.id}</strong>
+              <strong className="properties-name">{formatSensorLabel(selectedSensor)}</strong>
               <button
                 type="button"
                 className="icon-btn"

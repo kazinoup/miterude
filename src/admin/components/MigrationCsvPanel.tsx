@@ -492,7 +492,7 @@ function PreviewView({
                         <option value="skip">— スキップ</option>
                         {sensorOptions.map((s) => (
                           <option key={s.id} value={s.id}>
-                            {s.deviceNumber} ・ {s.name ?? s.id}
+                            {s.deviceNumber} ・ {s.name ?? '(未設定)'}
                           </option>
                         ))}
                       </select>

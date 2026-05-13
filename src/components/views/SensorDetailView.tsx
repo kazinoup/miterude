@@ -67,7 +67,8 @@ import {
   isMetricDeviationEnabled,
   summarizeRange,
 } from '../../lib/report'
-import { buildHistoryCsv, downloadCsv } from '../../lib/historyCsv'
+import { buildHistoryCsv, downloadCsv, sanitizeFilenameSegment } from '../../lib/historyCsv'
+import { formatSensorLabel } from '../../lib/sensorLabel'
 import {
   customPeriodRange,
   formatPeriodLabel,
@@ -362,7 +363,9 @@ export function SensorDetailView({
             </button>
             <span className="detail-title-sep">センサー</span>
             <ChevronRight size={14} className="bc-sep" />
-            <span className="device-title-id">{sensor?.name || deviceId}</span>
+            <span className="device-title-id">
+              {sensor ? formatSensorLabel(sensor) : '—'}
+            </span>
           </h1>
         </div>
         <div className="view-header-actions">
@@ -468,15 +471,14 @@ export function SensorDetailView({
               <input
                 type="text"
                 className="form-input"
-                value={sensor.name ?? sensor.id}
+                value={sensor.name ?? ''}
                 onChange={(e) => {
                   const v = e.target.value
-                  // 空欄や id と同じなら name を未設定に戻す
-                  const name =
-                    v.trim() === '' || v === sensor.id ? undefined : v
+                  // 空欄なら name を未設定に戻す
+                  const name = v.trim() === '' ? undefined : v
                   onUpdateSensorInfo(deviceId, { name })
                 }}
-                placeholder={sensor.id}
+                placeholder="例: 厨房冷蔵庫"
               />
             </label>
             <label className="meta-edit-field">
@@ -857,11 +859,14 @@ export function SensorDetailView({
                     : periodType === 'month'
                       ? toMonthInputValue(anchor)
                       : `${customStart}_${customEnd}`
-              const filename = `${deviceId}_${periodTag}.csv`
               if (!sensor) {
                 toast('センサー情報が読み込めていません', 'error')
                 return
               }
+              const safeLabel = sanitizeFilenameSegment(
+                sensor.name ?? sensor.deviceNumber ?? sensor.serialNumber,
+              ) || 'sensor'
+              const filename = `${safeLabel}_${periodTag}.csv`
               const categoryName = sensor.categoryId
                 ? categories[sensor.categoryId]?.name ?? null
                 : null
@@ -870,7 +875,7 @@ export function SensorDetailView({
                 : null
               const csv = buildHistoryCsv(
                 {
-                  deviceNumber: sensor.deviceNumber ?? sensor.id,
+                  deviceNumber: sensor.deviceNumber ?? sensor.serialNumber,
                   manufacturer: sensor.manufacturer,
                   model: sensor.model,
                   serialNumber: sensor.serialNumber,

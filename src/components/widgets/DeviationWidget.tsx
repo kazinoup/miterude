@@ -12,24 +12,13 @@ import {
 import type {
   DeviceStore,
   DeviationWidget as DeviationWidgetT,
-  Sensor,
   SensorStore,
 } from '../../types'
 import {
   extractDeviationSegments,
   type DeviationSegment,
 } from '../../lib/report'
-
-/** 「name - deviceNumber」形式でセンサーの表示ラベルを作る。
- *  どちらか片方しか無い場合はそれを単独で、両方無い場合は serial_number 等にフォールバック。 */
-function formatSensorLabel(sensor: Sensor): string {
-  const name = (sensor.name ?? '').trim()
-  const num = (sensor.deviceNumber ?? '').trim()
-  if (name && num) return `${name} - ${num}`
-  if (name) return name
-  if (num) return num
-  return sensor.serialNumber || sensor.id
-}
+import { formatSensorLabel } from '../../lib/sensorLabel'
 
 type Props = {
   widget: DeviationWidgetT

@@ -26,6 +26,7 @@ import {
   type DeviationSegment,
 } from './report'
 import { ensureDate } from './mock'
+import { formatSensorLabel } from './sensorLabel'
 
 /** Supabase の uuid カラムと整合させるため UUID で採番。 */
 function genId(_prefix: string): string {
@@ -122,7 +123,7 @@ export function detectDeviationsForRange(
 
     out.push({
       sensorId: id,
-      sensorName: sensor.id,
+      sensorName: formatSensorLabel(sensor),
       segments: segs,
       countByMetric,
       deviationKinds: kinds,
@@ -183,7 +184,7 @@ export function detectRecentDeviations(
 
     items.push({
       sensorId: id,
-      sensorName: sensor.id,
+      sensorName: formatSensorLabel(sensor),
       deviationKinds: kinds,
       detectedTemp: lastTempVal,
       detectedHum: lastHumVal,
@@ -256,7 +257,7 @@ export function createSensorNote(opts: {
   return {
     id: genId('note'),
     sensorId: opts.sensor.id,
-    sensorName: opts.sensor.id,
+    sensorName: formatSensorLabel(opts.sensor),
     authorId: opts.user.email,
     authorName: opts.user.userName,
     timestamp: new Date(),

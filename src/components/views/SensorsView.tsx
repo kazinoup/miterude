@@ -69,6 +69,7 @@ import {
 import { SensorBulkActionsDialog } from '../SensorBulkActionsDialog'
 import { SensorBulkCsvDialog } from '../SensorBulkCsvDialog'
 import { ConfirmDialog } from '../ConfirmDialog'
+import { formatSensorLabel } from '../../lib/sensorLabel'
 
 type Props = {
   devices: DeviceStore
@@ -1082,14 +1083,14 @@ export function SensorsView({
                       >
                         <input
                           type="checkbox"
-                          aria-label={`${r.sensor.id} を選択`}
+                          aria-label={`${formatSensorLabel(r.sensor)} を選択`}
                           checked={isChecked}
                           onChange={() => toggleSelected(r.sensor.id)}
                         />
                       </td>
-                      <td className="col-name" title={r.sensor.name ?? r.sensor.id}>
+                      <td className="col-name" title={r.sensor.name ?? '—'}>
                         <span className="device-id-name">
-                          {r.sensor.name ?? r.sensor.id}
+                          {r.sensor.name ?? '—'}
                         </span>
                       </td>
                       {columnOrder
