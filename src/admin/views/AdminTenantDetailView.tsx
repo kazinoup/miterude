@@ -522,13 +522,38 @@ export function AdminTenantDetailView({
 
   /** super_admin がこのテナントを直接開く（impersonation 起動）。
    *  reason は固定的に「super_admin によるテナント閲覧」とする。
-   *  redirectTo を渡すことで、テナント URL のダッシュボードに遷移する。 */
-  function handleImpersonate(target: Organization) {
+   *  redirectTo を渡すことで、テナント URL のダッシュボードに遷移する。
+   *
+   *  localStorage 経由の `target.slug` がスタック / 未ハイドレートだと redirectTo が
+   *  `/` に落ちて、結果として `/admin/tenants` に逆戻りする事象があった。
+   *  常に Supabase から fresh に slug を取り直して担保する。 */
+  async function handleImpersonate(target: Organization) {
+    let slug: string | null = null
+    try {
+      const { data, error } = await supabase
+        .from('organizations')
+        .select('slug')
+        .eq('id', target.id)
+        .maybeSingle()
+      if (error) throw error
+      slug = (data as { slug?: string } | null)?.slug ?? null
+    } catch (e) {
+      console.warn('[impersonate] slug fetch failed', e)
+    }
+    // フォールバック: Supabase が取れなかった場合だけ localStorage の値を信用する
+    if (!slug) slug = target.slug || null
+    if (!slug) {
+      toast(
+        'テナントの slug を取得できないため、テナントに入れません。リロードしてやり直してください。',
+        'error',
+      )
+      return
+    }
     startImpersonation({
       staffUserId: adminUserId,
       organizationId: target.id,
       reason: 'super_admin によるテナント閲覧',
-      redirectTo: target.slug ? `/${target.slug}/dashboard` : '/',
+      redirectTo: `/${slug}/dashboard`,
     })
   }
 
