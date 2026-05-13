@@ -136,10 +136,6 @@ export function UserMenu({ session }: Props) {
             <LogOut size={14} />
             <span>ログアウト</span>
           </button>
-
-          <div className="user-menu-foot">
-            <small>認証は Clerk で連携</small>
-          </div>
         </div>,
         document.body,
       )}
