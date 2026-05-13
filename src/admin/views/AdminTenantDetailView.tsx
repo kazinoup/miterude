@@ -528,6 +528,11 @@ export function AdminTenantDetailView({
    *  `/` に落ちて、結果として `/admin/tenants` に逆戻りする事象があった。
    *  常に Supabase から fresh に slug を取り直して担保する。 */
   async function handleImpersonate(target: Organization) {
+    console.log('[impersonate] start', {
+      targetId: target.id,
+      targetSlug: target.slug,
+      adminUserId,
+    })
     let slug: string | null = null
     try {
       const { data, error } = await supabase
@@ -537,23 +542,26 @@ export function AdminTenantDetailView({
         .maybeSingle()
       if (error) throw error
       slug = (data as { slug?: string } | null)?.slug ?? null
+      console.log('[impersonate] supabase slug fetched:', slug)
     } catch (e) {
       console.warn('[impersonate] slug fetch failed', e)
     }
-    // フォールバック: Supabase が取れなかった場合だけ localStorage の値を信用する
     if (!slug) slug = target.slug || null
     if (!slug) {
+      console.error('[impersonate] no slug available, abort')
       toast(
         'テナントの slug を取得できないため、テナントに入れません。リロードしてやり直してください。',
         'error',
       )
       return
     }
+    const redirectTo = `/${slug}/dashboard`
+    console.log('[impersonate] redirecting to', redirectTo)
     startImpersonation({
       staffUserId: adminUserId,
       organizationId: target.id,
       reason: 'super_admin によるテナント閲覧',
-      redirectTo: `/${slug}/dashboard`,
+      redirectTo,
     })
   }
 
