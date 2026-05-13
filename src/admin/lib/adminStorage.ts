@@ -79,6 +79,11 @@ function readJson<T>(key: string, fallback: T): T {
  *  audit_logs が最も肥大しやすいので最優先で落とす。 */
 const EVICTABLE_KEYS = [
   'miterude:admin:audit_logs',
+  // 必要なら redownload で復元できるキャッシュ系。順番は重要度の低い順。
+  'miterude:admin:manual_pages',
+  'miterude:admin:manual_categories',
+  'miterude:admin:staff_assignments',
+  'miterude:admin:organization_members',
 ]
 
 function isQuotaError(e: unknown): boolean {
@@ -323,7 +328,66 @@ export function saveAuthSession(session: AuthSession): void {
     localStorage.removeItem(KEY_SESSION)
     return
   }
-  writeJson(KEY_SESSION, session)
+  const json = JSON.stringify(session, replacer)
+
+  // Step 1: 通常の setItem
+  try {
+    localStorage.setItem(KEY_SESSION, json)
+    return
+  } catch (e) {
+    if (!isQuotaError(e)) {
+      console.error('[miterude-admin] saveAuthSession failed (non-quota):', e)
+      return
+    }
+  }
+
+  // Step 2: EVICTABLE_KEYS を全部削除して再試行
+  for (const k of EVICTABLE_KEYS) {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* noop */
+    }
+  }
+  try {
+    localStorage.setItem(KEY_SESSION, json)
+    console.warn(
+      '[miterude-admin] saveAuthSession recovered by evicting EVICTABLE_KEYS',
+    )
+    return
+  } catch (e) {
+    if (!isQuotaError(e)) {
+      console.error('[miterude-admin] saveAuthSession failed after evict:', e)
+      return
+    }
+  }
+
+  // Step 3: 最終手段 — session 以外の miterude: プレフィックス全削除
+  // （impersonation を絶対に通すため。テナント業務データも消えうるが、
+  //  どのみち再ハイドレーションで戻る or サインアウト相当）
+  const toDelete: string[] = []
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i)
+    if (!k) continue
+    if (k === KEY_SESSION) continue
+    if (k.startsWith('miterude:')) toDelete.push(k)
+  }
+  for (const k of toDelete) {
+    try {
+      localStorage.removeItem(k)
+    } catch {
+      /* noop */
+    }
+  }
+  try {
+    localStorage.setItem(KEY_SESSION, json)
+    console.warn(
+      `[miterude-admin] saveAuthSession recovered by clearing ${toDelete.length} miterude:* keys`,
+    )
+    return
+  } catch (e) {
+    console.error('[miterude-admin] saveAuthSession ultimately failed:', e)
+  }
 }
 
 /** ストレージキー名のテナントスコープ版。

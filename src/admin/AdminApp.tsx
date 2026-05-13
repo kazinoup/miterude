@@ -140,12 +140,18 @@ export function AdminApp({ session }: Props) {
         setOrgsHydrated(true)
 
         // users: マージ + ローカル限定ユーザーを Supabase に push
+        // 旧モック ID（user-super-admin-001 等。UUID でない）が残っていると
+        // 毎回 push 400 が返るうえ localStorage を膨らませる原因になるため、
+        // UUID 形式の ID だけを残してマージ対象にする。
+        const UUID_RE =
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
         const localUsers = loadUsers()
         const supabaseUserIds = new Set(usersList.map((u) => u.id))
         const mergedUsers: AppUserStore = {}
         for (const u of usersList) mergedUsers[u.id] = u
         const pushTargets: typeof usersList = []
         for (const u of Object.values(localUsers)) {
+          if (!UUID_RE.test(u.id)) continue // 旧モック ID は破棄
           if (!supabaseUserIds.has(u.id)) {
             mergedUsers[u.id] = u
             pushTargets.push(u)
