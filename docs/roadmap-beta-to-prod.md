@@ -1,22 +1,28 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-14  
-ステータス: 計画段階。Phase 1.x の機能実装は完了済み（push 済み）。
+最終更新: 2026-05-16  
+ステータス: β-0 / β-3 / β-4 完了。dev / stg 2 環境が稼働中。次は β-1（RLS 厳格化）。
 
 ---
 
 ## 1. 全体方針
 
-### 環境構成
+### 環境構成（3 プロジェクト分離方式 — β-4 で確定）
 
-```
-miterude-demo  (現 Supabase)  →  demo.miterude.cloud      開発検証・営業デモ用
-miterude-stg   (新規 Supabase) →  stg.miterude.cloud      β顧客向け実環境（リリース前検証）
-miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客契約後に作成
-```
+| 環境 | Vercel プロジェクト | git ブランチ | ドメイン | Supabase | 状態 |
+|------|--------------------|-------------|---------|----------|------|
+| dev  | `miterude-dev`  | `dev`  | dev.miterude.cloud | `kktwzllydtlsoahvdhzl` (miterude-dev) | ✅ 稼働 |
+| stg  | `miterude-stg`  | `stg`  | stg.miterude.cloud | `bejgwwhxntnxzwehsryx` (miterude-stg) | ✅ 稼働 |
+| prod | `miterude-prod` | `main` | miterude.cloud     | prod（未作成）                         | β顧客契約後 |
 
+- **3 プロジェクト完全分離**を採用（当初の「1 プロジェクト + ブランチ env 切替」案から変更）。
+  理由: env vars がプロジェクト単位で独立し、**環境取り違え事故が構造的に起きない**。
+  Vercel はプロジェクト数で課金しないため追加コストなし。dev/stg の JS バンドルに
+  正しい Supabase ref が埋まることを実機確認済み。
+- **ブランチ昇格フロー**: `dev`（日常開発）→ `stg`（β検証）→ `main`（本番リリース）
+- GitHub リポジトリは `kazinoup/miterude`（旧 `miterude-demo` からリネーム済み）
+- DNS は **Vercel DNS**（お名前.com から NS 委任済み: `ns1/ns2.vercel-dns.com`）
 - **「β = 機能フラグ / UI バッジ」**。データの住所は最初から prod に固定し、移行をゼロに保つ
-- **`stg → prod` は同一コードで env vars を切り替えるだけ**でリリース可能にする
 - ステージング命名は `stg`（ツクルデと揃える）
 
 ### 認証方針
@@ -35,16 +41,21 @@ miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客
 
 ## 2. β リリース必須タスク（β-0 〜 β-9）
 
-### β-0: stg 環境構築
+### β-0: stg 環境構築 ✅ 完了（2026-05-16）
 
-- [ ] `miterude-stg` Supabase 作成（Tokyo / Free） — **user 側作業**
-- [ ] migrations 0001〜0037 を stg に順次適用
-- [ ] Edge Functions 7 個を stg にデプロイ
+- [x] `miterude-stg` Supabase 作成（Tokyo / Pro org `bejgwwhxntnxzwehsryx`）
+- [x] migrations **36 件**（0001〜0037、0028 欠番）を stg に適用
+  - dev に MCP 直接適用されてファイル化されていなかった 27 件を
+    `schema_migrations.statements` から復元して `supabase/migrations/` に保存（da2ebd3）
+- [x] Edge Functions **10 個**を stg にデプロイ
   - webhook-milesight / parse-inbox / send-notification / dispatch-notifications
   - send-notification-test / dispatch-report-schedules / detect-status-alerts
-- [ ] pg_cron 3 本を stg で再構成（dispatch-notifications / detect-status-alerts / parse-inbox）
-- [ ] Resend secrets を stg Edge Function Secrets に設定
-- [ ] stg 上で smoke test（webhook 受信 → readings → alert → 通知）
+  - backfill-alerts / mock-login / share-dashboard
+- [x] pg_cron **4 ジョブ**は migration（0014/0032/0035/0037）でスケジュール済
+  - URL/JWT は stg 用にスワップして適用（dev のハードコード値を置換）
+- [x] Resend secrets（RESEND_API_KEY / RESEND_FROM / APP_URL）を stg Secrets に設定
+- [x] smoke test 済: webhook-milesight health-check 200 / pg_cron 4 ジョブ succeeded /
+  send-notification-test で inoue@canbright.co.jp にメール到達確認
 
 ### β-1: RLS 厳格化 🔴
 
@@ -72,21 +83,28 @@ miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客
 - [ ] JWT に `organization_id` claim を埋める（β-1 の RLS と連動）
 - [ ] レート制限（Supabase 標準で OK）
 
-### β-3: Resend 独自ドメイン認証 🔴
+### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 
-- [ ] DNS に SPF / DKIM / DMARC レコード追加（miterude.cloud）
-- [ ] Resend の Domain Verification 完了
-- [ ] `RESEND_FROM=noreply@miterude.cloud` に切替
-- [ ] テスト送信（任意のメアドへ）
+- [x] Resend に `miterude.cloud` 追加（Tokyo ap-northeast-1）
+- [x] DNS レコードを **Vercel DNS** に投入（`vercel dns add`）
+  - MX `send` / TXT `send`(SPF) / TXT `resend._domainkey`(DKIM) / TXT `_dmarc`
+- [x] Resend Domain Verification 完了（DKIM / SPF Verified）
+- [x] `RESEND_FROM` を `ミテルデ <noreply@miterude.cloud>` に切替（dev / stg 両方）
+- [x] テスト送信で差出人が新ドメインになっていることを確認
 
-### β-4: Vercel カスタムドメイン + env vars 切替 🔴
+### β-4: Vercel カスタムドメイン + 3 プロジェクト構成 ✅ 完了（2026-05-16）
 
-- [ ] Vercel に `stg.miterude.cloud` / `miterude.cloud`（後で） / `demo.miterude.cloud`（任意）を割当
-- [ ] Vercel env vars を 3 環境分整備
-  - Production: prod Supabase URL / anon key
-  - Preview: stg Supabase URL / anon key
-  - Development: demo Supabase URL / anon key
-- [ ] ブランチ → 環境マッピング（main / stg / feature-\*）
+- [x] お名前.com → Vercel に NS 委任（`ns1/ns2.vercel-dns.com`、反映確認済み）
+- [x] GitHub リポジトリを `kazinoup/miterude` にリネーム + ローカル remote 更新
+- [x] 3 プロジェクト分離を採用（方式 B。env 取り違え事故を構造的に防止）
+  - `miterude-dev`（既存 miterude-demo をリネーム / Production Branch=`dev`）
+  - `miterude-stg`（新規 / Production Branch=`stg`）
+  - `miterude-prod` は β顧客契約後に作成
+- [x] env vars をプロジェクト単位で投入（dev は既存流用、stg は stg Supabase 値）
+- [x] `dev.miterude.cloud` → miterude-dev / `stg.miterude.cloud` → miterude-stg 割当
+- [x] dev/stg 再デプロイ → JS バンドルに正しい Supabase ref が埋まることを実機検証
+- [ ] **残**: `miterude.cloud` apex は現在 miterude-dev に仮紐付け。
+  prod 作成時（β顧客契約後）に miterude-prod へ付け替える
 
 ### β-5: β UI / 規約
 
@@ -322,16 +340,16 @@ miterude-prod  (新規 Supabase) →  miterude.cloud           本番・β顧客
 ## 6. タイムライン（目安）
 
 ```
-Week 1   β-0: stg 構築
+Week 1   ✅ β-0: stg 構築（完了 2026-05-16）
+         ✅ β-3: Resend ドメイン認証（完了 2026-05-16）
+         ✅ β-4: Vercel 3 プロジェクト構成（完了 2026-05-16、apex 整理のみ prod 時へ）
          β-7d: Webhook 転送（検証データを stg に流す土台）
          β-7a/b: シードジェネレータ + 合成ストリーム
 
-Week 2   β-1: RLS 厳格化（最大ヤマ）
+Week 2   ◀ 現在地 β-1: RLS 厳格化（最大ヤマ）
          β-2: Supabase Auth 統合
 
-Week 3   β-3: Resend ドメイン認証
-         β-4: Vercel ドメイン設定
-         β-5/6: β バッジ + 規約 + 手順書
+Week 3   β-5/6: β バッジ + 規約 + 手順書
          β-7e: テストデータタブ UI
 
 Week 4   β-8: メンバー招待
