@@ -1,10 +1,31 @@
 # Miterude β版 → 本番リリース ロードマップ
 
 最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了（stg で JWT 発行基盤が稼働）。
+ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了。リファクタ第1弾
+（セキュリティ4件＋メンテ2件）完了・dev/stg デプロイ済み（commit f2b927c）。
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
 
+**残タスクは 2 系統。再開時にどちらを先にやるか判断する:**
+
+1. **リファクタ第2弾（パフォーマンス truncation）** — 未対応・実害大
+   - **C1** `src/lib/supabaseQueries.ts:141` `fetchLatestReadings`:
+     PostgREST 1000件制限で 100台超のテナントはダッシュボード最新値が恒常欠落。
+     対処は `DISTINCT ON (sensor_id)` の RPC（or マテビュー）新設で 1 クエリ化
+   - **C2** `webhook-milesight` upsert `.select()` が1000件切れ→大量ペイロードで
+     取り込み漏れ。戻り依存をやめ pending を range ページング処理
+   - **H1** `detect-status-alerts` の devices 全件が1000件切れ→1000台超で
+     オフライン検知が沈黙故障。devices を `fetchAllPaged` 化＋processSensor 並列
+   - 補足: dev/stg はデータ僅少で未顕在。β顧客で大規模テナントが来ると顕在化。
+     β リリース前に潰す価値が高い。CSP(report-only 設計)/バンドル分割/Recharts
+     間引き/Realtime filter も Medium で残（リファクタ backlog 3章参照）
+2. **β-2d（フロント改修）→ β-2e/f → β-1 RLS** — 認証本線（設計は 3章下の β-2 参照）
+
+**推奨順: 1（C1 → C2 → H1）を先に潰してから 2（β-2d）。**
+理由: C1/H1 は監視 SaaS の根幹（最新値表示・オフライン検知）の沈黙故障で、
+β顧客に出す前に必須。β-2d は規模が大きく独立しているので後で集中して取れる。
+
+参考（β-2d 着手時の設計細部 4 点 — 後述ブロックは下に残置）:
 **次の一手 = β-2d（フロント改修）から着手する。**
 
 β-2a/b/c は stg で完了済み（スキーマ / Custom Access Token Hook / 検証ユーザー）。
@@ -273,18 +294,30 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [ ] 🟡 監査ログ（staff_audit_logs）の拡充
   - センサー作成・削除・通知設定変更を全部記録
   - tenant 側 admin の操作も対象に
-- [ ] 🟡 CSP / セキュリティヘッダ追加（Vercel `headers` 設定）
+- [x] 🟡 セキュリティヘッダ追加（vercel.json に X-Frame-Options:DENY /
+  nosniff / HSTS / Referrer-Policy / Permissions-Policy）f2b927c。
+  **CSP は外部接続の洗い出しが必要なため report-only で別途設計（残）**
 - [ ] 🟡 service_role の使用を最小化（Edge Function 内のみ）
 - [ ] 🟢 パスワードハッシュアルゴリズム見直し（Supabase Auth に任せれば自動的に bcrypt）
 - [ ] 🟢 セッションタイムアウト / リフレッシュトークン期限調整
-- [ ] 🟢 SSRF 対策（Webhook 配信先 URL の検証）
+- [x] 🟢 SSRF 対策: `_shared/urlGuard.ts` で通知系3 Edge Function を
+  https 強制 + private/メタデータ拒否、Slack は hooks.slack.com allowlist
+  （f2b927c・dev/stg デプロイ済）
+- [x] 追加対応（レビュー由来）: レポート公開リンク失効（expires_at 90日 +
+  閲覧側検証）/ 共有トークンを `crypto.getRandomValues` 化（f2b927c）
 - [ ] 🟢 個人情報の取扱規程 / 削除リクエスト対応
 
 ### ⚡ パフォーマンス
 
-- [ ] **🔴 β必須** `fetchAllPaged` 未適用箇所の発見と修正
-  - 既に `sensor_readings` / `alert_logs` / `sensor_notes` / `dashboard_checkins` / `devices` / `gateways` は対応済み
-  - 他に 1000 件超え得る箇所がないか再点検
+- [~] **🔴 β必須** `fetchAllPaged` 未適用箇所の発見と修正
+  - 既存対応済: `sensor_readings` / `alert_logs` / `sensor_notes` /
+    `dashboard_checkins` / `devices` / `gateways`
+  - **レビューで未対応 3 件を特定（次段で修正・冒頭ブロック参照）**:
+    - C1 `supabaseQueries.ts:141` `fetchLatestReadings`（100台超で
+      ダッシュボード最新値欠落 → `DISTINCT ON` RPC 化）
+    - C2 `webhook-milesight` upsert `.select()` 1000件切れ（取り込み漏れ）
+    - H1 `detect-status-alerts` の devices 全件 truncation（オフライン
+      検知の沈黙故障）+ processSensor N+1
 - [ ] 🟡 sensor_readings のインデックス見直し（`(sensor_id, measured_at DESC)` の複合 index）
 - [ ] 🟡 古い sensor_readings のアーカイブ戦略（pg_partman でパーティション化、または別テーブルに月次集計）
 - [ ] 🟡 React 不要な再レンダー削減
