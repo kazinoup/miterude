@@ -1,26 +1,35 @@
 # Miterude β版 → 本番リリース ロードマップ
 
 最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。dev / stg 2 環境が稼働中。
+ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了（stg で JWT 発行基盤が稼働）。
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
 
-**次の一手 = β-2（Supabase Auth 統合）から着手する。**
+**次の一手 = β-2d（フロント改修）から着手する。**
 
-理由: β-1（RLS 厳格化）の policy は `organization_id = (auth.jwt()->>'org_id')::uuid`
-を使う。これが機能するには **先に β-2 で「org_id claim 入りの正しい JWT」を
-発行できる状態**になっている必要がある。よってロードマップ番号は β-1→β-2 のままだが、
-**実施順は β-2 → β-1** で進める（user 承認済み 2026-05-16）。
+β-2a/b/c は stg で完了済み（スキーマ / Custom Access Token Hook / 検証ユーザー）。
+Hook が `app_role` / `org_id` / `impersonating_org_id` / `app_user_id` を JWT の
+app_metadata に注入することを SQL レベルで実証済み。
 
-再開時の流れ:
-1. β-2/β-1 の設計を詰める（依存関係・移行戦略・stg での検証手順）
-   — いきなり実装せず、破壊的なので設計合意を先に取る
-2. β-2 実装は **stg で先に検証**（dev は mock-login のまま温存し、退避路を残す）
-3. β-2 が stg で通ったら β-1（RLS 置換）を stg で。テナント横断の負テスト必須
-4. dev / 既存データへの影響を確認してから main へ
+**β-2d 実装着手前に詰めるべき設計細部:**
+1. `AuthSession` 型（localStorage JSON）をどう置き換えるか
+   — `supabase.auth.getSession()` + JWT claim（app_metadata）から導出する形へ。
+   既存の kind: tenant/admin/impersonation を claim ベースで再現
+2. claim 読み取りユーティリティの設計（app_role / org_id / impersonating_org_id を
+   一元的に読むヘルパ。`getEffectiveRole()` / `activeTenantIdFrom()` の置換）
+3. impersonation の書き込み経路: `impersonation_sessions` への insert/update を
+   RPC（security definer 関数）にするか Edge Function（service_role）にするか
+   — RLS でフロント直書き不可にしてあるため経路が必要。RPC 推奨（軽量）
+4. テナント切替: `users.active_organization_id` 更新 RPC + `refreshSession()`
 
-現状の認証: mock-login Edge Function + `users.password_hash`（SHA-256）。
-これを `supabase.auth` に置き換える。詳細は下記 β-2 / β-1 セクション参照。
+**stg 検証ユーザー（β-2e で使用、パスワードは stg 検証専用・別管理）:**
+- `inoue@canbright.co.jp` … super_admin
+- `editor@stg.miterude.cloud` … テナント editor（demo-canbright 所属）
+- `confirmer@stg.miterude.cloud` … テナント dashboard_confirmer（同上）
+
+**鉄則:** stg 先行・dev は mock-login 温存（退避路）。β-2e で stg 全フロー検証
+（+1〜2 テーブルで JWT ベース RLS 試験）まで通ったら β-2f で dev/main 展開、
+最後に mock-login / password_hash 撤去。その後 β-1（RLS 全置換）。
 
 ---
 
@@ -112,11 +121,13 @@
 
 **実装タスク分解**
 
-- [ ] **β-2a** migration: `users.auth_user_id` / `users.active_organization_id` /
-  `impersonation_sessions` テーブル（stg に適用）
-- [ ] **β-2b** Custom Access Token Hook（Postgres 関数）+ Supabase Auth 設定
-  （email provider 有効化、Hook 登録）（stg）
-- [ ] **β-2c** 既存ユーザーを `auth.users` に移行（スタッフ + β顧客、Admin/SQL）（stg）
+- [x] **β-2a** migration: `users.auth_user_id` / `users.active_organization_id` /
+  `impersonation_sessions` テーブル（stg 適用済 / `0038_*.sql`）
+- [x] **β-2b** Custom Access Token Hook（`0039_*.sql`、security definer）+
+  Supabase Auth 設定（Hook 有効化・Email provider Enabled）（stg）
+- [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
+  public.users + organization_members）。Hook が claim を注入することを SQL 実証。
+  ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
 - [ ] **β-2d** フロント改修（stg ブランチ）
   - `supabase.ts`: `persistSession:true, autoRefreshToken:true`
   - `LoginView`: mock-login fetch → `supabase.auth.signInWithPassword()`
