@@ -353,54 +353,105 @@ async function processSensor(
   return counters
 }
 
+// H1: device_type='sensor' を range ページングで全件取得
+//     （PostgREST max_rows=1000 で 1000 台超のオフライン検知が
+//      沈黙故障するのを防ぐ）。
+async function fetchAllSensorDevices(): Promise<DeviceRow[]> {
+  const all: DeviceRow[] = []
+  const PAGE = 1000
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from('devices')
+      .select(
+        'id, organization_id, manufacturer, model, serial_number, device_number, notification_group_id, online, last_seen_at',
+      )
+      .eq('device_type', 'sensor')
+      .order('id', { ascending: true })
+      .range(from, from + PAGE - 1)
+    if (error) throw error
+    const rows = (data ?? []) as DeviceRow[]
+    all.push(...rows)
+    if (rows.length < PAGE) break
+  }
+  return all
+}
+
+// sensor_props を device_id チャンクで取得（IN 上限 / 1000件回避）。
+async function fetchPropsByIds(
+  ids: string[],
+): Promise<Record<string, SensorPropsRow>> {
+  const map: Record<string, SensorPropsRow> = {}
+  for (let i = 0; i < ids.length; i += 500) {
+    const chunk = ids.slice(i, i + 500)
+    const { data } = await supabase
+      .from('sensor_props')
+      .select('device_id, alert_settings, battery')
+      .in('device_id', chunk)
+    for (const p of (data ?? []) as SensorPropsRow[]) map[p.device_id] = p
+  }
+  return map
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method !== 'POST' && req.method !== 'GET') {
     return jsonResponse({ ok: false, error: 'method-not-allowed' }, 405)
   }
   const now = new Date()
 
-  // 1) センサー全件取得（device_type='sensor'）
-  const { data: devices, error: dErr } = await supabase
-    .from('devices')
-    .select(
-      'id, organization_id, manufacturer, model, serial_number, device_number, notification_group_id, online, last_seen_at',
-    )
-    .eq('device_type', 'sensor')
-  if (dErr) return jsonResponse({ ok: false, error: dErr.message }, 500)
-
-  // 2) sensor_props（alert_settings + battery）を一括取得
-  const sensorIds = (devices ?? []).map((d) => (d as DeviceRow).id)
-  let propsById: Record<string, SensorPropsRow> = {}
-  if (sensorIds.length > 0) {
-    const { data: props } = await supabase
-      .from('sensor_props')
-      .select('device_id, alert_settings, battery')
-      .in('device_id', sensorIds)
-    propsById = Object.fromEntries(
-      ((props ?? []) as SensorPropsRow[]).map((p) => [p.device_id, p]),
+  // 1) センサー全件取得（H1: 1000 台超 truncation 回避のためページング）
+  let devices: DeviceRow[]
+  try {
+    devices = await fetchAllSensorDevices()
+  } catch (e) {
+    return jsonResponse(
+      { ok: false, error: e instanceof Error ? e.message : String(e) },
+      500,
     )
   }
 
-  // 3) 1 台ずつ評価
+  // 2) sensor_props を device_id チャンクで取得
+  const sensorIds = devices.map((d) => d.id)
+  const propsById = await fetchPropsByIds(sensorIds)
+
+  // 3) バッチ並列で評価（H1: 直列 N+1 を解消）
   const summary = {
-    sensors: devices?.length ?? 0,
+    sensors: devices.length,
     offlineFired: 0,
     recoveryFired: 0,
     batteryReAlertFired: 0,
     errors: [] as Array<{ id: string; error: string }>,
   }
-  for (const d of (devices ?? []) as DeviceRow[]) {
-    const props = propsById[d.id] ?? { device_id: d.id, alert_settings: {}, battery: null }
-    try {
-      const r = await processSensor(d, props, now)
-      summary.offlineFired += r.offlineFired
-      summary.recoveryFired += r.recoveryFired
-      summary.batteryReAlertFired += r.batteryReAlertFired
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e)
-      console.error('[detect-status] sensor failed', d.id, e)
-      summary.errors.push({ id: d.id, error: msg })
-    }
+  const BATCH = 20
+  for (let i = 0; i < devices.length; i += BATCH) {
+    const batch = devices.slice(i, i + BATCH)
+    const results = await Promise.allSettled(
+      batch.map((d) =>
+        processSensor(
+          d,
+          propsById[d.id] ?? {
+            device_id: d.id,
+            alert_settings: {},
+            battery: null,
+          },
+          now,
+        ),
+      ),
+    )
+    results.forEach((res, idx) => {
+      if (res.status === 'fulfilled') {
+        summary.offlineFired += res.value.offlineFired
+        summary.recoveryFired += res.value.recoveryFired
+        summary.batteryReAlertFired += res.value.batteryReAlertFired
+      } else {
+        const d = batch[idx]
+        const msg =
+          res.reason instanceof Error
+            ? res.reason.message
+            : String(res.reason)
+        console.error('[detect-status] sensor failed', d.id, res.reason)
+        summary.errors.push({ id: d.id, error: msg })
+      }
+    })
   }
 
   return jsonResponse({ ok: true, now: now.toISOString(), summary })
