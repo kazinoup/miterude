@@ -6,28 +6,21 @@
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
 
-**最優先: デプロイ整合（下記）。その後 β-2d へ。**
+**次の一手 = β-2d（フロント改修）。**
 
-#### ⚠ デプロイ整合（リファクタ第1弾 f2b927c + 第2弾 f4db2c1）
+#### ✅ デプロイ整合 完了（2026-05-16）
 
-リファクタは全て `main` にコミット済みだが反映状態が不揃い:
-- migration 0040（C1 の RPC）: **dev/stg 適用済 ✓**
-- Edge Function: 第1弾は CLI で dev/stg デプロイ済。**第2弾の
-  webhook-milesight(C2)/detect-status-alerts(H1) は未デプロイ**
-  （Access Token revoke 済 → 再発行必要。`npx supabase functions deploy
-  <name> --project-ref <dev|stg ref>`、webhook-milesight は
-  `--no-verify-jwt`）
-- フロント（C1 supabaseQueries / 第1弾 DashboardView・PublicReportView）:
-  **main のみ。dev/stg ブランチ未同期 → Vercel dev/stg は旧フロント**
+リファクタ第1弾(f2b927c)＋第2弾(f4db2c1) を dev/stg に行き渡らせ済み:
+- migration 0040（C1 RPC）: dev/stg 適用済
+- Edge Function 第1/2弾: dev/stg デプロイ済・sha 一致確認
+  （webhook-milesight verify_jwt=false 維持）
+- フロント: **採用した同期方針 = 案A「dev/stg を main 追従」**。
+  `git checkout dev && git merge main --no-edit && git push`（stg も同様）
+  で Vercel 自動デプロイ。バンドルに C1 RPC 反映を実機確認済み
+- 以後の運用: main を正とし、配布時に dev/stg へ merge。β顧客が stg を
+  使い出したら本来の dev→stg→main 昇進フローへ移行
 
-根本原因: これまで全コミットを `main` で行ってきたが、3 プロジェクト
-構成は dev/stg ブランチ→各 Vercel。**main→dev/stg ブランチの同期方針
-を決める必要**（毎回 cherry-pick/merge するか、開発を dev ブランチ起点に
-切替えるか）。β-2d 以降の作業フローと一体で決めるべき論点。
-
-再開時の最初の判断:
-A. デプロイ整合を先に取る（Edge Function 再デプロイ + ブランチ同期方針決定）
-B. β-2d に進み、整合はまとめて後で
+> Access Token は使用後 revoke すること（CLI デプロイ都度発行 → 即 revoke）。
 
 ---
 
