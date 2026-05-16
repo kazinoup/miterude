@@ -6,9 +6,34 @@
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
 
-**残タスクは 2 系統。再開時にどちらを先にやるか判断する:**
+**最優先: デプロイ整合（下記）。その後 β-2d へ。**
 
-1. **リファクタ第2弾（パフォーマンス truncation）** — 未対応・実害大
+#### ⚠ デプロイ整合（リファクタ第1弾 f2b927c + 第2弾 f4db2c1）
+
+リファクタは全て `main` にコミット済みだが反映状態が不揃い:
+- migration 0040（C1 の RPC）: **dev/stg 適用済 ✓**
+- Edge Function: 第1弾は CLI で dev/stg デプロイ済。**第2弾の
+  webhook-milesight(C2)/detect-status-alerts(H1) は未デプロイ**
+  （Access Token revoke 済 → 再発行必要。`npx supabase functions deploy
+  <name> --project-ref <dev|stg ref>`、webhook-milesight は
+  `--no-verify-jwt`）
+- フロント（C1 supabaseQueries / 第1弾 DashboardView・PublicReportView）:
+  **main のみ。dev/stg ブランチ未同期 → Vercel dev/stg は旧フロント**
+
+根本原因: これまで全コミットを `main` で行ってきたが、3 プロジェクト
+構成は dev/stg ブランチ→各 Vercel。**main→dev/stg ブランチの同期方針
+を決める必要**（毎回 cherry-pick/merge するか、開発を dev ブランチ起点に
+切替えるか）。β-2d 以降の作業フローと一体で決めるべき論点。
+
+再開時の最初の判断:
+A. デプロイ整合を先に取る（Edge Function 再デプロイ + ブランチ同期方針決定）
+B. β-2d に進み、整合はまとめて後で
+
+---
+
+旧メモ（残タスク 2 系統 — 第2弾は完了済みに繰り上げ）:
+
+1. ~~リファクタ第2弾（パフォーマンス truncation）~~ ✅ 完了 f4db2c1
    - **C1** `src/lib/supabaseQueries.ts:141` `fetchLatestReadings`:
      PostgREST 1000件制限で 100台超のテナントはダッシュボード最新値が恒常欠落。
      対処は `DISTINCT ON (sensor_id)` の RPC（or マテビュー）新設で 1 クエリ化
@@ -309,15 +334,16 @@ app_metadata に注入することを SQL レベルで実証済み。
 
 ### ⚡ パフォーマンス
 
-- [~] **🔴 β必須** `fetchAllPaged` 未適用箇所の発見と修正
+- [x] **🔴 β必須** `fetchAllPaged` 未適用箇所の発見と修正（f4db2c1）
   - 既存対応済: `sensor_readings` / `alert_logs` / `sensor_notes` /
     `dashboard_checkins` / `devices` / `gateways`
-  - **レビューで未対応 3 件を特定（次段で修正・冒頭ブロック参照）**:
-    - C1 `supabaseQueries.ts:141` `fetchLatestReadings`（100台超で
-      ダッシュボード最新値欠落 → `DISTINCT ON` RPC 化）
-    - C2 `webhook-milesight` upsert `.select()` 1000件切れ（取り込み漏れ）
-    - H1 `detect-status-alerts` の devices 全件 truncation（オフライン
-      検知の沈黙故障）+ processSensor N+1
+  - **C1** `fetchLatestReadings` → `get_latest_readings` RPC（DISTINCT ON /
+    SECURITY INVOKER、migration 0040 dev/stg 適用済）
+  - **C2** `webhook-milesight` の upsert+select を 500 件チャンク化
+  - **H1** `detect-status-alerts` の devices を range ページング全件 +
+    sensor_props を device_id チャンク + processSensor を 20 件バッチ並列
+  - ⚠ 未反映: Edge Function(C2/H1) の dev/stg 再デプロイ + フロント(C1)の
+    dev/stg ブランチ同期が残（下記「デプロイ整合」参照）
 - [ ] 🟡 sensor_readings のインデックス見直し（`(sensor_id, measured_at DESC)` の複合 index）
 - [ ] 🟡 古い sensor_readings のアーカイブ戦略（pg_partman でパーティション化、または別テーブルに月次集計）
 - [ ] 🟡 React 不要な再レンダー削減
