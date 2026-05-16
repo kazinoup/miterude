@@ -14,6 +14,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { judgeAndInsertAlert } from '../_shared/alertDetection.ts'
+import { mapModel } from '../_shared/modelMap.ts'
 
 const MANUFACTURER = 'Milesight'
 const TIMESTAMP_TOLERANCE_SEC = 300 // 5 分
@@ -83,25 +84,7 @@ function toNumber(v: unknown): number | null {
 }
 
 // ===== model → device_type / role のマッピング ============================
-// src/lib/supportedDevices.ts と同期させること。
-type DeviceTypeRole = { device_type: 'sensor' | 'gateway'; role: string }
-const MODEL_MAP: Record<string, DeviceTypeRole> = {
-  'EM320-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM320-TH-MAGNET': { device_type: 'sensor', role: 'temperature-humidity' },
-  'AM102':           { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM300-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'UG65':            { device_type: 'gateway', role: 'master' },
-  'UG63':            { device_type: 'gateway', role: 'relay' },
-}
-function mapModel(model: string): DeviceTypeRole | null {
-  if (!model) return null
-  if (MODEL_MAP[model]) return MODEL_MAP[model]
-  const lower = model.toLowerCase()
-  for (const [k, v] of Object.entries(MODEL_MAP)) {
-    if (lower.startsWith(k.toLowerCase() + '-')) return v
-  }
-  return null
-}
+// _shared/modelMap.ts に集約（parse-inbox と共通）。機種追加はそちらを編集。
 
 // ===== Parser ====================================================
 
@@ -399,18 +382,35 @@ Deno.serve(async (req: Request) => {
     }),
   )
 
-  const { data: inserted, error } = await supabase
-    .from('webhook_inbox')
-    .upsert(rows, { onConflict: 'organization_id,idempotency_key', ignoreDuplicates: true })
-    .select('id, organization_id, payload_raw')
-
-  if (error) {
-    console.error('[webhook-milesight] insert failed', error)
-    return jsonResponse({ ok: false, error: 'insert-failed', detail: error.message }, 500)
+  // C2: PostgREST max_rows=1000 で .select() 戻りが切られると、超過分が
+  //     inline parse されず pending 取り残しになる。500 件チャンクで
+  //     upsert+select し結果を集約する（各チャンク < 1000 で切られない）。
+  type InboxRow = {
+    id: string
+    organization_id: string
+    payload_raw: Record<string, unknown>
+  }
+  const newInbox: InboxRow[] = []
+  for (let i = 0; i < rows.length; i += 500) {
+    const chunk = rows.slice(i, i + 500)
+    const { data, error } = await supabase
+      .from('webhook_inbox')
+      .upsert(chunk, {
+        onConflict: 'organization_id,idempotency_key',
+        ignoreDuplicates: true,
+      })
+      .select('id, organization_id, payload_raw')
+    if (error) {
+      console.error('[webhook-milesight] insert failed', error)
+      return jsonResponse(
+        { ok: false, error: 'insert-failed', detail: error.message },
+        500,
+      )
+    }
+    if (data) newInbox.push(...(data as InboxRow[]))
   }
 
-  // inline parse を “fire-and-await” で実行する。失敗しても全体は 200 を返す。
-  const newInbox = inserted ?? []
+  // inline parse を "fire-and-await" で実行する。失敗しても全体は 200 を返す。
   let parsedCount = 0
   await Promise.all(newInbox.map(async (r) => {
     try {

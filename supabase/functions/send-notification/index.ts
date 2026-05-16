@@ -12,6 +12,7 @@
 //  - batch 通知: dispatch-notifications が時間に達したものを順次呼ぶ
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { assertSafeOutboundUrl } from '../_shared/urlGuard.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -124,6 +125,14 @@ async function sendSlack(
       `発生: ${new Date(alert.occurred_at).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`,
   }
 
+  try {
+    assertSafeOutboundUrl(delivery.target, { allowHosts: ['hooks.slack.com'] })
+  } catch (e) {
+    return {
+      ok: false,
+      error: `unsafe-slack-url: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
   const r = await fetch(delivery.target, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -157,6 +166,14 @@ async function sendWebhook(
         sensorNumber: alert.sensor_number,
       },
     },
+  }
+  try {
+    assertSafeOutboundUrl(delivery.target)
+  } catch (e) {
+    return {
+      ok: false,
+      error: `unsafe-webhook-url: ${e instanceof Error ? e.message : String(e)}`,
+    }
   }
   const r = await fetch(delivery.target, {
     method: 'POST',

@@ -25,6 +25,7 @@ type LinkRow = {
   period_start: string // YYYY-MM-DD
   period_end: string
   target_sensor_ids: string[] | null
+  expires_at: string | null
 }
 
 type OrgRow = { id: string; name: string }
@@ -70,13 +71,16 @@ export function PublicReportView({ token }: Props) {
         const { data: linkData, error: linkErr } = await supabase
           .from('report_delivery_links')
           .select(
-            'id, organization_id, schedule_id, report_kind, period_start, period_end, target_sensor_ids',
+            'id, organization_id, schedule_id, report_kind, period_start, period_end, target_sensor_ids, expires_at',
           )
           .eq('token', token)
           .maybeSingle()
         if (linkErr) throw new Error(`link: ${linkErr.message}`)
         if (!linkData) throw new Error('指定されたレポート URL は無効です')
         const l = linkData as LinkRow
+        if (l.expires_at && new Date(l.expires_at).getTime() < Date.now()) {
+          throw new Error('このレポート URL は有効期限が切れています')
+        }
 
         // 2) 並列で 組織 + 対象センサー（メタ + thresholds）を取得
         const orgPromise = supabase

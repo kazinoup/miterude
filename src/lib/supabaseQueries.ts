@@ -129,8 +129,9 @@ export async function fetchSensorDevices(): Promise<SupabaseDeviceRow[]> {
 }
 
 /** sensor_id ごとの「最新計測値」をまとめて取得する。
- *  Supabase は LATERAL JOIN を直接書けないので、ここでは sensor_ids 単位で
- *  最新行を取りに行く（件数が増えたらマテビュー化を検討）。 */
+ *  get_latest_readings RPC（DISTINCT ON）で各センサー最新 1 行のみ返すため
+ *  PostgREST の 1000 件制限に当たらない（旧実装は order+limit で 100 台超の
+ *  テナントは下位センサーの最新値が恒常欠落していた — C1）。 */
 export type LatestReading = {
   sensor_id: string
   measured_at: string
@@ -142,20 +143,14 @@ export async function fetchLatestReadings(
   sensorIds: string[],
 ): Promise<Map<string, LatestReading>> {
   if (sensorIds.length === 0) return new Map()
-  const { data, error } = await supabase
-    .from('sensor_readings')
-    .select('sensor_id, measured_at, temperature, humidity')
-    .eq('organization_id', getActiveOrgId())
-    .in('sensor_id', sensorIds)
-    .order('measured_at', { ascending: false })
-    .limit(sensorIds.length * 10)
-
+  const { data, error } = await supabase.rpc('get_latest_readings', {
+    p_org_id: getActiveOrgId(),
+    p_sensor_ids: sensorIds,
+  })
   if (error) throw error
   const map = new Map<string, LatestReading>()
-  for (const row of data ?? []) {
-    if (!map.has(row.sensor_id)) {
-      map.set(row.sensor_id, row as LatestReading)
-    }
+  for (const row of (data ?? []) as LatestReading[]) {
+    map.set(row.sensor_id, row)
   }
   return map
 }

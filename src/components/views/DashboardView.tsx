@@ -224,10 +224,17 @@ export function DashboardView({
   /** 公開 URL を発行する（既に発行済みなら再発行はせず既存トークンを使う） */
   function issueShareToken(dashboardId: string, current?: string): string {
     if (current) return current
-    const token =
-      typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID().replace(/-/g, '').slice(0, 24)
-        : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    const token = (() => {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID().replace(/-/g, '').slice(0, 24)
+      }
+      // CSPRNG フォールバック（Math.random は予測可能なので使わない）
+      const bytes = new Uint8Array(16)
+      crypto.getRandomValues(bytes)
+      return Array.from(bytes, (b) => b.toString(16).padStart(2, '0'))
+        .join('')
+        .slice(0, 24)
+    })()
     onSetDashboardShareToken(dashboardId, token)
     return token
   }

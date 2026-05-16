@@ -37,3 +37,7 @@ csv_files/
 
 # Vercel
 .vercel
+
+# supabase CLI 一時ファイル / MCP 設定
+.mcp.json
+supabase/.temp/

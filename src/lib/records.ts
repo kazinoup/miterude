@@ -21,11 +21,9 @@ import type {
   Widget,
 } from '../types'
 import {
-  cellIsDeviation,
   extractDeviationSegments,
   type DeviationSegment,
 } from './report'
-import { ensureDate } from './mock'
 import { formatSensorLabel } from './sensorLabel'
 
 /** Supabase の uuid カラムと整合させるため UUID で採番。 */
@@ -49,17 +47,6 @@ export function collectDashboardSensorIds(dashboard: Dashboard): string[] {
     }
   }
   return Array.from(set).sort()
-}
-
-/* ---------- 直近期間の逸脱検出 ---------- */
-
-export type RecentDeviationItem = {
-  sensorId: string
-  sensorName: string
-  deviationKinds: ('temperature' | 'humidity')[]
-  detectedTemp?: number
-  detectedHum?: number
-  online: boolean
 }
 
 /** 指定期間内のセンサーごとの逸脱セグメント集合 */
@@ -139,60 +126,6 @@ export function detectDeviationsForRange(
     return a.sensorName.localeCompare(b.sensorName)
   })
   return out
-}
-
-/** 指定センサー群について、直近 lookbackHours 以内の逸脱（温度／湿度）を抽出 */
-export function detectRecentDeviations(
-  sensorIds: string[],
-  devices: DeviceStore,
-  sensors: SensorStore,
-  lookbackHours: number,
-  now: Date = new Date(),
-): RecentDeviationItem[] {
-  const cutoff = now.getTime() - lookbackHours * 60 * 60 * 1000
-  const items: RecentDeviationItem[] = []
-
-  for (const id of sensorIds) {
-    const sensor = sensors[id]
-    if (!sensor) continue
-    const readings = devices[id] ?? []
-    if (readings.length === 0) continue
-
-    let tDev = false
-    let hDev = false
-    let lastTempVal: number | undefined
-    let lastHumVal: number | undefined
-
-    for (const r of readings) {
-      const t = ensureDate(r.measuredAt).getTime()
-      if (t < cutoff) continue
-      if (cellIsDeviation(r.temperature, 'temperature', sensor.thresholds)) {
-        tDev = true
-        lastTempVal = r.temperature
-      }
-      if (cellIsDeviation(r.humidity, 'humidity', sensor.thresholds)) {
-        hDev = true
-        lastHumVal = r.humidity
-      }
-    }
-
-    if (!tDev && !hDev) continue
-
-    const kinds: ('temperature' | 'humidity')[] = []
-    if (tDev) kinds.push('temperature')
-    if (hDev) kinds.push('humidity')
-
-    items.push({
-      sensorId: id,
-      sensorName: formatSensorLabel(sensor),
-      deviationKinds: kinds,
-      detectedTemp: lastTempVal,
-      detectedHum: lastHumVal,
-      online: sensor.online,
-    })
-  }
-
-  return items
 }
 
 /* ---------- チェックインの作成 ---------- */

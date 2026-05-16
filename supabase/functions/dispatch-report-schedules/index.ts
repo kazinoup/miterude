@@ -12,6 +12,7 @@
 //   4. last_dispatched_period_key / last_dispatched_at を更新
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+import { assertSafeOutboundUrl } from '../_shared/urlGuard.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -204,6 +205,14 @@ async function sendReportSlack(
     `*[${orgName}] ${kindLabel}（${period.start} 〜 ${period.end}）*\n` +
     `レポート: ${url}\n` +
     'ブラウザで開いた後、印刷 → PDF として保存で PDF 化できます。'
+  try {
+    assertSafeOutboundUrl(target, { allowHosts: ['hooks.slack.com'] })
+  } catch (e) {
+    return {
+      ok: false,
+      error: `unsafe-slack-url: ${e instanceof Error ? e.message : String(e)}`,
+    }
+  }
   const r = await fetch(target, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -230,6 +239,14 @@ async function sendReportWebhook(
     period: { start: period.start, end: period.end },
     url,
     timestamp: new Date().toISOString(),
+  }
+  try {
+    assertSafeOutboundUrl(target)
+  } catch (e) {
+    return {
+      ok: false,
+      error: `unsafe-webhook-url: ${e instanceof Error ? e.message : String(e)}`,
+    }
   }
   const r = await fetch(target, {
     method: 'POST',
@@ -345,6 +362,10 @@ async function processSchedule(
       period_start: period.start,
       period_end: period.end,
       target_sensor_ids: s.target_sensor_ids ?? [],
+      // 恒久露出対策: 公開リンクは発行から 90 日で失効（閲覧側でも検証）
+      expires_at: new Date(
+        Date.now() + 90 * 24 * 60 * 60 * 1000,
+      ).toISOString(),
     })
     .select('id, token')
     .single()

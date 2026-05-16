@@ -234,27 +234,6 @@ export function saveColumnVisibility(v: SensorColumnVisibility): void {
   }
 }
 
-/* ---------- Phase B: ワイド表示モード ---------- */
-
-const WIDE_KEY = 'miterude:sensors:wide:v1'
-
-export function loadWideMode(): boolean {
-  try {
-    const raw = localStorage.getItem(WIDE_KEY)
-    return raw === '1' || raw === 'true'
-  } catch {
-    return false
-  }
-}
-
-export function saveWideMode(v: boolean): void {
-  try {
-    localStorage.setItem(WIDE_KEY, v ? '1' : '0')
-  } catch {
-    /* noop */
-  }
-}
-
 /* ---------- Phase 9.13: 列の並び順 ---------- */
 
 const ORDER_KEY = 'miterude:sensors:columnOrder:v3'

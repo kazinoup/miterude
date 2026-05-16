@@ -8,6 +8,7 @@
 import 'jsr:@supabase/functions-js/edge-runtime.d.ts'
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 import { judgeAndInsertAlert } from '../_shared/alertDetection.ts'
+import { mapModel } from '../_shared/modelMap.ts'
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
@@ -15,25 +16,7 @@ const supabase = createClient(
 )
 
 // ----- model → device_type / role の対応 -----
-type DeviceTypeRole = { device_type: 'sensor' | 'gateway'; role: string }
-const MODEL_MAP: Record<string, DeviceTypeRole> = {
-  'EM320-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM320-TH-MAGNET': { device_type: 'sensor', role: 'temperature-humidity' },
-  'AM102':           { device_type: 'sensor', role: 'temperature-humidity' },
-  'EM300-TH':        { device_type: 'sensor', role: 'temperature-humidity' },
-  'UG65':            { device_type: 'gateway', role: 'master' },
-  'UG63':            { device_type: 'gateway', role: 'relay' },
-}
-
-function mapModel(model: string): DeviceTypeRole | null {
-  if (!model) return null
-  if (MODEL_MAP[model]) return MODEL_MAP[model]
-  const lower = model.toLowerCase()
-  for (const [k, v] of Object.entries(MODEL_MAP)) {
-    if (lower.startsWith(k.toLowerCase() + '-')) return v
-  }
-  return null
-}
+// _shared/modelMap.ts に集約（webhook-milesight と共通）。機種追加はそちらを編集。
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
