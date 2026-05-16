@@ -1,9 +1,17 @@
 # ミテルデ — データベース設計ドキュメント
 
-> Supabase（Postgres）への移行を前提とした、ミテルデ全体のスキーマ設計をまとめたもの。
-> モック開発が完了したら本ドキュメントを基にマイグレーション SQL を起こす。
+> Supabase（Postgres）への移行は**完了済み**。本書は **実 DB スキーマ（stg
+> `bejgwwhxntnxzwehsryx` で検証した最終形）** を真値とし、β-2 確定設計と
+> 今後の開発計画を反映したリファレンス。新規 migration を起こす際の基準。
 
-最終更新: 2026-05-08
+最終更新: 2026-05-16  
+対象: migration 0001〜0040 適用済み + β-2a/b/c（auth 統合の土台）
+
+> ⚠ 注意:
+> - **真値は実 DB**。乖離を見つけたら `mcp list_tables` で確認し本書を直す。
+> - `0028`（manual_*）はローカルにファイルがあるが **dev/stg 未適用の欠番**。
+>   オンラインマニュアルは未実装（将来対応、§10 参照）。
+> - 認証は当初 Clerk 想定だったが **Supabase Auth 採用に確定**（β-2、§2）。
 
 ---
 
@@ -11,351 +19,168 @@
 
 | 原則 | 内容 |
 |---|---|
-| マルチテナント | ほぼすべての業務テーブルに `organization_id` を持たせ、Supabase の RLS で組織ごとに完全分離 |
-| 認証 | Clerk と統合する想定で `users` を Clerk-mirrored にし、`organization_members` で多対多リレーション |
-| 生データ保持 | Webhook 受信は `webhook_inbox` に raw 状態で残し、加工して `sensor_readings` 等のドメイン層へ流す |
-| JSONB 活用 | 閾値・アラート設定・期間設定など可変な構造は JSONB で持つ |
-| スナップショット | 削除可能な参照は `*_snapshot` 列で名前を保管し、履歴の可読性を維持 |
-| 時系列 | `sensor_readings` は `bigint identity` で大量レコード対応。将来 partitioning 候補 |
+| マルチテナント | ほぼ全業務テーブルに `organization_id`。RLS で組織分離（現状は暫定、β-1 で JWT claim ベースに厳格化） |
+| 認証 | **Supabase Auth**（email+password）。`users.auth_user_id` で `auth.users` と紐付け。Custom Access Token Hook が JWT に `app_role`/`org_id`/`impersonating_org_id`/`app_user_id` を注入 |
+| 生データ保持 | Webhook 受信は `webhook_inbox` に raw 保管 → 加工して `sensor_readings` 等へ |
+| JSONB 内包 | 当初テーブル分割予定だったものを実装では JSONB に内包: `dashboards.widgets` / `dashboard_checkins.sensor_comments` / `notification_groups.channels` / `*.alert_settings` / `*.thresholds` / `*.approval` |
+| スナップショット | 削除可能な参照は `*_snapshot` 列で名称保持 |
+| 時系列 | `sensor_readings` は `bigint identity`。将来 partition 候補 |
+| 論理削除 | `organizations` は `deactivated_at` + `physical_delete_after`（180日猶予）方式 |
 
 ### 命名規則
-
-- スネークケース（snake_case）で全テーブル・カラム
-- タイムスタンプ: `created_at`, `updated_at` (default `now()`)
-- 必要なら `deleted_at timestamptz` で論理削除
-- PK: `id uuid` with `gen_random_uuid()`（時系列のみ `bigint identity`）
-- FK: `<table>_id`（例: `sensor_id`, `organization_id`）
+- snake_case。PK `id uuid default gen_random_uuid()`（時系列のみ `bigint identity`）
+- タイムスタンプ: `created_at` / `updated_at` default `now()`
+- FK: `<table>_id`
 
 ---
 
-## 2. 認証・ロール体系
+## 2. 認証・ロール体系（Supabase Auth — β-2 確定）
 
-### 2.1 ロールの 4 階層
+### 2.1 構成
 
 ```
-■ users.system_role                       — システム横断
-   ├ 'super_admin'  全テナントアクセス、/admin の全機能
-   ├ 'support'      割り当てテナントのみ（impersonation 必須）
-   └ null           顧客ユーザー
+auth.users (Supabase Auth)
+   └─ users.auth_user_id で 1:1 紐付け（users.id は不変、FK カスケード回避）
 
-■ organization_members.role               — テナント内
-   ├ 'editor'              全機能（既存）
+users.system_role                    — システム横断
+   ├ 'super_admin'  全テナント、/admin 全機能
+   ├ 'support'      割当テナントのみ（impersonation 必須）
+   └ null           顧客ユーザー
+users.staff_category                 — スタッフ細分（'system_admin'|'support'|'sales'）
+users.active_organization_id         — 顧客の現アクティブテナント（複数所属時の切替対象）
+
+organization_members.role            — テナント内
+   ├ 'editor'              全機能
    └ 'dashboard_confirmer' ダッシュボード閲覧 + 確認記録のみ
 ```
 
-| ロール | できること | 制限 |
-|---|---|---|
-| `super_admin` | 全テナント常時アクセス、/admin 全機能、テナント作成、スタッフ追加 | impersonation で顧客 UI を見るときは監査ログ必須 |
-| `support` | 割り当て済みテナントのみ、impersonation で入室 | 監査ログ必須、有効期限あり |
-| `editor` | テナント内の全機能 | 自テナントのみ |
-| `dashboard_confirmer` | ダッシュボード閲覧 + 確認記録（Checkin） | センサー詳細・設定・メンバー管理は不可 |
+### 2.2 Custom Access Token Hook（`public.custom_access_token_hook`、0039）
 
-### 2.2 公開URL（補助的なアクセス手段）
+ログイン/リフレッシュ時に JWT の `app_metadata` へ注入（`SECURITY DEFINER`、
+`impersonation_sessions` の RLS をバイパスして読む）:
 
-- ログインなしで読み取り専用閲覧が可能
-- 確認記録は残せない（残したい場合は `dashboard_confirmer` ロールを発行）
-- パスワード保護・有効期限を設定可能
-- 各アクセスはオプションで `dashboard_share_views` に記録
+| claim | 内容 |
+|---|---|
+| `app_user_id` | 内部 `users.id` |
+| `app_role` | super_admin / support / editor / dashboard_confirmer / guest |
+| `org_id` | 顧客の `active_organization_id`（無ければ所属先頭） |
+| `impersonating_org_id` | 有効な `impersonation_sessions` があれば target org |
+
+### 2.3 impersonation（A 方式 = custom claim）
+
+`impersonation_sessions` に行を作り `refreshSession()` で JWT を再発行 →
+`impersonating_org_id` claim が乗る。終了は `ended_at` をセットして再発行。
+監査は `staff_audit_logs`。期限は `expires_at`（Hook が `ended_at is null
+and expires_at > now()` で有効判定）。
+
+### 2.4 マルチテナント切替（B1 方式）
+
+`users.active_organization_id` を更新 → `refreshSession()` で `org_id`
+claim を差し替える。
+
+### 2.5 公開URL
+
+- レポート: `report_delivery_links.token`（UUID、`expires_at` 90日失効、
+  `share-report` 相当の閲覧ビューが期限検証）
+- ダッシュボード: `dashboards.public_share_token` + `share-dashboard`
+  Edge Function（service_role でホワイトリスト返却）
+
+> mock 認証（`mock-login` Edge Function + `users.password_hash` SHA-256）は
+> β-2 完了時に撤去予定。現状 dev は mock 温存（退避路）。
 
 ---
 
-## 3. ER 図（図解）
+## 3. ER 図
 
-> Mermaid 形式で記述してあるので、GitHub の Markdown ビューや VS Code の Mermaid プレビューで自動レンダリングされる。
-> カーディナリティ記号: `||` 必須 1、`o|` 任意 1（0 or 1）、`}o`/`}{` 0+/1+ 多。
-
-### 3.1 全体像（主要テーブルだけ）
+### 3.1 全体（主要）
 
 ```mermaid
 erDiagram
+  AUTH_USERS ||--o| USERS : "auth_user_id 1:1"
   ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has members"
   ORGANIZATIONS ||--o{ DEVICES : "owns"
   ORGANIZATIONS ||--o{ DASHBOARDS : "owns"
   ORGANIZATIONS ||--o{ NOTIFICATION_GROUPS : "owns"
-  ORGANIZATIONS ||--o{ THRESHOLD_TEMPLATES : "owns"
-  ORGANIZATIONS ||--o{ INVOICES : "billed for"
-
+  ORGANIZATIONS ||--o{ REPORT_SCHEDULES : "owns"
+  ORGANIZATIONS ||--o{ IMPERSONATION_SESSIONS : "target of"
   USERS ||--o{ ORGANIZATION_MEMBERS : "belongs to"
-  USERS ||--o{ STAFF_ASSIGNMENTS : "assigned (staff role)"
-
+  USERS ||--o{ STAFF_ASSIGNMENTS : "assigned (staff)"
+  USERS ||--o{ IMPERSONATION_SESSIONS : "acts as staff"
+  USERS ||--o| ORGANIZATIONS : "active_organization_id"
   DEVICES ||--o| SENSOR_PROPS  : "1:1 if sensor"
   DEVICES ||--o| GATEWAY_PROPS : "1:1 if gateway"
-  DEVICES ||--o{ DEVICES        : "sensor.gatewayId → gateway"
   DEVICES ||--o{ SENSOR_READINGS : "produces"
-  DEVICES ||--o{ SENSOR_NOTES    : "annotated by"
-  DEVICES ||--o{ ALERT_LOGS      : "triggers"
-
-  SENSOR_CATEGORIES ||--o{ DEVICES : "categorized as"
-  SENSOR_GROUPS     ||--o{ DEVICES : "located in"
-  NOTIFICATION_GROUPS ||--o{ DEVICES : "notified through"
-
-  DASHBOARDS ||--o{ WIDGETS : "contains"
+  DEVICES ||--o{ GATEWAY_STATUS_EVENTS : "emits"
+  DEVICES ||--o{ SENSOR_NOTES : "annotated by"
+  DEVICES ||--o{ ALERT_LOGS : "triggers (target_id)"
+  SENSOR_CATEGORIES ||--o{ DEVICES : "categorized"
+  SENSOR_GROUPS ||--o{ DEVICES : "located"
+  NOTIFICATION_GROUPS ||--o{ DEVICES : "notified via"
+  ALERT_LOGS ||--o{ NOTIFICATION_DELIVERIES : "dispatched as"
+  REPORT_SCHEDULES ||--o{ REPORT_DELIVERY_LINKS : "issues"
   DASHBOARDS ||--o{ DASHBOARD_CHECKINS : "checked"
-  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : "per-sensor"
-  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SEGMENT_COMMENTS : "per-segment"
+  WEBHOOK_INBOX ||--o{ SENSOR_READINGS : "source"
 ```
 
-### 3.2 Devices ドメイン（Phase F-4 統合後の中核）
+> `dashboards.widgets` / `dashboard_checkins.sensor_comments` /
+> `notification_groups.channels` は **JSONB 内包**（独立テーブルなし）。
+
+### 3.2 認証ドメイン
 
 ```mermaid
 erDiagram
-  DEVICES {
-    uuid id PK
-    uuid organization_id FK
-    string device_type "sensor | gateway"
-    string role "temperature-humidity | master | …"
-    string manufacturer
-    string model
-    string external_key "Webhook 照合キー"
-    string serial_number
-    string dev_eui "nullable"
-    string name "ユーザ表示名"
-    string device_number "運用ラベル"
-    uuid category_id FK "nullable"
-    uuid group_id FK "nullable"
-    text_array tags
-    uuid notification_group_id FK "nullable"
-    bool online
-    timestamp last_seen_at
-    timestamp registered_at
-  }
-
-  SENSOR_PROPS {
-    uuid device_id PK,FK
-    uuid gateway_id FK "→ devices.id (parent gateway)"
-    jsonb thresholds
-    int battery
-    jsonb alert_settings "deviation+offline+battery"
-    jsonb exclusion_windows
-    jsonb exclusion_dates
-  }
-
-  GATEWAY_PROPS {
-    uuid device_id PK,FK
-    jsonb alert_settings "offline only"
-    jsonb exclusion_windows
-    jsonb exclusion_dates
-  }
-
-  SENSOR_CATEGORIES {
-    uuid id PK
-    uuid organization_id FK
-    string name "冷凍 / 冷蔵 / 室温 等"
-    string icon
-  }
-
-  SENSOR_GROUPS {
-    uuid id PK
-    uuid organization_id FK
-    string name "1F / 厨房 等"
-  }
-
-  NOTIFICATION_GROUPS {
-    uuid id PK
-    uuid organization_id FK
-    string name
-    string timing "instant | batch-1h | batch-1d"
-  }
-
-  DEVICES ||--o| SENSOR_PROPS  : "1:1 if device_type=sensor"
-  DEVICES ||--o| GATEWAY_PROPS : "1:1 if device_type=gateway"
-  DEVICES ||--o{ DEVICES       : "sensor → parent gateway"
-  SENSOR_CATEGORIES   ||--o{ DEVICES : ""
-  SENSOR_GROUPS       ||--o{ DEVICES : ""
-  NOTIFICATION_GROUPS ||--o{ DEVICES : ""
-```
-
-**ポイント**:
-- `devices` 1 テーブルに sensor も gateway も並ぶ（`device_type` で区別）
-- `sensor_props` / `gateway_props` は `devices` への 1:1 拡張テーブル（マップキー = device_id）
-- センサーから親機への参照 `sensor_props.gateway_id` も `devices.id` を指す（自己参照）
-- Webhook 照合は `(organization_id, manufacturer, external_key)` の複合一意キー
-
-### 3.3 認証・ロール ドメイン
-
-```mermaid
-erDiagram
+  AUTH_USERS { uuid id PK "Supabase Auth" }
   USERS {
     uuid id PK
-    string email
-    string display_name
-    string system_role "super_admin | tenant_user"
-    string staff_category "support | sales | …"
+    uuid auth_user_id FK "→ auth.users (unique, nullable)"
+    text email
+    text display_name
+    text system_role "super_admin | support | null"
+    text staff_category "system_admin | support | sales"
+    text password_hash "mock。撤去予定"
+    uuid active_organization_id FK "→ organizations"
   }
-
-  ORGANIZATIONS {
+  IMPERSONATION_SESSIONS {
     uuid id PK
-    string name
-    string contract_type
-    string plan
-    timestamp contract_started_at
-    timestamp contract_expires_at
+    uuid staff_user_id FK "→ users"
+    uuid target_organization_id FK "→ organizations"
+    text reason
+    timestamptz started_at
+    timestamptz expires_at
+    timestamptz ended_at "null = 有効"
   }
-
   ORGANIZATION_MEMBERS {
     uuid id PK
     uuid organization_id FK
     uuid user_id FK
-    string role "editor | dashboard_confirmer"
+    text role "editor | dashboard_confirmer"
   }
-
-  MEMBER_INVITATIONS {
-    uuid id PK
-    uuid organization_id FK
-    string email
-    string role
-    timestamp expires_at
-  }
-
   STAFF_ASSIGNMENTS {
     uuid id PK
-    uuid user_id FK "staff (system_role=super_admin)"
-    uuid organization_id FK "担当テナント"
+    uuid staff_user_id FK
+    uuid organization_id FK
+    timestamptz expires_at
+    timestamptz revoked_at
   }
-
   STAFF_AUDIT_LOGS {
     uuid id PK
     uuid staff_user_id FK
     uuid organization_id FK
-    string action
-    string target_table
-    string target_id
-    timestamp at
+    text action
+    jsonb metadata
+    timestamptz occurred_at
   }
-
-  ORGANIZATIONS ||--o{ ORGANIZATION_MEMBERS : "has"
-  ORGANIZATIONS ||--o{ MEMBER_INVITATIONS  : "issues"
-  ORGANIZATIONS ||--o{ STAFF_ASSIGNMENTS   : "is assigned"
-  ORGANIZATIONS ||--o{ STAFF_AUDIT_LOGS    : "logged on"
-  USERS ||--o{ ORGANIZATION_MEMBERS : "as member"
-  USERS ||--o{ STAFF_ASSIGNMENTS    : "as staff"
-  USERS ||--o{ STAFF_AUDIT_LOGS     : "performed"
+  AUTH_USERS ||--o| USERS : ""
+  USERS ||--o{ ORGANIZATION_MEMBERS : ""
+  USERS ||--o{ STAFF_ASSIGNMENTS : ""
+  USERS ||--o{ IMPERSONATION_SESSIONS : ""
 ```
-
-### 3.4 運用・ログ ドメイン（Dashboards / Alerts / Readings）
-
-```mermaid
-erDiagram
-  DEVICES {
-    uuid id PK
-  }
-
-  SENSOR_READINGS {
-    bigint id PK
-    uuid organization_id FK
-    uuid sensor_id FK "→ devices.id"
-    timestamp measured_at
-    numeric temperature
-    numeric humidity
-    int battery
-  }
-
-  GATEWAY_STATUS_EVENTS {
-    uuid id PK
-    uuid organization_id FK
-    uuid gateway_id FK "→ devices.id"
-    string status "online | offline"
-    timestamp occurred_at
-  }
-
-  ALERT_LOGS {
-    uuid id PK
-    uuid organization_id FK
-    string target_kind "sensor | gateway"
-    uuid sensor_id FK "→ devices.id"
-    uuid gateway_id FK "→ devices.id"
-    string kind "deviation-alert | deviation-warn | offline | battery"
-    string message
-    text confirm_comment
-    timestamp occurred_at
-  }
-
-  SENSOR_NOTES {
-    uuid id PK
-    uuid organization_id FK
-    uuid sensor_id FK "→ devices.id"
-    string category "install | move | calibration | …"
-    text body
-    timestamp created_at
-  }
-
-  DASHBOARDS {
-    uuid id PK
-    uuid organization_id FK
-    string name
-    jsonb default_period
-  }
-
-  WIDGETS {
-    uuid id PK
-    uuid dashboard_id FK
-    string type "tiles | chart | map | …"
-    jsonb config
-    int order_index
-  }
-
-  DASHBOARD_CHECKINS {
-    uuid id PK
-    uuid dashboard_id FK
-    uuid author_id FK
-    timestamp at
-    text comment
-    jsonb approval
-  }
-
-  DASHBOARD_CHECKIN_SENSOR_COMMENTS {
-    uuid id PK
-    uuid checkin_id FK
-    uuid sensor_id FK "→ devices.id"
-    text comment
-  }
-
-  DASHBOARD_CHECKIN_SEGMENT_COMMENTS {
-    uuid id PK
-    uuid checkin_id FK
-    text segment_label
-    text comment
-  }
-
-  DEVICES ||--o{ SENSOR_READINGS : "produces (sensor)"
-  DEVICES ||--o{ GATEWAY_STATUS_EVENTS : "emits (gateway)"
-  DEVICES ||--o{ ALERT_LOGS      : "triggers"
-  DEVICES ||--o{ SENSOR_NOTES    : "annotated by"
-  DEVICES ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : "referenced in"
-  DASHBOARDS ||--o{ WIDGETS : "contains"
-  DASHBOARDS ||--o{ DASHBOARD_CHECKINS : "checked"
-  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SENSOR_COMMENTS : ""
-  DASHBOARD_CHECKINS ||--o{ DASHBOARD_CHECKIN_SEGMENT_COMMENTS : ""
-```
-
-### 3.5 Webhook 受信ドメイン（生データの一時保管）
-
-```mermaid
-erDiagram
-  WEBHOOK_INBOX {
-    uuid id PK
-    uuid organization_id FK "nullable (照合前)"
-    string manufacturer
-    jsonb payload
-    string parse_status "pending | matched | unmatched | error"
-    uuid matched_device_id FK "nullable → devices.id"
-    timestamp received_at
-    timestamp processed_at
-  }
-
-  DEVICES ||--o{ WEBHOOK_INBOX : "matched_device_id"
-  ORGANIZATIONS ||--o{ WEBHOOK_INBOX : ""
-```
-
-**Webhook 受信フロー**:
-1. メーカーから POST 受信 → `webhook_inbox` に生 payload を保存（status=pending）
-2. ワーカが `(manufacturer, external_key)` で `devices` を引き、ヒットすれば status=matched + matched_device_id を埋める
-3. matched なら `device_type` に応じて `sensor_props` / `gateway_props` を更新、`sensor_readings` / `gateway_status_events` に時系列を追記
-4. 未マッチは status=unmatched で残し、admin 画面で手動マッピング可能にする
 
 ---
 
-## 4. テーブル一覧（ドメイン別）
+## 4. テーブル定義（ドメイン別・実 DDL）
+
+> 実 DB の最終形。`create table` は要点を抜粋（default/check は実値）。
 
 ### 4.1 Tenancy & Auth
 
@@ -366,6 +191,20 @@ create table organizations (
   name text not null,
   slug text unique not null,
   plan text default 'demo',
+  -- 契約メタ（Admin Console 用、0025）
+  billing_cycle text check (billing_cycle in ('monthly','annual')),
+  contract_started_at timestamptz,
+  contract_expires_at timestamptz,
+  payment_method text check (payment_method in ('bank_transfer','credit_card')),
+  billing_email text,
+  auto_invoice boolean,
+  contract_type text check (contract_type in ('demo','subscription','purchase','typeless')),
+  tsukurude_ai_enabled boolean,
+  -- 論理削除（0027）
+  deactivated_at timestamptz,
+  deactivated_by_user_id uuid references users on delete set null,
+  deactivation_reason text,
+  physical_delete_after timestamptz,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -375,11 +214,14 @@ create table organizations (
 ```sql
 create table users (
   id uuid primary key default gen_random_uuid(),
-  clerk_user_id text unique,                -- Clerk 統合時に紐付け（モック期は null）
-  email text unique not null,
-  display_name text,
-  system_role text check (system_role in ('super_admin','support')),
-  -- null = 顧客ユーザー
+  clerk_user_id text unique,                 -- 旧 Clerk 想定。未使用
+  email text not null unique,
+  display_name text not null,
+  system_role text check (system_role in ('super_admin','support')),  -- null=顧客
+  staff_category text check (staff_category in ('system_admin','support','sales')),
+  password_hash text,                        -- mock 認証(SHA-256)。撤去予定
+  auth_user_id uuid unique references auth.users(id) on delete set null,  -- β-2
+  active_organization_id uuid references organizations on delete set null, -- β-2
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -392,216 +234,183 @@ create table organization_members (
   organization_id uuid not null references organizations on delete cascade,
   user_id uuid not null references users on delete cascade,
   role text not null check (role in ('editor','dashboard_confirmer')),
-  invited_at timestamptz default now(),
-  joined_at timestamptz,
+  invited_at timestamptz not null default now(),
+  first_login_at timestamptz,
+  last_login_at timestamptz,
   unique (organization_id, user_id)
 );
 ```
 
-#### `member_invitations`
-```sql
-create table member_invitations (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations on delete cascade,
-  email text not null,
-  role text not null check (role in ('editor','dashboard_confirmer')) default 'editor',
-  invited_by_user_id uuid references users,
-  token text unique not null,
-  expires_at timestamptz not null,
-  accepted_at timestamptz,
-  accepted_by_user_id uuid references users,
-  created_at timestamptz default now()
-);
-create index on member_invitations (organization_id);
-create index on member_invitations (email);
-```
-
 #### `staff_assignments`
-サポートスタッフが特定テナントへアクセスできる権限の割り当て。スーパーアドミンには不要。
-
 ```sql
 create table staff_assignments (
   id uuid primary key default gen_random_uuid(),
   staff_user_id uuid not null references users on delete cascade,
   organization_id uuid not null references organizations on delete cascade,
-  granted_by_user_id uuid references users,
-  granted_at timestamptz default now(),
+  granted_by_user_id uuid references users on delete set null,
+  granted_at timestamptz not null default now(),
   expires_at timestamptz,
   revoked_at timestamptz,
-  notes text,
-  created_at timestamptz default now(),
-  unique (staff_user_id, organization_id)
+  notes text
 );
-create index on staff_assignments (staff_user_id) where revoked_at is null;
-create index on staff_assignments (organization_id) where revoked_at is null;
 ```
 
 #### `staff_audit_logs`
 ```sql
 create table staff_audit_logs (
   id uuid primary key default gen_random_uuid(),
-  staff_user_id uuid not null references users,
-  organization_id uuid references organizations,
-  action text not null,                    -- 'enter-tenant'/'view'/'edit'/'create-org'/'add-staff' など
+  staff_user_id uuid references users on delete set null,
+  organization_id uuid references organizations on delete set null,
+  action text not null,                      -- 'impersonation_started'/'_ended' 等
   target_table text,
-  target_id uuid,
-  ip_address inet,
-  user_agent text,
+  target_id text,
   metadata jsonb default '{}',
-  occurred_at timestamptz default now()
+  occurred_at timestamptz not null default now()
 );
-create index on staff_audit_logs (staff_user_id, occurred_at desc);
-create index on staff_audit_logs (organization_id, occurred_at desc);
-create index on staff_audit_logs (action, occurred_at desc);
 ```
+> localStorage には保持しない（容量保全）。Supabase 専用 + AdminAuditView が
+> `fetchAuditLogsList` で都度取得。
 
-#### `manual_categories` / `manual_pages`
-オンラインマニュアル（全テナント共通）。super_admin のみ編集可、テナントユーザーは閲覧のみ。
-
+#### `impersonation_sessions`（β-2、A 方式）
 ```sql
-create table manual_categories (
+create table impersonation_sessions (
   id uuid primary key default gen_random_uuid(),
-  name text not null,
-  sort_order integer not null default 0,
-  updated_at timestamptz default now()
+  staff_user_id uuid not null references users on delete cascade,
+  target_organization_id uuid not null references organizations on delete cascade,
+  reason text not null,
+  started_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  ended_at timestamptz,                      -- null = 有効
+  created_at timestamptz default now()
 );
-
-create table manual_pages (
-  id uuid primary key default gen_random_uuid(),
-  category_id uuid not null references manual_categories on delete cascade,
-  title text not null,
-  sort_order integer not null default 0,
-  content jsonb,                 -- BlockNote の Block[] を JSON で保持
-  updated_by_user_id uuid references users,
-  updated_at timestamptz default now()
-);
-create index on manual_pages (category_id, sort_order);
+-- RLS 有効・ポリシー無し（anon/authenticated 不可、service_role/Hook のみ）
 ```
 
----
+### 4.2 Settings（テナント単位マスタ）
 
-### 4.2 Settings（テナント単位のマスタ）
+#### `manufacturer_integrations`
+```sql
+create table manufacturer_integrations (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  manufacturer text not null,
+  enabled boolean default false,
+  webhook_secret text,
+  webhook_uuid text,
+  sensor_kinds text[] default '{}',
+  config jsonb default '{}',
+  unique (organization_id, manufacturer)
+);
+```
 
-| テーブル | 役割 | 主要カラム |
-|---|---|---|
-| `manufacturer_integrations` | Milesight / IoT Mobile 連携 | `manufacturer`, `enabled`, `webhook_secret`, `sensor_kinds[]`, `config jsonb` |
-| `notification_groups` | 通知グループ | `name`, `timing`（即時/1h/6h/12h/24h まとめ） |
-| `notification_channels` | グループ配下の宛先 | `notification_group_id` FK, `kind`(email/slack/webhook), `target` |
-| `threshold_templates` | 閾値テンプレ | `name`, `description`, `thresholds jsonb` |
-| `sensor_categories` | 区分マスタ | `name`, `icon`, `color` |
-| `sensor_groups` | グループマスタ | `name` |
-| `saved_filters` | 保存フィルタ | `user_id`(個人 or 共有), `conditions jsonb` |
-| `report_schedules` | レポート定期配信 | `report_kind`(週/月), `target_sensor_ids uuid[]`, `notification_group_id`, `delivery_time`, `weekly_day_of_week`, `monthly_day_of_month` |
-| `dashboard_reminders` | 確認リマインド | `dashboard_id`(null=全部), `frequency`, `deadline_time`, `weekly_day_of_week`, `notification_group_id` |
+#### `notification_groups`（channels は JSONB 内包）
+```sql
+create table notification_groups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  name text not null,
+  timing text not null default 'immediate'
+    check (timing in ('immediate','batch-1h','batch-6h','batch-12h','batch-24h')),
+  enabled boolean default true,
+  description text,
+  channels jsonb default '[]',  -- [{kind:'email'|'slack'|'webhook', target, label?}]
+  unique (organization_id, name)
+);
+```
 
-すべて `organization_id` を持つ。
+#### `sensor_categories` / `sensor_groups`
+```sql
+create table sensor_categories (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  name text not null, icon text, description text,
+  display_order int default 0,
+  unique (organization_id, name)
+);
+create table sensor_groups (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  name text not null, description text, color text,
+  display_order int default 0,
+  unique (organization_id, name)
+);
+```
 
----
+#### `report_schedules`（0034）
+```sql
+create table report_schedules (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  name text not null,
+  enabled boolean not null default true,
+  report_kind text not null check (report_kind in ('weekly','monthly')),
+  target_sensor_ids uuid[] not null default '{}',
+  notification_group_id uuid references notification_groups on delete set null,
+  delivery_time text not null default '09:00',
+  weekly_day_of_week int check (weekly_day_of_week between 0 and 6),
+  monthly_day_of_month int check (monthly_day_of_month between 1 and 28),
+  last_dispatched_period_key text,
+  last_dispatched_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+```
 
-### 4.3 Devices
-
-> **Phase F-4 (Block D) 改訂**: センサーとゲートウェイを 1 つの `devices` マスターに
-> 統合し、固有プロパティは `sensor_props` / `gateway_props` で持つ
-> Class Table Inheritance 構造に変更。Webhook 受信時は (manufacturer, external_key) で
-> `devices` を引き、`device_type` に応じて props 側を更新する。
+### 4.3 Devices（Class Table Inheritance）
 
 #### `devices`（共通マスター）
-すべてのデバイス（センサー / ゲートウェイ / 中継機）が 1 行ずつ並ぶマスター。
-共通プロパティ（識別子・分類・状態）はここで完結。固有のセンサー値や閾値は
-`sensor_props` / `gateway_props` に分けて持つ。
-
 ```sql
 create table devices (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-
-  -- ============================================
-  -- 外部識別（メーカーが決める、不変）
-  -- ============================================
   device_type text not null check (device_type in ('sensor','gateway')),
-  -- model からほぼ決まる具体的な役割。
-  -- sensor: 'temperature-humidity' | 'temperature' | 'current' | 'co2' | 'pressure' | 'door' | 'other'
-  -- gateway: 'master' | 'relay'
-  role text not null,
-  manufacturer text not null,            -- 'Milesight', 'IoT Mobile', ...
-  model text not null,                   -- 'EM320-TH', 'AM102', 'UG65', ...
-  -- メーカー発行の一意キー。Webhook 受信時の照合に使う。
-  -- 値の中身はメーカーごとに異なる（Milesight: devEUI、その他: serial_number 等）。
-  external_key text not null,
-  serial_number text not null,           -- 製造シリアル（参考表示用）
-  dev_eui text,                          -- LoRaWAN 識別子（無いメーカーもある）
-
-  -- ============================================
-  -- 表示・分類（ユーザー運用上設定）
-  -- ============================================
+  role text not null,                        -- temperature-humidity / master / relay …
+  manufacturer text not null,
+  model text not null,
+  external_key text not null,                -- Webhook 照合キー
+  serial_number text not null,
+  dev_eui text,
   name text,
-  device_number text not null,           -- 'DV-001', '厨房-冷凍-01' 等の運用ラベル
-  category_id uuid references sensor_categories on delete set null,  -- 運用区分（冷凍/冷蔵/室温）
-  group_id uuid references sensor_groups on delete set null,         -- 設置場所
+  device_number text not null,
+  category_id uuid references sensor_categories on delete set null,
+  group_id uuid references sensor_groups on delete set null,
   tags text[] default '{}',
   notification_group_id uuid references notification_groups on delete set null,
-
-  -- ============================================
-  -- システム管理（自動更新）
-  -- ============================================
   online boolean default false,
   last_seen_at timestamptz,
   registered_at timestamptz default now(),
   metadata jsonb default '{}',
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
-
-  -- 一意性: メーカー + external_key の組で 1 デバイス
   unique (organization_id, manufacturer, external_key)
 );
-create index on devices (organization_id);
-create index on devices (device_type);
-create index on devices (organization_id, manufacturer, external_key);
 ```
 
-#### `sensor_props`（センサー固有プロパティ、devices と 1:1）
-`device_type='sensor'` のレコードに対する 1:1 の延長テーブル。
-
+#### `sensor_props`（device_type=sensor、1:1）
 ```sql
 create table sensor_props (
   device_id uuid primary key references devices on delete cascade,
-  -- 接続先ゲートウェイ（同じ devices テーブルへの自己参照）
-  gateway_id uuid references devices,
-  -- 個別の逸脱判定閾値（kind に応じた構造を JSONB で保持）
+  gateway_id uuid references devices on delete set null,  -- 親機（自己参照）
   thresholds jsonb,
   battery int check (battery between 0 and 100),
-  -- アラート設定: deviation / offline / battery を含む
-  alert_settings jsonb not null default '{
-    "offlineEnabled": true,
-    "offlineThresholdMinutes": 60,
-    "deviationEnabled": true,
-    "deviationConsecutiveCount": 3,
-    "batteryEnabled": false,
-    "batteryThresholdPercent": 10,
-    "notifyChannels": {"email": true, "slack": false, "push": false}
-  }',
-  -- 通知抑制（時間帯 / 特定日付）。配列型 JSONB。
+  alert_settings jsonb not null default
+    '{"offlineEnabled":true,"offlineThresholdMinutes":60,"deviationEnabled":true,
+      "deviationConsecutiveCount":3,"batteryEnabled":false,"batteryThresholdPercent":10,
+      "notifyChannels":{"email":true,"slack":false,"push":false}}',
   exclusion_windows jsonb default '[]',
   exclusion_dates jsonb default '[]',
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
-create index on sensor_props (gateway_id);
 ```
 
-#### `gateway_props`（ゲートウェイ固有プロパティ、devices と 1:1）
-`device_type='gateway'` のレコードに対する 1:1 の延長テーブル。
-温湿度の閾値判定もバッテリーも持たないため、アラート発火条件はオフラインのみ。
-
+#### `gateway_props`（device_type=gateway、1:1）
 ```sql
 create table gateway_props (
   device_id uuid primary key references devices on delete cascade,
-  -- アラート設定: offline のみ
-  alert_settings jsonb not null default '{
-    "offlineEnabled": true,
-    "offlineThresholdMinutes": 60,
-    "notifyChannels": {"email": true, "slack": false, "push": false}
-  }',
+  alert_settings jsonb not null default
+    '{"offlineEnabled":true,"offlineThresholdMinutes":60,
+      "notifyChannels":{"email":true,"slack":false,"push":false}}',
   exclusion_windows jsonb default '[]',
   exclusion_dates jsonb default '[]',
   created_at timestamptz default now(),
@@ -609,78 +418,30 @@ create table gateway_props (
 );
 ```
 
-#### Webhook 受信時の照合フロー
-メーカーごとの統合モジュール（`/webhook/<manufacturer>` エンドポイント）は、
-ペイロードから「そのメーカーが採用している一意キー」を抽出する:
-
-| メーカー | external_key の中身 | ペイロードフィールド例 |
-|---|---|---|
-| Milesight | devEUI（16字HEX） | `payload.devEUI` |
-| Sensirion | serialNumber | `payload.serial` |
-| 自社開発 | 独自 ID | （メーカー仕様による） |
-
-照合手順:
-```sql
--- 1) (organization_id, manufacturer, external_key) で devices を引く
-select * from devices
-where organization_id = $1
-  and manufacturer = 'Milesight'
-  and external_key = '24E124785D190657';
--- 2) 見つかった device.device_type に応じて sensor_props / gateway_props を更新
-update sensor_props
-set battery = $1, updated_at = now()
-where device_id = $2;
-update devices
-set last_seen_at = now(), online = true
-where id = $2;
-```
-
-#### UI 上の View（オプション、参考）
-既存コードの利便性のため、JOIN 済みのビューを提供してもよい:
-```sql
--- センサー JOIN ビュー（旧 sensors テーブル相当）
-create view sensors_v as
-  select d.*, sp.gateway_id, sp.thresholds, sp.battery, sp.alert_settings,
-         sp.exclusion_windows, sp.exclusion_dates
-  from devices d
-  join sensor_props sp on sp.device_id = d.id
-  where d.device_type = 'sensor';
-
--- ゲートウェイ JOIN ビュー
-create view gateways_v as
-  select d.*, gp.alert_settings, gp.exclusion_windows, gp.exclusion_dates
-  from devices d
-  join gateway_props gp on gp.device_id = d.id
-  where d.device_type = 'gateway';
-```
-
-#### `sensor_notes` — 運用メモ
-> Phase F-4 改訂: `sensor_id` は `devices(id)` を参照（device_type='sensor' 想定）。
-
+#### `sensor_notes`（approval は JSONB 内包）
 ```sql
 create table sensor_notes (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-  sensor_id uuid not null references devices on delete cascade,
+  sensor_id uuid references devices on delete set null,
   sensor_name_snapshot text not null,
-  author_id uuid references users,
-  author_name_snapshot text not null,
+  author_id text not null,                   -- mock の userId（text）
+  author_name text not null,
   body text not null,
-  category text not null check (category in (
-    'install','move','calibration','maintenance','config','incident','other'
-  )),
-  approved_by_id uuid references users,
-  approved_by_name_snapshot text,
-  approved_at timestamptz,
-  approval_comment text,
+  category text not null check (category in
+    ('install','move','calibration','maintenance','config','incident','other')),
+  approval jsonb,                            -- 承認情報を内包
+  timestamp timestamptz not null default now(),
   created_at timestamptz default now()
 );
-create index on sensor_notes (organization_id, sensor_id);
 ```
 
----
+#### Webhook 照合
+`(organization_id, manufacturer, external_key)` で `devices` を引き、
+`device_type` に応じ `sensor_props`/`gateway_props` を更新。Milesight は
+`external_key = devEUI`。
 
-### 4.4 Dashboards & Widgets
+### 4.4 Dashboards（widgets / sensor_comments は JSONB 内包）
 
 #### `dashboards`
 ```sql
@@ -690,28 +451,15 @@ create table dashboards (
   name text not null,
   description text,
   target_sensor_ids uuid[] default '{}',
-  default_period jsonb default '{"type":"week"}',
+  default_period jsonb not null default '{"type":"week"}',
+  widgets jsonb not null default '[]',       -- ウィジェットを内包（別テーブルなし）
+  public_share_token text,                   -- 公開URL用
+  public_share_issued_at timestamptz,
   display_order int default 0,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
-```
-
-#### `widgets`
-```sql
-create table widgets (
-  id uuid primary key default gen_random_uuid(),
-  dashboard_id uuid not null references dashboards on delete cascade,
-  type text not null check (type in ('tiles','chart','floormap','deviation-pickup')),
-  title text not null,
-  span text default 'half' check (span in ('half','full')),
-  display_order int not null default 0,
-  config jsonb not null default '{}',
-  target_sensor_ids uuid[] default null,         -- null = ダッシュボード全体
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-create index on widgets (dashboard_id, display_order);
+-- public_share_token は部分 unique index
 ```
 
 #### `dashboard_checkins`
@@ -721,122 +469,42 @@ create table dashboard_checkins (
   organization_id uuid not null references organizations on delete cascade,
   dashboard_id uuid references dashboards on delete set null,
   dashboard_name_snapshot text not null,
-  user_id uuid references users,
-  user_name_snapshot text not null,
+  user_id text not null,                     -- mock userId（text）
+  user_name text not null,
+  timestamp timestamptz not null default now(),
   status text check (status in ('no-issue','has-issue')),
   comment text,
-  sensor_count int,
-  online_count int,
-  deviation_sensor_count int,
-  lookback_hours int,
-  period_label text,
-  range_start timestamptz,
-  range_end timestamptz,
-  approved_by_id uuid references users,
-  approved_by_name_snapshot text,
-  approved_at timestamptz,
-  approval_comment text,
-  timestamp timestamptz not null default now(),
+  sensor_comments jsonb default '[]',        -- センサー別コメントを内包
+  snapshot jsonb not null default '{}',      -- 確認時点のスナップショット
+  approval jsonb,
   created_at timestamptz default now()
 );
 ```
 
-#### `dashboard_checkin_sensor_comments`
-```sql
-create table dashboard_checkin_sensor_comments (
-  id uuid primary key default gen_random_uuid(),
-  checkin_id uuid not null references dashboard_checkins on delete cascade,
-  sensor_id uuid references devices on delete set null,
-  sensor_name_snapshot text not null,
-  deviation_kinds text[] default '{}',
-  detected_temp numeric,
-  detected_hum numeric,
-  comment text,
-  created_at timestamptz default now()
-);
-create index on dashboard_checkin_sensor_comments (checkin_id);
-```
-
-#### `dashboard_checkin_segment_comments`
-```sql
-create table dashboard_checkin_segment_comments (
-  id uuid primary key default gen_random_uuid(),
-  sensor_comment_id uuid not null references dashboard_checkin_sensor_comments on delete cascade,
-  metric text check (metric in ('temperature','humidity')),
-  direction text check (direction in ('above','below','mixed')),
-  start_at timestamptz not null,
-  end_at timestamptz not null,
-  slot_count int,
-  extreme_value numeric,
-  comment text,
-  created_at timestamptz default now()
-);
-create index on dashboard_checkin_segment_comments (sensor_comment_id);
-```
-
----
-
-### 4.5 Public Dashboard Sharing
-
-#### `dashboard_shares`
-```sql
-create table dashboard_shares (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations on delete cascade,
-  dashboard_id uuid not null references dashboards on delete cascade,
-  public_token text not null,
-  title text,
-  allow_period_change boolean default true,
-  allow_checkin boolean default false,
-  password_hash text,
-  expires_at timestamptz,
-  revoked_at timestamptz,
-  created_by_user_id uuid references users,
-  view_count int default 0,
-  last_viewed_at timestamptz,
-  created_at timestamptz default now(),
-  updated_at timestamptz default now()
-);
-create unique index on dashboard_shares (public_token) where revoked_at is null;
-```
-
-#### `dashboard_share_views`（任意・推奨）
-```sql
-create table dashboard_share_views (
-  id uuid primary key default gen_random_uuid(),
-  share_id uuid not null references dashboard_shares on delete cascade,
-  viewed_at timestamptz default now(),
-  ip_address inet,
-  user_agent text,
-  visitor_hash text                          -- IP + UA + day を sha256
-);
-create index on dashboard_share_views (share_id, viewed_at desc);
-```
-
----
-
-### 4.6 Data / Logs（時系列）
+### 4.5 Data / Logs（時系列）
 
 #### `webhook_inbox`
 ```sql
 create table webhook_inbox (
   id uuid primary key default gen_random_uuid(),
-  organization_id uuid references organizations on delete cascade,  -- 不正受信は null 可
+  organization_id uuid references organizations on delete cascade,
   manufacturer text not null,
   received_at timestamptz default now(),
   source_ip inet,
   signature_valid boolean,
   payload_raw jsonb not null,
-  parse_status text default 'pending' check (parse_status in (
-    'pending','parsed','failed','ignored'
-  )),
+  event_id text,
+  idempotency_key text not null,             -- (org_id, idempotency_key) で冪等
+  request_headers jsonb,
+  raw_body text,
+  parse_status text default 'pending'
+    check (parse_status in ('pending','parsed','failed','ignored','unmatched')),
   parse_error text,
   parsed_at timestamptz,
   parsed_reading_count int,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  unique (organization_id, idempotency_key)
 );
-create index on webhook_inbox (received_at desc);
-create index on webhook_inbox (organization_id, received_at desc);
 ```
 
 #### `sensor_readings`
@@ -852,9 +520,8 @@ create table sensor_readings (
   source_inbox_id uuid references webhook_inbox on delete set null,
   inserted_at timestamptz default now()
 );
-create index on sensor_readings (sensor_id, measured_at desc);
-create index on sensor_readings (organization_id, measured_at desc);
--- 大量データを想定する場合: partition by range (measured_at)
+-- idx: (sensor_id, measured_at desc), (organization_id, measured_at desc)
+-- 最新値は RPC get_latest_readings（DISTINCT ON、§7）で取得（C1 対策）
 ```
 
 #### `gateway_status_events`
@@ -865,294 +532,257 @@ create table gateway_status_events (
   gateway_id uuid not null references devices on delete cascade,
   occurred_at timestamptz default now(),
   status text check (status in ('online','offline')),
-  source text                                -- 'heartbeat' / 'webhook' / 'manual'
+  source text                                -- heartbeat / webhook / manual
 );
-create index on gateway_status_events (gateway_id, occurred_at desc);
 ```
 
-#### `alert_logs`
+#### `alert_logs`（target_id 単一参照、session 管理付き）
 ```sql
 create table alert_logs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
   occurred_at timestamptz not null,
   target_kind text not null check (target_kind in ('sensor','gateway')),
-  -- 統合後は単一の target_device_id を使う方が整合的だが、既存コードとの互換のため両方残す。
-  -- どちらも devices(id) を参照する（target_kind で区別）。
-  sensor_id uuid references devices on delete set null,
-  gateway_id uuid references devices on delete set null,
-  manufacturer_snapshot text not null,
-  model_snapshot text not null,
-  serial_number_snapshot text not null,
-  sensor_number_snapshot text,
-  kind text not null check (kind in ('deviation-alert','deviation-warn','offline','battery')),
+  target_id uuid references devices on delete set null,  -- sensor/gateway 共通
+  manufacturer text not null,
+  model text not null,
+  serial_number text not null,
+  sensor_number text,
+  kind text not null check (kind in
+    ('deviation-alert','deviation-warn','offline','offline-recovery','battery')),
   metric text check (metric in ('temperature','humidity','battery')),
   value numeric,
   message text not null,
-  -- ダッシュ確認時の連携メモ
   confirm_comment text,
-  confirmed_by_id uuid references users,
-  confirmed_by_name_snapshot text,
+  confirmed_by text,
   confirmed_at timestamptz,
-  -- 通知ステータス
-  notification_status text default 'pending' check (notification_status in (
-    'pending','sent','suppressed','failed'
-  )),
-  notified_at timestamptz,
-  created_at timestamptz default now(),
-  unique (organization_id, target_kind, sensor_id, gateway_id, kind, metric, occurred_at)
+  session_id uuid,                           -- 連続逸脱セッション（0029）
+  re_alert_index integer not null default 0, -- 再アラート回数
+  created_at timestamptz default now()
 );
-create index on alert_logs (organization_id, occurred_at desc);
-create index on alert_logs (sensor_id, occurred_at desc);
+-- idx: (org, occurred_at desc), (target_id, occurred_at desc),
+--      (session_id), (org, target_id, kind, metric, occurred_at desc)
 ```
+> 通知ステータスは `alert_logs` に持たず **`notification_deliveries`** で管理。
 
-#### `report_runs`
+#### `notification_deliveries`（0031、通知配信履歴）
 ```sql
-create table report_runs (
+create table notification_deliveries (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references organizations on delete cascade,
-  schedule_id uuid references report_schedules on delete set null,
-  report_kind text not null check (report_kind in ('weekly','monthly')),
-  period_start date not null,
-  period_end date not null,
-  target_sensor_ids uuid[] not null,
-  storage_path text,                         -- Supabase Storage 内の PDF パス
-  status text default 'pending' check (status in (
-    'pending','generating','completed','failed'
-  )),
-  failure_reason text,
-  triggered_by uuid references users,
-  created_at timestamptz default now(),
-  completed_at timestamptz
-);
-```
-
-#### `notification_dispatches`
-```sql
-create table notification_dispatches (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid not null references organizations on delete cascade,
+  alert_log_id uuid not null references alert_logs on delete cascade,
   notification_group_id uuid references notification_groups on delete set null,
   channel_kind text not null check (channel_kind in ('email','slack','webhook')),
   target text not null,
-  trigger_kind text not null check (trigger_kind in (
-    'alert-batch','report','dashboard-reminder'
-  )),
-  alert_log_ids uuid[] default '{}',
-  report_run_id uuid references report_runs,
-  reminder_id uuid references dashboard_reminders,
-  status text default 'pending' check (status in ('pending','sent','failed')),
-  failure_reason text,
-  subject text,
-  body_preview text,
+  status text not null default 'pending'
+    check (status in ('pending','sent','failed','skipped')),
+  scheduled_for timestamptz not null default now(),  -- timing で遅延設定
+  attempted_at timestamptz,
   sent_at timestamptz,
-  created_at timestamptz default now()
+  error_message text,
+  retry_count integer not null default 0,    -- 上限5、超で failed 固定
+  provider_message_id text,                  -- Resend message id 等
+  created_at timestamptz not null default now()
 );
-create index on notification_dispatches (organization_id, created_at desc);
+-- idx: (status, scheduled_for) where pending / (alert_log_id) / (org, created_at desc)
+```
+
+#### `report_delivery_links`（0034、レポート公開リンク）
+```sql
+create table report_delivery_links (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null references organizations on delete cascade,
+  schedule_id uuid not null references report_schedules on delete cascade,
+  token uuid not null unique default gen_random_uuid(),
+  report_kind text not null check (report_kind in ('weekly','monthly')),
+  period_start date not null,
+  period_end date not null,
+  target_sensor_ids uuid[] not null default '{}',
+  expires_at timestamptz,                    -- 発行から90日（恒久露出対策）
+  last_viewed_at timestamptz,
+  view_count integer not null default 0,
+  created_at timestamptz not null default now()
+);
 ```
 
 ---
 
-## 5. RLS（Row Level Security）方針
+## 5. RLS 方針
 
-### 5.1 ヘルパ関数
+### 5.1 現状（暫定 — β-1 で全面置換予定）
+
+- `demo_select` / `demo_update` / `demo_insert` / `demo_delete`:
+  `organization_id = public.demo_org_id()`（固定 demo org）で anon に開放
+- `admin_full`: 14+ テーブルで `for all to anon, authenticated using(true)`
+  （Admin Console 用の暫定全開放）
+- `webhook_inbox select tmp` 等の `*_tmp` ポリシー
+- `impersonation_sessions`: RLS 有効・**ポリシー無し**（service_role / Hook のみ）
+
+### 5.2 β-1 で実装する標準ポリシー（計画）
+
+Custom Access Token Hook が JWT に `org_id` / `impersonating_org_id` /
+`app_role` を載せている前提で、各業務テーブルを置換:
+
 ```sql
-create or replace function public.acting_organization_id() returns uuid
-language sql stable as $$
-  select nullif(auth.jwt() ->> 'acting_as_organization_id', '')::uuid;
-$$;
-
-create or replace function public.current_user_system_role() returns text
-language sql stable as $$
-  select system_role from users where id = auth.uid();
-$$;
-```
-
-### 5.2 標準ポリシー（ほぼすべての業務テーブルに適用）
-
-```sql
-create policy "<table> access policy"
+create policy "<table> access"
   on <table> for all
   using (
-    -- 1) 顧客メンバー: 所属組織のみ
-    organization_id in (
-      select organization_id from organization_members
-      where user_id = auth.uid()
+    organization_id = coalesce(
+      (auth.jwt() -> 'app_metadata' ->> 'impersonating_org_id')::uuid,
+      (auth.jwt() -> 'app_metadata' ->> 'org_id')::uuid
     )
-    or
-    -- 2) スーパーアドミン: 常時すべてアクセス可
-    current_user_system_role() = 'super_admin'
-    or
-    -- 3) サポートスタッフ: 割当があり、かつ impersonation 中のみ
-    (
-      current_user_system_role() = 'support'
-      and organization_id = acting_organization_id()
-      and exists (
-        select 1 from staff_assignments
-        where staff_user_id = auth.uid()
-          and organization_id = acting_organization_id()
-          and revoked_at is null
-          and (expires_at is null or expires_at > now())
-      )
-    )
+    or (auth.jwt() -> 'app_metadata' ->> 'app_role') = 'super_admin'
   );
 ```
 
-### 5.3 `dashboard_confirmer` 用ポリシー
-基本的にはサイドメニュー / UI 側で出し分け（ダッシュボード関連のみアクセス可）。
-書き込みポリシーは `dashboard_checkins` 等のみに `editor or dashboard_confirmer` を許可、
-それ以外のテーブルへの書き込みは `editor` のみ。
-
-```sql
--- 例: dashboard_checkins の書き込み
-create policy "dashboard_checkins write"
-  on dashboard_checkins for insert
-  with check (
-    organization_id in (
-      select om.organization_id from organization_members om
-      where om.user_id = auth.uid()
-        and om.role in ('editor','dashboard_confirmer')
-    )
-    or current_user_system_role() = 'super_admin'
-    -- support は impersonation 中のみ。略
-  );
-
--- 例: sensors の書き込み（confirmer は不可）
-create policy "sensors write"
-  on sensors for insert
-  with check (
-    organization_id in (
-      select om.organization_id from organization_members om
-      where om.user_id = auth.uid() and om.role = 'editor'
-    )
-    or current_user_system_role() = 'super_admin'
-  );
-```
-
-### 5.4 公開URL（dashboard_shares）からのアクセス
-- Edge Function（service_role）でトークン検証 → 必要なデータだけホワイトリスト形式で返却
-- RLS をバイパスするため、Edge Function 側で必ずアクセス制御（token + revoked_at + expires_at）
-
-### 5.5 Webhook 受信
-- Edge Function が service_role で `webhook_inbox` に挿入
-- パース結果も同様に service_role で書き込み
+- 暫定 `admin_full` / `demo_*` / `*_tmp` を全廃
+- `dashboard_confirmer` は書き込みを `dashboard_checkins` 等に限定
+- 公開URL（report_delivery_links / dashboards.public_share_token）は
+  Edge Function（service_role）でトークン検証してホワイトリスト返却
 
 ---
 
-## 6. データフロー全体像
+## 6. Edge Functions（Supabase / Deno）
+
+| 関数 | 役割 | verify_jwt | トリガ |
+|---|---|---|---|
+| `webhook-milesight` | Milesight Webhook 受信 → inbox + inline parse | **false** | MDP HTTP POST |
+| `parse-inbox` | webhook_inbox pending を一括処理 | true | pg_cron 10分 |
+| `send-notification` | 単一 delivery を email/slack/webhook 送信 | true | dispatch から |
+| `send-notification-test` | テスト送信（履歴に残さない） | true | UI 手動 |
+| `dispatch-notifications` | pending deliveries を捌くワーカ | true | pg_cron 1分 |
+| `dispatch-report-schedules` | レポート定期配信 | true | pg_cron 1分 |
+| `detect-status-alerts` | オフライン検知/再アラート/復帰/バッテリ再 | true | pg_cron 10分 |
+| `backfill-alerts` | 過去 readings から alert_logs 再生成 | true | 手動 |
+| `mock-login` | mock 認証（撤去予定） | false | UI |
+| `share-dashboard` | 公開ダッシュボード（トークン検証） | false | 公開URL |
+
+共有モジュール: `_shared/alertDetection.ts`（連続逸脱判定）/
+`_shared/modelMap.ts`（model→device_type、webhook-milesight↔parse-inbox 共通）/
+`_shared/urlGuard.ts`（SSRF ガード、通知系3関数）。
+
+### 6.1 RPC / Hook
+
+- `public.custom_access_token_hook(jsonb)`（0039、SECURITY DEFINER）— §2.2
+- `public.get_latest_readings(p_org_id uuid, p_sensor_ids uuid[])`（0040、
+  SECURITY INVOKER）— 各センサー最新1行を DISTINCT ON で返す（C1 対策）
+- `public.invoke_parse_inbox(int)`（0014/0015）— pg_cron から parse-inbox 起動
+- `public.demo_org_id()` — 暫定 RLS 用の固定 demo org
+
+### 6.2 pg_cron ジョブ（4本）
+
+| jobname | schedule | 内容 |
+|---|---|---|
+| `parse-inbox-every-10min` | `*/10 * * * *` | invoke_parse_inbox |
+| `dispatch-notifications-every-min` | `* * * * *` | dispatch-notifications |
+| `dispatch-report-schedules-every-min` | `* * * * *` | dispatch-report-schedules |
+| `detect-status-alerts-every-10min` | `*/10 * * * *` | detect-status-alerts |
+
+> URL/anon JWT は環境ごとに異なる（migration ファイルは dev 値、stg/prod
+> 適用時にスワップ）。将来環境変数化を検討。
+
+---
+
+## 7. データフロー
 
 ```
-[Milesight Webhook]
-        │
-        ▼
-[webhook_inbox]                   ← 生データを常に保管
-        │
-        ▼ Edge Function: parse
-        ├─→ [sensors] online/battery/last_seen_at を更新
-        ├─→ [sensor_readings] 時系列追加
-        └─→ [gateway_status_events] 遷移時に追加
-        │
-        ▼ DB Trigger / Edge Function: 判定
-        │
-        └─→ [alert_logs] 閾値・オフライン・バッテリー判定で追加
+[Milesight Webhook] → webhook-milesight EF
+   └→ webhook_inbox（生 payload、idempotency_key で冪等、500件チャンク upsert）
+      └→ inline parse / parse-inbox(cron)
+         ├→ devices online/last_seen_at 更新、sensor_props.battery 更新
+         ├→ sensor_readings 追記（source_inbox_id 紐付け）
+         └→ _shared/alertDetection: 連続逸脱判定 → alert_logs（session_id 管理）
+            └→ notification_deliveries 生成（timing で scheduled_for）
 
-[Cron: 通知ディスパッチャ (1h/6h/...)]
-        │
-        ▼ alert_logs.notification_status='pending' を SELECT
-        ├─→ メール / Slack / Webhook 配信
-        └─→ [notification_dispatches] に履歴 + alert_logs 状態更新
+detect-status-alerts(cron 10分)
+   └→ devices ページング全件 + sensor_props → オフライン/復帰/バッテリ再
+      → alert_logs + notification_deliveries
 
-[ダッシュボード確認 (UI)]
-        │
-        ▼
-[dashboard_checkins] + [..._sensor_comments] + [..._segment_comments]
-        │
-        ▼ App ロジック
-        │
-        └─→ 該当期間の [alert_logs] へ confirm_comment を書き戻し
+dispatch-notifications(cron 1分)
+   └→ notification_deliveries pending を send-notification へ（retry≤5）
+      → send-notification: email(Resend)/slack/webhook（urlGuard で SSRF 防御）
 
-[レポート定期配信 (Cron)]
-        │
-        ▼ report_schedules を時刻でトリガ
-        ├─→ [report_runs] status=generating
-        ├─→ Storage に PDF 保管 → storage_path 更新
-        ├─→ status=completed
-        └─→ [notification_dispatches] にレポート通知履歴
+dispatch-report-schedules(cron 1分)
+   └→ report_schedules を時刻判定 → report_delivery_links 発行（90日失効）
+      → notification_groups の channels へ URL 配信
+
+[ダッシュボード確認 UI] → dashboard_checkins（sensor_comments 内包）
+
+[Supabase Auth ログイン] → custom_access_token_hook
+   → JWT app_metadata に app_role/org_id/impersonating_org_id/app_user_id
 ```
 
 ---
 
-## 7. テーブル一覧サマリ（合計 26 テーブル）
+## 8. テーブル一覧（実装済み 23 + auth.users）
 
 | ドメイン | テーブル |
 |---|---|
-| Tenancy / Auth | `organizations`, `users`, `organization_members`, `member_invitations`, `staff_assignments`, `staff_audit_logs` |
-| Settings | `manufacturer_integrations`, `notification_groups`, `notification_channels`, `threshold_templates`, `sensor_categories`, `sensor_groups`, `saved_filters`, `report_schedules`, `dashboard_reminders` |
+| Tenancy/Auth | `organizations`, `users`, `organization_members`, `staff_assignments`, `staff_audit_logs`, `impersonation_sessions`（+ `auth.users`） |
+| Settings | `manufacturer_integrations`, `notification_groups`, `sensor_categories`, `sensor_groups`, `report_schedules` |
 | Devices | `devices`, `sensor_props`, `gateway_props`, `sensor_notes` |
-| Dashboards | `dashboards`, `widgets`, `dashboard_checkins`, `dashboard_checkin_sensor_comments`, `dashboard_checkin_segment_comments` |
-| Public Sharing | `dashboard_shares`, `dashboard_share_views` |
-| Data / Logs | `webhook_inbox`, `sensor_readings`, `gateway_status_events`, `alert_logs`, `report_runs`, `notification_dispatches` |
+| Dashboards | `dashboards`, `dashboard_checkins` |
+| Data/Logs | `webhook_inbox`, `sensor_readings`, `gateway_status_events`, `alert_logs`, `notification_deliveries`, `report_delivery_links` |
 
 ---
 
-## 8. 実装フェーズ
+## 9. 実装進捗（β リリースロードマップと連動）
 
-| Phase | 範囲 | 期待される動作 |
-|---|---|---|
-| **A** | /admin モック構築（localStorage） | マルチテナント対応 + スタッフ管理 + 監査ログのモック |
-| B | TypeScript 型を最終形に整理 | Supabase スキーマと 1:1 マッピング |
-| C | Supabase スキーマ + RLS + Edge Functions | マイグレーション SQL を流し込み |
-| D | 認証層（Clerk + Supabase JWT） | Clerk セッション → users.clerk_user_id 紐付け |
-| E | ドメイン別に逐次置換（マスタ → デバイス → 時系列） | localStorage を Supabase クエリへ |
-| F | Webhook 受信 → webhook_inbox の Edge Function 構築 | 実データ取り込み |
-| G | アラート判定 / レポート生成 / 通知配信の自動化（Cron） | 完全 SaaS 動作 |
+`docs/roadmap-beta-to-prod.md` が最新の正。要約:
 
-### 8.1 Phase A の詳細サブステップ
+- ✅ **β-0** stg 環境構築（migration 0001-0040 / Edge Functions / pg_cron）
+- ✅ **β-3** Resend 独自ドメイン認証（noreply@miterude.cloud）
+- ✅ **β-4** 3 プロジェクト構成（dev/stg/prod、dev/stg 稼働）
+- 🔄 **β-2** Supabase Auth: a/b/c 完了（スキーマ/Hook/検証ユーザー）。
+  次は β-2d（フロント改修）→ 2e/2f
+- ✅ リファクタ第1弾（SSRF/レポート失効/ヘッダ/トークン/重複統合/デッドコード）
+- ✅ リファクタ第2弾（C1 RPC / C2 チャンク / H1 ページング+並列）
+- ⏳ **β-1** RLS 厳格化（§5.2、β-2 完了後）
 
-| ステップ | 内容 |
+---
+
+## 10. 今後の開発 / 未実装テーブル backlog
+
+### 10.1 今後の主要開発
+
+- **β-2d-f**: フロントを `supabase.auth` へ（mock-login/password_hash 撤去）
+- **β-1**: RLS を JWT claim ベースに全置換、暫定 policy 全廃
+- **β-10 電話通知**: Twilio Programmable Voice + AWS Polly Neural。
+  `notification_groups.channels` に voice 種別追加、`users.phone_e164`、
+  `send-notification` の voice 対応、深夜抑制、月予算ガード
+
+### 10.2 設計時想定したが未実装（必要時に追加）
+
+| テーブル | 代替 / 状況 |
 |---|---|
-| A-1 | マルチテナント対応 localStorage 構造への移行 + 認証セッション型導入 |
-| A-2 | コンテキスト選択画面 + ユーザーメニューに「切り替え」追加 |
-| A-3 | `dashboard_confirmer` ロールの UI 反映（サイドメニュー出し分け / 編集ボタン非表示） |
-| A-4 | `/admin/tenants` テナント一覧・作成・詳細 |
-| A-5 | `/admin/staff` スタッフ管理 + 割り当て + impersonation |
-| A-6 | テナント側で「サポートで閲覧中」警告バー |
-| A-7 | `/admin/audit` 監査ログ閲覧 |
+| `member_invitations` | β-8 で実装予定（招待フロー） |
+| `widgets` | `dashboards.widgets` jsonb に内包済（テーブル化しない方針） |
+| `dashboard_checkin_sensor_comments` / `_segment_comments` | `dashboard_checkins.sensor_comments` jsonb に内包 |
+| `notification_channels` | `notification_groups.channels` jsonb に内包 |
+| `dashboard_shares` / `dashboard_share_views` | `dashboards.public_share_token` + `share-dashboard` EF。閲覧解析は未実装 |
+| `report_runs` | `report_delivery_links` に置換（PDF 生成でなく公開URL方式） |
+| `notification_dispatches` | `notification_deliveries` に置換 |
+| `threshold_templates` | 未実装（閾値はセンサー個別 `sensor_props.thresholds`） |
+| `saved_filters` / `dashboard_reminders` | 未実装（必要時） |
+| `manual_categories` / `manual_pages` | 0028 はローカルのみ・dev/stg 未適用。マニュアル機能は将来 |
 
 ---
 
-## 9. 検討余地（将来のオプション）
+## 11. 参考: 認証セッションの変遷
 
-1. **`sensors.online` を保持 vs 都度算出**
-   - 現状: 保持。`last_seen_at` のみで「N 分以上前ならオフライン」と算出する設計も可
-2. **`alert_logs` の量**
-   - テナント次第で月数十万行も想定 → 日付パーティショニング推奨
-   - Supabase の `pg_cron` で 12 ヶ月超のパーティションをコールド保管する運用検討
-3. **Clerk 統合タイミング**
-   - モック期: `users.email` だけで運用
-   - Clerk 接続時: `clerk_user_id` をマッピング、`auth.uid()` が Clerk JWT の `sub` と一致するよう Supabase の JWT カスタマイズを設定
-4. **マスタ系のシード**
-   - `sensor_categories`, `notification_groups` の既定値（冷蔵 / 冷凍 / 常温 など）はテナント作成時に seed function でコピー投入
-5. **Public URL のアクセス分析**
-   - `dashboard_share_views` を集計して「先月この公開URLは何人に何回見られたか」を顧客に提示
-6. **dashboard_confirmer 細分化**
-   - 必要になれば `dashboard_confirmer_assignments(user_id, dashboard_id)` で特定ダッシュボードのみ閲覧可とする運用も追加可能
-
----
-
-## 10. 参考: 認証セッションのデータ形（モック期）
-
-```ts
-type AuthSession =
-  | { kind: 'tenant', userId: string, organizationId: string }
-  | { kind: 'admin',  userId: string }                         // スーパーアドミンが /admin にいる
-  | { kind: 'impersonation',                                   // スタッフが顧客 UI を見ている
-      userId: string,
-      actingAsOrganizationId: string,
-      reason: string,
-      startedAt: Date,
-      expiresAt: Date }
 ```
+[mock 期] localStorage AuthSession（撤去予定）
+  | { kind:'tenant', userId, organizationId }
+  | { kind:'admin',  userId }
+  | { kind:'impersonation', userId, actingAsOrganizationId, reason,
+      startedAt, expiresAt }
 
-Supabase 統合時は Clerk JWT に `acting_as_organization_id` カスタムクレームを乗せ、
-RLS ヘルパ関数 `acting_organization_id()` が読む。
+      ↓ β-2（確定・移行中）
+
+[Supabase Auth] supabase.auth.getSession() + JWT app_metadata
+  app_user_id / app_role / org_id / impersonating_org_id
+  - tenant 切替: users.active_organization_id 更新 + refreshSession()
+  - impersonation: impersonation_sessions 行 + refreshSession()
+  - RLS（β-1）: organization_id = coalesce(impersonating_org_id, org_id)
+                or app_role = 'super_admin'
+```
