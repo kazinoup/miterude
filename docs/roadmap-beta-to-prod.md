@@ -1,7 +1,26 @@
 # Miterude β版 → 本番リリース ロードマップ
 
 最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。dev / stg 2 環境が稼働中。次は β-1（RLS 厳格化）。
+ステータス: β-0 / β-3 / β-4 完了。dev / stg 2 環境が稼働中。
+
+### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
+
+**次の一手 = β-2（Supabase Auth 統合）から着手する。**
+
+理由: β-1（RLS 厳格化）の policy は `organization_id = (auth.jwt()->>'org_id')::uuid`
+を使う。これが機能するには **先に β-2 で「org_id claim 入りの正しい JWT」を
+発行できる状態**になっている必要がある。よってロードマップ番号は β-1→β-2 のままだが、
+**実施順は β-2 → β-1** で進める（user 承認済み 2026-05-16）。
+
+再開時の流れ:
+1. β-2/β-1 の設計を詰める（依存関係・移行戦略・stg での検証手順）
+   — いきなり実装せず、破壊的なので設計合意を先に取る
+2. β-2 実装は **stg で先に検証**（dev は mock-login のまま温存し、退避路を残す）
+3. β-2 が stg で通ったら β-1（RLS 置換）を stg で。テナント横断の負テスト必須
+4. dev / 既存データへの影響を確認してから main へ
+
+現状の認証: mock-login Edge Function + `users.password_hash`（SHA-256）。
+これを `supabase.auth` に置き換える。詳細は下記 β-2 / β-1 セクション参照。
 
 ---
 
@@ -57,7 +76,7 @@
 - [x] smoke test 済: webhook-milesight health-check 200 / pg_cron 4 ジョブ succeeded /
   send-notification-test で inoue@canbright.co.jp にメール到達確認
 
-### β-1: RLS 厳格化 🔴
+### β-1: RLS 厳格化 🔴 ※実施順は β-2 の後（JWT の org_id claim が前提）
 
 - [ ] **設計**: `organization_id` ベースの policy 雛形を作成
 - [ ] **全テーブル**の policy を `using (organization_id = (auth.jwt() ->> 'org_id')::uuid)` に置換
@@ -72,7 +91,7 @@
 - [ ] super_admin / staff 用の特例 policy（service_role bypass）
 - [ ] stg でテナント横断アクセス検証（負のテスト）
 
-### β-2: Supabase Auth 統合 🔴
+### β-2: Supabase Auth 統合 🔴 ◀ 次に着手（β-1 の前提）
 
 - [ ] Supabase Auth の providers 設定（email + password）
 - [ ] mock auth の `users.password_hash` カラムを廃止し、`auth.users` を参照
@@ -346,8 +365,9 @@ Week 1   ✅ β-0: stg 構築（完了 2026-05-16）
          β-7d: Webhook 転送（検証データを stg に流す土台）
          β-7a/b: シードジェネレータ + 合成ストリーム
 
-Week 2   ◀ 現在地 β-1: RLS 厳格化（最大ヤマ）
-         β-2: Supabase Auth 統合
+Week 2   ◀ 現在地（次の一手）
+         β-2: Supabase Auth 統合（先に実施 — JWT org_id claim を作る）
+         β-1: RLS 厳格化（β-2 完了後・最大ヤマ）
 
 Week 3   β-5/6: β バッジ + 規約 + 手順書
          β-7e: テストデータタブ UI
