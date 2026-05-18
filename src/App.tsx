@@ -66,20 +66,16 @@ import {
 } from './lib/alertLog'
 import { canReportBattery } from './lib/supportedDevices'
 import {
-  loadAuthSession,
   loadOrganizations,
   saveOrganizations,
   upsertOrganization,
   loadUsers,
 } from './admin/lib/adminStorage'
-import {
-  ensureSeedData,
-  DEMO_ORG_ID,
-  DEMO_SUPER_ADMIN_ID,
-} from './admin/lib/adminSeed'
+import { ensureSeedData } from './admin/lib/adminSeed'
 import { AdminApp } from './admin/AdminApp'
-import { getEffectiveRole } from './lib/permissions'
-import type { AuthSession } from './types'
+import { useAuth } from './lib/AuthProvider'
+import type { ResolvedAuth } from './lib/authSession'
+import { resolveActiveOrgFromUrl } from './lib/tenantResolver'
 import {
   gatewaysFromState,
   loadState,
@@ -141,7 +137,7 @@ import {
   replacePath,
   useCurrentPath,
 } from './lib/router'
-import { getActiveOrgSlug } from './lib/supabase'
+import { getActiveOrgId, getActiveOrgSlug } from './lib/supabase'
 import './App.css'
 import './styles/dashboard.css'
 import './styles/report.css'
@@ -151,72 +147,76 @@ function sortIds(ids: string[]): string[] {
   return [...ids].sort()
 }
 
-/** AuthSession から「いまアプリが対象とするテナント ID」を導出する。
- *  - tenant:        organizationId
- *  - impersonation: actingAsOrganizationId
- *  - admin / null:  null（テナント表示が要らない状態）
- *  null が返るときも現状はテナント UI を出さざるを得ないため、
- *   呼び出し側で DEMO_ORG_ID にフォールバック（Phase A-2 以降で /admin 画面に切替予定）。 */
-function activeTenantIdFrom(session: AuthSession | null): string | null {
-  if (!session) return null
-  if (session.kind === 'tenant') return session.organizationId
-  if (session.kind === 'impersonation') return session.actingAsOrganizationId
-  return null
+/** ルートディスパッチャ（β-2d-3: AuthProvider ベース）。
+ *  - 未認証 → /login へリダイレクト
+ *  - staff（impersonation でない）→ AdminApp
+ *  - テナント / impersonation → active org を解決してから TenantWorkspace */
+export default function App() {
+  const auth = useAuth()
+  const [orgResolved, setOrgResolved] = useState(false)
+
+  // 未ログインは /login へ（ハードナビゲートで LoginView を確実にマウント）
+  useEffect(() => {
+    if (!auth.authed) window.location.replace('/login')
+  }, [auth.authed])
+
+  // テナント表示前に URL slug / claim から active org を解決する。
+  // admin（staff かつ impersonation でない）は org 解決不要。
+  useEffect(() => {
+    if (!auth.authed) return
+    if (auth.kind === 'admin') {
+      setOrgResolved(true)
+      return
+    }
+    let mounted = true
+    ensureSeedData()
+    resolveActiveOrgFromUrl({ sessionOrgId: auth.activeOrgId })
+      .catch((e) =>
+        console.warn('[boot] resolveActiveOrgFromUrl failed', e),
+      )
+      .finally(() => {
+        if (mounted) setOrgResolved(true)
+      })
+    return () => {
+      mounted = false
+    }
+  }, [auth.authed, auth.kind, auth.activeOrgId])
+
+  if (!auth.authed) return null
+  if (auth.kind === 'admin') return <AdminApp auth={auth} />
+  if (!orgResolved) {
+    return (
+      <div className="login-page" role="status" aria-live="polite">
+        <div className="login-card">
+          <div className="login-brand">
+            <span className="login-brand-name">ミテルデ</span>
+            <span className="login-brand-sub">テナントを準備中…</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+  return <TenantWorkspace auth={auth} />
 }
 
-export default function App() {
-  // Phase A-1: マルチテナント基盤の初期化
-  //   - シードデータ投入（初回のみ）
-  //   - 既存 v3 ストアの demo テナントへの移行
-  //   - 認証セッション取得 → 対象テナント ID を確定
-  const session = useMemo(() => {
-    ensureSeedData()
-    return loadAuthSession()
-  }, [])
-
-  // Phase A-4 / Phase K: super_admin が /admin にいる場合は AdminApp。
-  // URL が /admin/* で session がまだ admin でない場合（例えば seed 直後で
-  // tenant kind が残っている等）も、admin として表示できるよう URL も判定材料に入れる。
-  //  - session.kind === 'admin' → 常に AdminApp
-  //  - session.userId のユーザが super_admin で URL が /admin/* → AdminApp に切替（session 上書き）
-  const urlIsAdmin =
-    typeof window !== 'undefined' &&
-    window.location.pathname.startsWith('/admin')
-  if (session?.kind === 'admin') {
-    return <AdminApp session={session} />
-  }
-  if (urlIsAdmin && session?.userId) {
-    // localStorage の users で super_admin かどうかを判定
-    try {
-      const usersRaw = localStorage.getItem('miterude:admin:users')
-      const users = usersRaw ? JSON.parse(usersRaw) : {}
-      const u = users[session.userId]
-      if (u?.systemRole === 'super_admin') {
-        const adminSession = { kind: 'admin' as const, userId: session.userId }
-        return <AdminApp session={adminSession} />
-      }
-    } catch {
-      /* noop */
-    }
-  }
-
-  const activeOrgId = activeTenantIdFrom(session) ?? DEMO_ORG_ID
+function TenantWorkspace({ auth }: { auth: ResolvedAuth }) {
+  // resolveActiveOrgFromUrl 完了後にマウントされるため、ここでは確定値。
+  const activeOrgId = getActiveOrgId()
 
   /** UI に渡すセッション情報（旧 MOCK_SESSION 互換）。
    *  users / organizations から動的に構築する。 */
   const MOCK_SESSION: UserSession = useMemo(() => {
     const users = loadUsers()
     const orgs = loadOrganizations()
-    const userId = session?.userId
-    const u = userId ? users[userId] : null
+    const u = auth.appUserId ? users[auth.appUserId] : null
     const o = orgs[activeOrgId]
     return {
       organizationName: o?.name ?? 'CanBright（デモ組織）',
       userName: u?.displayName ?? '井上 太郎',
       email: u?.email ?? 'inoue@canbright.co.jp',
-      effectiveRole: getEffectiveRole(),
+      effectiveRole: auth.appRole,
     }
-  }, [session, activeOrgId])
+  }, [auth.appUserId, auth.appRole, activeOrgId])
 
   /** 契約・支払いタブで使う Organization オブジェクト。
    *  admin_organizations ストアからロード。状態が変わると差し替えるため、
@@ -1354,13 +1354,10 @@ export default function App() {
 
   return (
     <div
-      className={`app-shell ${session?.kind === 'impersonation' ? 'has-impersonation-banner' : ''}`}
+      className={`app-shell ${auth.kind === 'impersonation' ? 'has-impersonation-banner' : ''}`}
     >
-      {session?.kind === 'impersonation' && (
-        <ImpersonationBanner
-          session={session}
-          fallbackAdminUserId={DEMO_SUPER_ADMIN_ID}
-        />
+      {auth.kind === 'impersonation' && (
+        <ImpersonationBanner orgName={currentOrganization.name} />
       )}
       <Sidebar
         current={view}

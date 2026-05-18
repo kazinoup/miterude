@@ -29,7 +29,13 @@ export const supabase: SupabaseClient = createClient(
   url || 'https://invalid.supabase.co',
   anonKey || 'invalid-anon-key',
   {
-    auth: { persistSession: false, autoRefreshToken: false },
+    // β-2: Supabase Auth を採用。セッションを localStorage に永続化し、
+    // JWT を自動リフレッシュ（Custom Access Token Hook の claim 更新も追従）。
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
   },
 )
 

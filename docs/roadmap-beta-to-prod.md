@@ -1,33 +1,112 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了。リファクタ第1弾
-（セキュリティ4件＋メンテ2件）完了・dev/stg デプロイ済み（commit f2b927c）。
+最終更新: 2026-05-18  
+ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
+**β-2d 完了**（設計確定 + 0041 RPC / authClaims / authSession / supabase.ts
++ β-2d-3 正攻法 AuthProvider 連動改修 13 ファイル、typecheck/build グリーン、
+コミット `e7ecccf`）。次は β-2e（stg 全フロー検証 + JWT ベース RLS 試験）。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-18）
 
-**最優先: デプロイ整合（下記）。その後 β-2d へ。**
+**次の一手 = β-2e（stg 実機での全フロー検証 + 1〜2 テーブルで
+JWT claim ベース RLS 試験）。**
 
-#### ⚠ デプロイ整合（リファクタ第1弾 f2b927c + 第2弾 f4db2c1）
+β-2e 手順:
+1. `stg` ブランチへ `main` を merge → push（Vercel 自動デプロイ）※デプロイ確認要
+2. `0042_rls_jwt_trial.sql`（sensor_notes / dashboard_checkins を claim
+   ベース RLS に置換）を stg に適用 ※DB 適用確認要
+3. stg 実機で 3 検証ユーザー（inoue@canbright.co.jp /
+   editor@ / confirmer@stg.miterude.cloud、pw `StgTest2026!`）の
+   ログイン / コンテキスト選択 / テナント切替 / impersonation /
+   logout を一通り検証。claim が RLS に効く（他テナント不可視）を確認
+4. 通れば β-2f（dev/main 展開 + mock-login/password_hash 撤去）→ β-1（RLS 全置換）
 
-リファクタは全て `main` にコミット済みだが反映状態が不揃い:
-- migration 0040（C1 の RPC）: **dev/stg 適用済 ✓**
-- Edge Function: 第1弾は CLI で dev/stg デプロイ済。**第2弾の
-  webhook-milesight(C2)/detect-status-alerts(H1) は未デプロイ**
-  （Access Token revoke 済 → 再発行必要。`npx supabase functions deploy
-  <name> --project-ref <dev|stg ref>`、webhook-milesight は
-  `--no-verify-jwt`）
-- フロント（C1 supabaseQueries / 第1弾 DashboardView・PublicReportView）:
-  **main のみ。dev/stg ブランチ未同期 → Vercel dev/stg は旧フロント**
+#### β-2d 進捗・確定事項（user 承認済み）
 
-根本原因: これまで全コミットを `main` で行ってきたが、3 プロジェクト
-構成は dev/stg ブランチ→各 Vercel。**main→dev/stg ブランチの同期方針
-を決める必要**（毎回 cherry-pick/merge するか、開発を dev ブランチ起点に
-切替えるか）。β-2d 以降の作業フローと一体で決めるべき論点。
+- **方式**: dev も supabase 化（mock 分岐コードは書かない、supabase.auth 一本）。
+  stg 先行検証 → β-2f で dev へ β-2a/b/c 適用 + main/dev/stg 同期 +
+  mock-login/password_hash 撤去。デモログインチップは検証ユーザー
+  （editor@stg.miterude.cloud / confirmer@stg.miterude.cloud）で残す
+- ✅ **β-2d-1**: `0041_auth_rpcs.sql`（start/end_impersonation /
+  set_active_organization、SECURITY DEFINER、auth.uid()→users.auth_user_id
+  本人確認 + 監査）stg 適用済
+- ✅ **β-2d-2**: `src/lib/authClaims.ts`（JWT app_metadata を access_token
+  自前デコードで読む）/ `src/lib/authSession.ts`（getResolvedAuth /
+  onAuthChange / refreshClaims / signOut、旧 kind 互換を claim から再現）/
+  `supabase.ts` を persistSession:true・autoRefreshToken:true に
+- ✅ **β-2d-3（完了 2026-05-18、コミット `e7ecccf`）**:
+  正攻法 = AuthProvider（React Context）+ onAuthStateChange。
+  13 ファイル（新規 AuthProvider.tsx + permissions/tenantResolver/
+  impersonation/ImpersonationBanner/AdminTenantDetail/AdminStaffDetail/
+  ContextSelect/UserMenu/LoginView/App/AdminApp/main）。App は
+  ディスパッチャ + TenantWorkspace に分割（Hooks 順序を担保）。
+  AdminApp は ResolvedAuth props 化。typecheck/build グリーン。
+  旧設計メモは下記履歴参照。**壊れた中間状態を main に出さない方針を維持**
 
-再開時の最初の判断:
-A. デプロイ整合を先に取る（Edge Function 再デプロイ + ブランチ同期方針決定）
-B. β-2d に進み、整合はまとめて後で
+  ファイル別変更（実装はこの順を推奨）:
+  1. **新規 `src/lib/AuthProvider.tsx`**: Context + `useAuth():
+     ResolvedAuth`。マウント時 `getResolvedAuth()` + `onAuthChange()` 購読、
+     解決まで loading スピナー表示、解決後 children に Context 提供
+  2. **`src/lib/permissions.ts`**: 同期グローバル `getEffectiveRole()`
+     廃止 → `effectiveRoleFromClaims(claims)` 純関数 +
+     `canEdit/isConfirmer/getAdminRole/isSuperAdminOnly` を role 引数化
+     （呼び出し元は App.tsx のみ）
+  3. **`src/lib/tenantResolver.ts`**: `readSessionOrgId()`（localStorage
+     直読み）廃止 → `resolveActiveOrgFromUrl(opts?: {sessionOrgId?})` に
+     し、claim の org_id/impersonating_org_id を呼び出し側から渡す
+  4. **`src/main.tsx`**: L67 の同期 `else if (!loadAuthSession())` 削除。
+     通常ブートは `<AuthProvider><App/></AuthProvider>` を render。
+     resolveActiveOrgFromUrl は AuthProvider 解決後（App 内 useEffect、
+     claim の activeOrg を渡す）。loadAuthSession import 削除
+  5. **`src/App.tsx`**: `useMemo(loadAuthSession)` 廃止 → `useAuth()`。
+     `!auth.authed` → `/login` redirect。kind 分岐は `auth.kind`、
+     org は `auth.activeOrgId`（`activeTenantIdFrom` 廃止）。
+     `MOCK_SESSION.effectiveRole` は `auth.appRole`、userName/email は
+     `auth.appUserId` で users 引き。urlIsAdmin && super_admin 特例は
+     `auth.appRole==='super_admin'` で判定
+  6. **`src/admin/lib/impersonation.ts`**: localStorage 退避全廃 →
+     `start`: `supabase.rpc('start_impersonation',{p_target_org,p_reason,
+     p_duration_minutes})` → `refreshClaims()` → `location.assign(redirect)`。
+     `end`: `rpc('end_impersonation')` → `refreshClaims()` → reload。
+     logStaffAction は RPC 内で記録するので削除（重複回避）
+  7. **`src/components/views/LoginView.tsx`**: `callMockLogin` →
+     `supabase.auth.signInWithPassword({email,password})`。成功後
+     `getResolvedAuth()` の kind で redirect（admin→/admin/dashboard、
+     tenant→/）。デモチップ = `editor@stg.miterude.cloud` /
+     `confirmer@stg.miterude.cloud` + `StgTest2026!` で signInWithPassword。
+     saveAuthSession import 削除
+  8. **`src/components/ContextSelectView.tsx`**: `saveAuthSession(s)` →
+     `rpc('set_active_organization',{p_org})` → `refreshClaims()` →
+     reload。`loadAuthSession()` → `useAuth()`
+  9. **`src/components/UserMenu.tsx`**: `handleLogout`:
+     `saveAuthSession(null)` → `signOut()` → `/login`。
+     `loadAuthSession()`（L151/174 の role ラベル/テナント情報）→
+     `useAuth()` claim ベース
+  10. **`src/admin/AdminApp.tsx`**: `loadAuthSession()`(L490) と
+      session prop を `useAuth()`/ResolvedAuth ベースに
+  - 呼び出し追従: `AdminTenantDetailView`(L551) /
+    `AdminStaffDetailView`(L147) / `ImpersonationBanner`(L75) の
+    startImpersonation/endImpersonation シグネチャ変更に追従
+  - 旧 `AuthSession` 型（types.ts）と adminStorage の load/saveAuthSession
+    は β-2f まで残置（mock-login と一緒に撤去）。新コードは ResolvedAuth
+  - 検証用パスワード `StgTest2026!`、検証ユーザー:
+    inoue@canbright.co.jp(super_admin) / editor@ / confirmer@stg.miterude.cloud
+
+> 参考: 実 DB スキーマは `docs/database-schema.md`（実態反映済み）。
+
+#### ✅ デプロイ整合 完了（2026-05-16）
+
+リファクタ第1弾(f2b927c)＋第2弾(f4db2c1) を dev/stg に行き渡らせ済み:
+- migration 0040（C1 RPC）: dev/stg 適用済
+- Edge Function 第1/2弾: dev/stg デプロイ済・sha 一致確認
+  （webhook-milesight verify_jwt=false 維持）
+- フロント: **採用した同期方針 = 案A「dev/stg を main 追従」**。
+  `git checkout dev && git merge main --no-edit && git push`（stg も同様）
+  で Vercel 自動デプロイ。バンドルに C1 RPC 反映を実機確認済み
+- 以後の運用: main を正とし、配布時に dev/stg へ merge。β顧客が stg を
+  使い出したら本来の dev→stg→main 昇進フローへ移行
+
+> Access Token は使用後 revoke すること（CLI デプロイ都度発行 → 即 revoke）。
 
 ---
 
@@ -174,16 +253,17 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
   public.users + organization_members）。Hook が claim を注入することを SQL 実証。
   ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
-- [ ] **β-2d** フロント改修（stg ブランチ）
-  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`
-  - `LoginView`: mock-login fetch → `supabase.auth.signInWithPassword()`
-  - `App`/`AdminApp`: `loadAuthSession()` → `getSession()`/`onAuthStateChange()`、
-    kind 判定を JWT claim ベースに
-  - `impersonation.ts`: localStorage 退避 → impersonation_sessions + `refreshSession()`
-  - テナント切替: active_organization_id 更新 RPC + `refreshSession()`
+- [x] **β-2d** フロント改修（main、コミット `e7ecccf`）
+  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`（β-2d-2）
+  - `LoginView`: `supabase.auth.signInWithPassword()`
+  - `App`/`AdminApp`: AuthProvider/`useAuth()`、kind 判定を JWT claim ベースに
+  - `impersonation.ts`: RPC（start/end_impersonation）+ `refreshClaims()`
+  - テナント切替: `set_active_organization` RPC + `refreshClaims()`
   - ログアウト: `supabase.auth.signOut()`
 - [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
   + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
+  - `0042_rls_jwt_trial.sql` 作成済（sensor_notes / dashboard_checkins）。
+    stg 適用 + 実機検証は別途確認
 - [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
   撤去は最後。dev は β-2e 完了まで mock 温存）
 
