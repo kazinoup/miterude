@@ -23,22 +23,61 @@
   自前デコードで読む）/ `src/lib/authSession.ts`（getResolvedAuth /
   onAuthChange / refreshClaims / signOut、旧 kind 互換を claim から再現）/
   `supabase.ts` を persistSession:true・autoRefreshToken:true に
-- ⏳ **β-2d-3（次）**: 画面・セッション連動。要点:
-  - `LoginView`: callMockLogin → `supabase.auth.signInWithPassword`。
-    成功後 getResolvedAuth() の kind で遷移先決定。デモチップは検証ユーザー
-  - `App.tsx`: 同期 `useMemo(loadAuthSession)` → 非同期。
-    `getResolvedAuth()` + `onAuthChange()` + ローディング画面。
-    kind 判定（admin/tenant/impersonation/guest）と activeOrgId を
-    ResolvedAuth から。`activeTenantIdFrom` 置換、未認証は /login
-  - `AdminApp.tsx`: session prop を ResolvedAuth ベースに
-  - `impersonation.ts`: localStorage 退避 → RPC `start/end_impersonation`
-    + `refreshClaims()` + reload
-  - テナント切替: RPC `set_active_organization` + `refreshClaims()`
-  - `UserMenu` logout: `signOut()`
-  - 基盤は既存動作非破壊（mock-login 併存可）。β-2d-3 は連動するため
-    まとめて実装し、stg で検証（β-2e）してから dev/main（β-2f）
-- 安全弁: 基盤コミットまでは現行 dev/stg 無影響。β-2d-3 は壊れた中間
-  状態を main に出さない（stg ブランチで検証 → 通ったら配布）
+- ⏳ **β-2d-3（次・実装計画 確定済 2026-05-17）**:
+  方式は **正攻法 = AuthProvider（React Context）+ onAuthStateChange**
+  （user 承認: 「正しい方、影響大でも可、データ消失も可」）。
+  精査で判明した影響範囲は **9 ファイル + 新規 AuthProvider**。
+  **連動するため全部まとめて実装 → typecheck/build → stg 検証（β-2e）→
+  通れば配布（β-2f）。壊れた中間状態を main に出さない。**
+
+  ファイル別変更（実装はこの順を推奨）:
+  1. **新規 `src/lib/AuthProvider.tsx`**: Context + `useAuth():
+     ResolvedAuth`。マウント時 `getResolvedAuth()` + `onAuthChange()` 購読、
+     解決まで loading スピナー表示、解決後 children に Context 提供
+  2. **`src/lib/permissions.ts`**: 同期グローバル `getEffectiveRole()`
+     廃止 → `effectiveRoleFromClaims(claims)` 純関数 +
+     `canEdit/isConfirmer/getAdminRole/isSuperAdminOnly` を role 引数化
+     （呼び出し元は App.tsx のみ）
+  3. **`src/lib/tenantResolver.ts`**: `readSessionOrgId()`（localStorage
+     直読み）廃止 → `resolveActiveOrgFromUrl(opts?: {sessionOrgId?})` に
+     し、claim の org_id/impersonating_org_id を呼び出し側から渡す
+  4. **`src/main.tsx`**: L67 の同期 `else if (!loadAuthSession())` 削除。
+     通常ブートは `<AuthProvider><App/></AuthProvider>` を render。
+     resolveActiveOrgFromUrl は AuthProvider 解決後（App 内 useEffect、
+     claim の activeOrg を渡す）。loadAuthSession import 削除
+  5. **`src/App.tsx`**: `useMemo(loadAuthSession)` 廃止 → `useAuth()`。
+     `!auth.authed` → `/login` redirect。kind 分岐は `auth.kind`、
+     org は `auth.activeOrgId`（`activeTenantIdFrom` 廃止）。
+     `MOCK_SESSION.effectiveRole` は `auth.appRole`、userName/email は
+     `auth.appUserId` で users 引き。urlIsAdmin && super_admin 特例は
+     `auth.appRole==='super_admin'` で判定
+  6. **`src/admin/lib/impersonation.ts`**: localStorage 退避全廃 →
+     `start`: `supabase.rpc('start_impersonation',{p_target_org,p_reason,
+     p_duration_minutes})` → `refreshClaims()` → `location.assign(redirect)`。
+     `end`: `rpc('end_impersonation')` → `refreshClaims()` → reload。
+     logStaffAction は RPC 内で記録するので削除（重複回避）
+  7. **`src/components/views/LoginView.tsx`**: `callMockLogin` →
+     `supabase.auth.signInWithPassword({email,password})`。成功後
+     `getResolvedAuth()` の kind で redirect（admin→/admin/dashboard、
+     tenant→/）。デモチップ = `editor@stg.miterude.cloud` /
+     `confirmer@stg.miterude.cloud` + `StgTest2026!` で signInWithPassword。
+     saveAuthSession import 削除
+  8. **`src/components/ContextSelectView.tsx`**: `saveAuthSession(s)` →
+     `rpc('set_active_organization',{p_org})` → `refreshClaims()` →
+     reload。`loadAuthSession()` → `useAuth()`
+  9. **`src/components/UserMenu.tsx`**: `handleLogout`:
+     `saveAuthSession(null)` → `signOut()` → `/login`。
+     `loadAuthSession()`（L151/174 の role ラベル/テナント情報）→
+     `useAuth()` claim ベース
+  10. **`src/admin/AdminApp.tsx`**: `loadAuthSession()`(L490) と
+      session prop を `useAuth()`/ResolvedAuth ベースに
+  - 呼び出し追従: `AdminTenantDetailView`(L551) /
+    `AdminStaffDetailView`(L147) / `ImpersonationBanner`(L75) の
+    startImpersonation/endImpersonation シグネチャ変更に追従
+  - 旧 `AuthSession` 型（types.ts）と adminStorage の load/saveAuthSession
+    は β-2f まで残置（mock-login と一緒に撤去）。新コードは ResolvedAuth
+  - 検証用パスワード `StgTest2026!`、検証ユーザー:
+    inoue@canbright.co.jp(super_admin) / editor@ / confirmer@stg.miterude.cloud
 
 > 参考: 実 DB スキーマは `docs/database-schema.md`（実態反映済み）。
 
