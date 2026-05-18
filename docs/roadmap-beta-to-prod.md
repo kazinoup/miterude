@@ -1,12 +1,46 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了。リファクタ第1弾
-（セキュリティ4件＋メンテ2件）完了・dev/stg デプロイ済み（commit f2b927c）。
+最終更新: 2026-05-17  
+ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
+β-2d は **設計確定 + 基盤（0041 RPC / authClaims / authSession / supabase.ts）完了**。
+次は β-2d-3（画面・セッション連動改修）。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-17）
 
-**次の一手 = β-2d（フロント改修）。**
+**次の一手 = β-2d-3（LoginView / App / AdminApp / impersonation /
+テナント切替 / logout の連動改修）。**
+
+#### β-2d 進捗・確定事項（user 承認済み）
+
+- **方式**: dev も supabase 化（mock 分岐コードは書かない、supabase.auth 一本）。
+  stg 先行検証 → β-2f で dev へ β-2a/b/c 適用 + main/dev/stg 同期 +
+  mock-login/password_hash 撤去。デモログインチップは検証ユーザー
+  （editor@stg.miterude.cloud / confirmer@stg.miterude.cloud）で残す
+- ✅ **β-2d-1**: `0041_auth_rpcs.sql`（start/end_impersonation /
+  set_active_organization、SECURITY DEFINER、auth.uid()→users.auth_user_id
+  本人確認 + 監査）stg 適用済
+- ✅ **β-2d-2**: `src/lib/authClaims.ts`（JWT app_metadata を access_token
+  自前デコードで読む）/ `src/lib/authSession.ts`（getResolvedAuth /
+  onAuthChange / refreshClaims / signOut、旧 kind 互換を claim から再現）/
+  `supabase.ts` を persistSession:true・autoRefreshToken:true に
+- ⏳ **β-2d-3（次）**: 画面・セッション連動。要点:
+  - `LoginView`: callMockLogin → `supabase.auth.signInWithPassword`。
+    成功後 getResolvedAuth() の kind で遷移先決定。デモチップは検証ユーザー
+  - `App.tsx`: 同期 `useMemo(loadAuthSession)` → 非同期。
+    `getResolvedAuth()` + `onAuthChange()` + ローディング画面。
+    kind 判定（admin/tenant/impersonation/guest）と activeOrgId を
+    ResolvedAuth から。`activeTenantIdFrom` 置換、未認証は /login
+  - `AdminApp.tsx`: session prop を ResolvedAuth ベースに
+  - `impersonation.ts`: localStorage 退避 → RPC `start/end_impersonation`
+    + `refreshClaims()` + reload
+  - テナント切替: RPC `set_active_organization` + `refreshClaims()`
+  - `UserMenu` logout: `signOut()`
+  - 基盤は既存動作非破壊（mock-login 併存可）。β-2d-3 は連動するため
+    まとめて実装し、stg で検証（β-2e）してから dev/main（β-2f）
+- 安全弁: 基盤コミットまでは現行 dev/stg 無影響。β-2d-3 は壊れた中間
+  状態を main に出さない（stg ブランチで検証 → 通ったら配布）
+
+> 参考: 実 DB スキーマは `docs/database-schema.md`（実態反映済み）。
 
 #### ✅ デプロイ整合 完了（2026-05-16）
 
