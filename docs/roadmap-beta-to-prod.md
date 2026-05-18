@@ -1,14 +1,25 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-17  
+最終更新: 2026-05-18  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-β-2d は **設計確定 + 基盤（0041 RPC / authClaims / authSession / supabase.ts）完了**。
-次は β-2d-3（画面・セッション連動改修）。
+**β-2d 完了**（設計確定 + 0041 RPC / authClaims / authSession / supabase.ts
++ β-2d-3 正攻法 AuthProvider 連動改修 13 ファイル、typecheck/build グリーン、
+コミット `e7ecccf`）。次は β-2e（stg 全フロー検証 + JWT ベース RLS 試験）。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-17）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-18）
 
-**次の一手 = β-2d-3（LoginView / App / AdminApp / impersonation /
-テナント切替 / logout の連動改修）。**
+**次の一手 = β-2e（stg 実機での全フロー検証 + 1〜2 テーブルで
+JWT claim ベース RLS 試験）。**
+
+β-2e 手順:
+1. `stg` ブランチへ `main` を merge → push（Vercel 自動デプロイ）※デプロイ確認要
+2. `0042_rls_jwt_trial.sql`（sensor_notes / dashboard_checkins を claim
+   ベース RLS に置換）を stg に適用 ※DB 適用確認要
+3. stg 実機で 3 検証ユーザー（inoue@canbright.co.jp /
+   editor@ / confirmer@stg.miterude.cloud、pw `StgTest2026!`）の
+   ログイン / コンテキスト選択 / テナント切替 / impersonation /
+   logout を一通り検証。claim が RLS に効く（他テナント不可視）を確認
+4. 通れば β-2f（dev/main 展開 + mock-login/password_hash 撤去）→ β-1（RLS 全置換）
 
 #### β-2d 進捗・確定事項（user 承認済み）
 
@@ -23,12 +34,14 @@
   自前デコードで読む）/ `src/lib/authSession.ts`（getResolvedAuth /
   onAuthChange / refreshClaims / signOut、旧 kind 互換を claim から再現）/
   `supabase.ts` を persistSession:true・autoRefreshToken:true に
-- ⏳ **β-2d-3（次・実装計画 確定済 2026-05-17）**:
-  方式は **正攻法 = AuthProvider（React Context）+ onAuthStateChange**
-  （user 承認: 「正しい方、影響大でも可、データ消失も可」）。
-  精査で判明した影響範囲は **9 ファイル + 新規 AuthProvider**。
-  **連動するため全部まとめて実装 → typecheck/build → stg 検証（β-2e）→
-  通れば配布（β-2f）。壊れた中間状態を main に出さない。**
+- ✅ **β-2d-3（完了 2026-05-18、コミット `e7ecccf`）**:
+  正攻法 = AuthProvider（React Context）+ onAuthStateChange。
+  13 ファイル（新規 AuthProvider.tsx + permissions/tenantResolver/
+  impersonation/ImpersonationBanner/AdminTenantDetail/AdminStaffDetail/
+  ContextSelect/UserMenu/LoginView/App/AdminApp/main）。App は
+  ディスパッチャ + TenantWorkspace に分割（Hooks 順序を担保）。
+  AdminApp は ResolvedAuth props 化。typecheck/build グリーン。
+  旧設計メモは下記履歴参照。**壊れた中間状態を main に出さない方針を維持**
 
   ファイル別変更（実装はこの順を推奨）:
   1. **新規 `src/lib/AuthProvider.tsx`**: Context + `useAuth():
@@ -240,16 +253,17 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
   public.users + organization_members）。Hook が claim を注入することを SQL 実証。
   ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
-- [ ] **β-2d** フロント改修（stg ブランチ）
-  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`
-  - `LoginView`: mock-login fetch → `supabase.auth.signInWithPassword()`
-  - `App`/`AdminApp`: `loadAuthSession()` → `getSession()`/`onAuthStateChange()`、
-    kind 判定を JWT claim ベースに
-  - `impersonation.ts`: localStorage 退避 → impersonation_sessions + `refreshSession()`
-  - テナント切替: active_organization_id 更新 RPC + `refreshSession()`
+- [x] **β-2d** フロント改修（main、コミット `e7ecccf`）
+  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`（β-2d-2）
+  - `LoginView`: `supabase.auth.signInWithPassword()`
+  - `App`/`AdminApp`: AuthProvider/`useAuth()`、kind 判定を JWT claim ベースに
+  - `impersonation.ts`: RPC（start/end_impersonation）+ `refreshClaims()`
+  - テナント切替: `set_active_organization` RPC + `refreshClaims()`
   - ログアウト: `supabase.auth.signOut()`
 - [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
   + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
+  - `0042_rls_jwt_trial.sql` 作成済（sensor_notes / dashboard_checkins）。
+    stg 適用 + 実機検証は別途確認
 - [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
   撤去は最後。dev は β-2e 完了まで mock 温存）
 
