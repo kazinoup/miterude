@@ -20,7 +20,6 @@ import { AdminDashboardView } from './views/AdminDashboardView'
 import {
   loadOrganizations,
   loadUsers,
-  loadAuthSession,
   saveUsers,
   saveOrganizations,
   saveOrganizationMembers,
@@ -28,6 +27,7 @@ import {
   saveManualCategories,
   saveManualPages,
 } from './lib/adminStorage'
+import type { ResolvedAuth } from '../lib/authSession'
 import { globalUnmatchedDeviceCount } from './lib/webhookInbox'
 import {
   fetchManualCategoriesList,
@@ -47,7 +47,6 @@ import {
 } from '../lib/router'
 import type {
   AppUserStore,
-  AuthSession,
   ManualCategoryStore,
   ManualPageStore,
   OrganizationMemberStore,
@@ -66,16 +65,15 @@ export type AdminViewKey =
   | 'manual'
 
 type Props = {
-  /** 現在の admin セッション */
-  session: AuthSession & { kind: 'admin' }
+  /** 現在の認証状態（claim 由来）。kind は 'admin' 前提で App から渡される。 */
+  auth: ResolvedAuth
 }
 
-export function AdminApp({ session }: Props) {
-  // Phase 1.5a: Admin Console の権限分離。
-  //  super_admin: フルアクセス / support (= support or sales staff): 制限付き
-  //  ログインユーザーの systemRole から判定。AppUser を localStorage から引く。
-  const loggedInUser = loadUsers()[session.userId]
-  const isSuper = loggedInUser?.systemRole === 'super_admin'
+export function AdminApp({ auth }: Props) {
+  // β-2d-3: 権限は JWT claim（auth.appRole）で判定。
+  //  super_admin: フルアクセス / support: 制限付き
+  const userId = auth.appUserId ?? ''
+  const isSuper = auth.appRole === 'super_admin'
 
   const [view, setView] = useState<AdminViewKey>('dashboard')
   const [activeTenantId, setActiveTenantId] = useState<string | null>(null)
@@ -290,7 +288,7 @@ export function AdminApp({ session }: Props) {
    *  staff_category に応じて表示ラベルと effectiveRole を出し分け。 */
   const userSession: UserSession = useMemo(() => {
     const users = loadUsers()
-    const u = users[session.userId]
+    const u = users[userId]
     const category = u?.staffCategory
     const orgLabel =
       category === 'system_admin'
@@ -304,9 +302,9 @@ export function AdminApp({ session }: Props) {
       organizationName: orgLabel,
       userName: u?.displayName ?? '管理者',
       email: u?.email ?? '',
-      effectiveRole: u?.systemRole === 'super_admin' ? 'super_admin' : 'support',
+      effectiveRole: isSuper ? 'super_admin' : 'support',
     }
-  }, [session.userId])
+  }, [userId, isSuper])
 
   function openTenantDetail(tenantId: string) {
     setActiveTenantId(tenantId)
@@ -409,7 +407,7 @@ export function AdminApp({ session }: Props) {
       <main className="admin-main">
         {view === 'dashboard' && (
           <AdminDashboardView
-            viewerUserId={session.userId}
+            viewerUserId={userId}
             isSuperAdmin={isSuper}
             onOpenTenant={openTenantDetail}
             onGoTenants={() => {
@@ -421,14 +419,14 @@ export function AdminApp({ session }: Props) {
         {view === 'tenants' && (
           <AdminTenantsView
             onOpenTenant={openTenantDetail}
-            viewerUserId={session.userId}
+            viewerUserId={userId}
             isSuperAdmin={isSuper}
           />
         )}
         {view === 'tenant-detail' && activeTenantId && (
           <AdminTenantDetailView
             tenantId={activeTenantId}
-            adminUserId={session.userId}
+            adminUserId={userId}
             isSuperAdmin={isSuper}
             initialTab={tenantTab}
             onTabChange={setTenantTab}
@@ -449,7 +447,7 @@ export function AdminApp({ session }: Props) {
         {view === 'staff-detail' && activeStaffId && isSuper && (
           <AdminStaffDetailView
             staffUserId={activeStaffId}
-            adminUserId={session.userId}
+            adminUserId={userId}
             onBack={() => {
               setView('staff')
               setActiveStaffId(null)
@@ -458,13 +456,13 @@ export function AdminApp({ session }: Props) {
         )}
         {view === 'audit' && (
           <AdminAuditView
-            viewerUserId={session.userId}
+            viewerUserId={userId}
             isSuperAdmin={isSuper}
           />
         )}
         {view === 'manual' && (
           <AdminManualView
-            adminUserId={session.userId}
+            adminUserId={userId}
             isSuperAdmin={isSuper}
             activeCategoryId={manualCategoryId}
             activePageId={manualPageId}
@@ -483,10 +481,4 @@ export function AdminApp({ session }: Props) {
       )}
     </div>
   )
-}
-
-/** App.tsx から呼べるよう、現在のセッションが admin なら kind narrow して返す */
-export function loadAdminSessionOrNull(): (AuthSession & { kind: 'admin' }) | null {
-  const s = loadAuthSession()
-  return s?.kind === 'admin' ? s : null
 }

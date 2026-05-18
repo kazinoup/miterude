@@ -56,20 +56,10 @@ async function fetchOrgById(id: string): Promise<{ id: string; slug: string } | 
   return data ?? null
 }
 
-/** localStorage のセッションが指す組織 ID を取り出す（kind=tenant のとき）。 */
-function readSessionOrgId(): string | null {
-  try {
-    const raw = localStorage.getItem('miterude:auth:session')
-    if (!raw) return null
-    const s = JSON.parse(raw) as { kind?: string; organizationId?: string }
-    return s.kind === 'tenant' ? (s.organizationId ?? null) : null
-  } catch {
-    return null
-  }
-}
-
 /** ブート時に呼ぶ。返り値の slug を URL の正規化（slug が無いときの redirect）に使う。 */
-export async function resolveActiveOrgFromUrl(): Promise<ResolvedOrg> {
+export async function resolveActiveOrgFromUrl(
+  opts?: { sessionOrgId?: string | null },
+): Promise<ResolvedOrg> {
   const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
 
   // /admin/* のときは admin コンテキスト。active org は触らない（admin が複数テナント操作するため）。
@@ -87,8 +77,8 @@ export async function resolveActiveOrgFromUrl(): Promise<ResolvedOrg> {
     // 一致するテナントが Supabase に居ないので、フォールバック
   }
 
-  // session の organizationId（UUID 想定）を試す
-  const sessionOrgId = readSessionOrgId()
+  // claim 由来の activeOrg（呼び出し側が claim から渡す）を試す
+  const sessionOrgId = opts?.sessionOrgId ?? null
   if (sessionOrgId && /^[0-9a-f-]{36}$/i.test(sessionOrgId)) {
     const found = await fetchOrgById(sessionOrgId)
     if (found) {

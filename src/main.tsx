@@ -3,12 +3,11 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { AuthProvider } from './lib/AuthProvider'
 import { installDemoResetHook } from './lib/demoReset'
-import { resolveActiveOrgFromUrl } from './lib/tenantResolver'
 import { PublicDashboardView } from './components/views/PublicDashboardView'
 import { PublicReportView } from './components/views/PublicReportView'
 import { LoginView } from './components/views/LoginView'
-import { loadAuthSession } from './admin/lib/adminStorage'
 
 // URL クエリ `?reset=demo` や console `miterudeResetDemo()` で
 // localStorage を初期化できるようにする。React より前に実行。
@@ -64,21 +63,16 @@ if (share?.kind === 'dashboard') {
       </ErrorBoundary>
     </StrictMode>,
   )
-} else if (!loadAuthSession()) {
-  // 未ログイン → /login にリダイレクト（ハードナビゲートで LoginView を確実にマウント）
-  window.location.replace('/login')
 } else {
-  // 通常のアプリ起動
-  ;(async () => {
-    await resolveActiveOrgFromUrl().catch((e) => {
-      console.warn('[boot] resolveActiveOrgFromUrl failed, falling back to demo', e)
-    })
-    createRoot(document.getElementById('root')!).render(
-      <StrictMode>
-        <ErrorBoundary>
+  // 通常のアプリ起動。β-2d-3: 認証解決は AuthProvider が担い、
+  // 未ログイン時のリダイレクト・テナント解決は App 側で行う。
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <AuthProvider>
           <App />
-        </ErrorBoundary>
-      </StrictMode>,
-    )
-  })()
+        </AuthProvider>
+      </ErrorBoundary>
+    </StrictMode>,
+  )
 }
