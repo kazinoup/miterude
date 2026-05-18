@@ -16,9 +16,10 @@
 --   - anon: claim 無し → current_org_id() = null → 不可視
 --     （sensor_notes / dashboard_checkins は公開共有対象外）
 --
--- 旧 demo_*（organization_id = demo_org_id() を anon+authenticated に開放）は
--- この 2 テーブルに限り撤去し、claim ベースに置換する。
--- 他テーブルの demo_* は β-1 まで残置。
+-- 旧 demo_*（organization_id = demo_org_id() を anon+authenticated に開放）
+-- および admin_full（0024 のモック期 anon 全開放 = qual/with_check true）は
+-- permissive OR 合成で claim_* を無効化するため、この 2 テーブルに限り撤去し、
+-- claim ベースに置換する。他テーブルの demo_* / admin_full は β-1 まで残置。
 -- =====================================================================
 
 -- ---------- claim 読み取りヘルパ ----------
@@ -48,11 +49,12 @@ declare t text;
 declare tables text[] := array['sensor_notes','dashboard_checkins'];
 begin
   foreach t in array tables loop
-    -- 旧 demo_* を撤去（この 2 テーブルのみ）
+    -- 旧 demo_* / admin_full を撤去（この 2 テーブルのみ）
     execute format('drop policy if exists demo_select on public.%I', t);
     execute format('drop policy if exists demo_insert on public.%I', t);
     execute format('drop policy if exists demo_update on public.%I', t);
     execute format('drop policy if exists demo_delete on public.%I', t);
+    execute format('drop policy if exists admin_full on public.%I', t);
 
     -- claim ベース（authenticated のみ）
     execute format('drop policy if exists claim_select on public.%I', t);
