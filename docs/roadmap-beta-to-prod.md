@@ -2,9 +2,10 @@
 
 最終更新: 2026-05-19  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2d 完了**（`e7ecccf`）。**β-2e 完了**（stg 実機で 3 ユーザーの
-全フロー検証 OK + sensor_notes/dashboard_checkins の claim RLS 実証、
-テストデータ投入済）。次は β-2f（dev 展開 + mock-login/password_hash 撤去）。
+**β-2d/β-2e 完了**。**β-2f はコード/DB 撤去まで完了**
+（`loadAuthSession` 系撤去 + dev 展開 + 0043 で password_hash DROP +
+mock-login ローカル撤去）。残: デプロイ済 mock-login 関数削除（CLI 手動）
+→ 完了で β-2 全クローズ → β-1（RLS 全テーブル一般化）へ。
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
@@ -293,12 +294,23 @@ app_metadata に注入することを SQL レベルで実証済み。
       editor@stg.miterude.cloud→`…a002`(demo028 editor) /
       confirmer@stg.miterude.cloud→`…a003`(demo028 dashboard_confirmer)。
       dev demo org = `…d001`(slug demo028)、別組織 demo086 が負テスト用
-  - [ ] ⚠️ **要手動**: dev Supabase ダッシュボードで Custom Access
-    Token Hook を有効化（Authentication → Hooks）。未有効だと GoTrue が
-    Hook を呼ばず claim 空 → guest 扱いでログインしてもテナント解決不可
-  - [ ] `origin/main` push → `dev` merge（Vercel 自動デプロイ）
-  - [ ] `mock-login` Edge Function 削除 + `users.password_hash` DROP
-    （migration 化、最後に実施）
+  - [x] `origin/main` push（`392b8d4`、本番デプロイなし）→ `dev` へ
+    merge & push（`97d89a3`）。miterude-dev が dev.miterude.cloud を
+    自動デプロイ（新 Supabase Auth フロー反映）
+  - [x] dev Supabase で Custom Access Token Hook 有効化済 +
+    dev.miterude.cloud で `editor@stg.miterude.cloud` →
+    CBO-028(demo028) テナントログイン成功（2026-05-19）
+  - [x] `0043_drop_mock_password_hash.sql` 作成・stg/dev 適用済
+    （`staff_category` は温存確認）。dev の hash 値は
+    `password_hash_backup_dev_2026-05-19.sql.local`（gitignore）に保全
+  - [x] mock-login Edge Function のローカルソース撤去
+    （`supabase/functions/mock-login/` 削除）
+  - [ ] ⚠️ **要手動**: stg/dev にデプロイ済の `mock-login` 関数を
+    Supabase 側から削除（CLI: `npx supabase functions delete mock-login
+    --project-ref <ref>` で stg(`bejgwwhxntnxzwehsryx`) と
+    dev(`kktwzllydtlsoahvdhzl`) の両方、または各プロジェクトの
+    ダッシュボード Functions タブから Delete）。トークン使用後は revoke。
+    完了で β-2 全クローズ → β-1 へ
 
 ### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 
