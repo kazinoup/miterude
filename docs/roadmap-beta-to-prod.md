@@ -37,9 +37,13 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   `sensor_readings` はテナント SELECT のみで書込は service_role、
   `dashboards` はテナント claim 限定）。stg/dev 適用済、policy 検証 OK
   （2026-05-19）
-- [ ] **D. 横断系**: `organizations` (id=current OR is_staff) /
-  `organization_members` / `users` / `staff_assignments` /
-  `staff_audit_logs` を `is_staff()` バイパス込みで設計
+- [x] **D. 横断系**: `0049_rls_phase_d_cross_org.sql`。
+  `organizations`(SELECT: id=current OR is_staff / 書込: staff) /
+  `users`(SELECT: 本人 OR staff / 書込: staff) /
+  `organization_members`(SELECT: 自テナント OR staff / 書込: staff) /
+  `staff_assignments`(CRUD: staff) / `staff_audit_logs`(SELECT/INSERT:
+  staff、UPDATE/DELETE 無し＝不変)。SECURITY DEFINER の RPC は
+  自動バイパス、service_role も bypassrls。stg/dev 適用済（2026-05-19）
 - [ ] **E. グローバル + 暫定撤去**: `manual_categories` /
   `manual_pages`（全テナント read、`is_super_admin()` のみ write）+
   `webhook_inbox` 暫定 `*_tmp` policy 全廃
