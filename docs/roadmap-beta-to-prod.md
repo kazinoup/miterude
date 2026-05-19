@@ -283,8 +283,19 @@ app_metadata に注入することを SQL レベルで実証済み。
     impersonation/logout/RLS 負テスト）検証 OK（inoue 確認）
 - [ ] **β-2f** dev 展開 + レガシー撤去
   - [x] コード側撤去（`loadAuthSession`/`saveAuthSession`/`AuthSession`
-    型を削除。typecheck/build グリーン）
-  - [ ] dev に `0038/0039/0041/0042` 適用 + dev 検証ユーザー + Hook 有効化
+    型を削除。typecheck/build グリーン。コミット `e808898`）
+  - [x] dev に `0038/0039/0041/0042` 適用済（`kktwzllydtlsoahvdhzl`）
+  - [x] dev 検証ユーザー 3 名作成・紐付け済（pw `StgTest2026!`、
+    auth.users token 列は `''`）。Hook 関数が claim を正しく注入
+    することを dev で実証（editor→org_id+editor /
+    inoue→super_admin / confirmer→dashboard_confirmer）
+    - 紐付け: inoue@canbright.co.jp→users `…a001`(super_admin) /
+      editor@stg.miterude.cloud→`…a002`(demo028 editor) /
+      confirmer@stg.miterude.cloud→`…a003`(demo028 dashboard_confirmer)。
+      dev demo org = `…d001`(slug demo028)、別組織 demo086 が負テスト用
+  - [ ] ⚠️ **要手動**: dev Supabase ダッシュボードで Custom Access
+    Token Hook を有効化（Authentication → Hooks）。未有効だと GoTrue が
+    Hook を呼ばず claim 空 → guest 扱いでログインしてもテナント解決不可
   - [ ] `origin/main` push → `dev` merge（Vercel 自動デプロイ）
   - [ ] `mock-login` Edge Function 削除 + `users.password_hash` DROP
     （migration 化、最後に実施）
