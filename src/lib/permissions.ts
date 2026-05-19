@@ -1,39 +1,12 @@
 /**
- * Phase A-3: ロールベースの UI 制御ヘルパ。
+ * ロールベースの UI 制御ヘルパ（β-2d-3: claim ベースに移行）。
  *
- * モック期は localStorage の AuthSession + AppUser + OrganizationMember から
- * 「実効ロール」を算出し、UI 出し分けに利用する。Supabase 統合後は
- * Clerk JWT のクレームから同じ EffectiveRole を導出する想定。
+ * 実効ロールは JWT claim 由来の `ResolvedAuth.appRole`（authClaims の AppRole）
+ * がそのまま該当する。本モジュールは role を引数で受ける純関数のみを提供し、
+ * 同期グローバル（旧 getEffectiveRole / getAdminRole = localStorage 依存）は廃止。
+ * 呼び出し側は useAuth().appRole を渡す。
  */
 import type { EffectiveRole } from '../types'
-import {
-  loadAuthSession,
-  loadOrganizationMembers,
-  loadUsers,
-} from '../admin/lib/adminStorage'
-
-/** 現在のログインに対する実効ロールを算出する */
-export function getEffectiveRole(): EffectiveRole {
-  const session = loadAuthSession()
-  if (!session) return 'guest'
-  const users = loadUsers()
-  const user = users[session.userId]
-  if (!user) return 'guest'
-
-  // システム横断ロールが優先（super_admin / support は全テナントを跨いで動ける）
-  if (user.systemRole === 'super_admin') return 'super_admin'
-  if (user.systemRole === 'support') return 'support'
-
-  if (session.kind === 'tenant') {
-    const members = loadOrganizationMembers()
-    const m = Object.values(members).find(
-      (x) => x.userId === user.id && x.organizationId === session.organizationId,
-    )
-    if (m?.role === 'editor') return 'editor'
-    if (m?.role === 'dashboard_confirmer') return 'dashboard_confirmer'
-  }
-  return 'guest'
-}
 
 /** 編集系の操作（作成/更新/削除）が許可されているか */
 export function canEdit(role: EffectiveRole): boolean {
@@ -45,14 +18,13 @@ export function isConfirmer(role: EffectiveRole): boolean {
   return role === 'dashboard_confirmer'
 }
 
-/** Admin Console の権限を返す。
- *  - 'super_admin': フルアクセス（全テナント・スタッフ・監査・マニュアル CRUD）
- *  - 'support': 制限付き（割当テナントのみ閲覧 + impersonation、編集不可、スタッフ非表示）
- *  - null: Admin Console にアクセス不可
- */
+/** Admin Console の権限。
+ *  - 'super_admin': フルアクセス
+ *  - 'support': 制限付き（割当テナントのみ + impersonation、編集不可）
+ *  - null: Admin Console アクセス不可 */
 export type AdminRole = 'super_admin' | 'support'
-export function getAdminRole(): AdminRole | null {
-  const role = getEffectiveRole()
+
+export function adminRoleFromRole(role: EffectiveRole): AdminRole | null {
   if (role === 'super_admin') return 'super_admin'
   if (role === 'support') return 'support'
   return null

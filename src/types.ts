@@ -1271,19 +1271,5 @@ export type ManualPage = {
 
 export type ManualPageStore = Record<string, ManualPage>
 
-/** 認証セッション。
- *  - tenant: 顧客ユーザーが所属組織にいる
- *  - admin:  スーパーアドミンが /admin にいる
- *  - impersonation: スタッフが顧客 UI を見ている（監査ログ対象） */
-export type AuthSession =
-  | { kind: 'tenant'; userId: string; organizationId: string }
-  | { kind: 'admin'; userId: string }
-  | {
-      kind: 'impersonation'
-      userId: string
-      actingAsOrganizationId: string
-      reason: string
-      startedAt: Date
-      expiresAt: Date
-    }
-  | null
+// β-2f: 旧 AuthSession 型は撤去。認証状態は src/lib/authSession.ts の
+// ResolvedAuth（Supabase Auth + JWT claim 由来）に一本化。

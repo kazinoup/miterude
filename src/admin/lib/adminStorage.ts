@@ -18,7 +18,6 @@
 import type {
   AppUser,
   AppUserStore,
-  AuthSession,
   ManualCategory,
   ManualCategoryStore,
   ManualPage,
@@ -38,7 +37,6 @@ const KEY_ORGS = 'miterude:admin:organizations'
 const KEY_MEMBERS = 'miterude:admin:organization_members'
 const KEY_ASSIGNMENTS = 'miterude:admin:staff_assignments'
 const KEY_AUDIT = 'miterude:admin:audit_logs'
-const KEY_SESSION = 'miterude:auth:session'
 const KEY_MANUAL_CATEGORIES = 'miterude:admin:manual_categories'
 const KEY_MANUAL_PAGES = 'miterude:admin:manual_pages'
 
@@ -318,77 +316,9 @@ export function logStaffAction(params: {
 }
 
 /* ---------- Auth Session ---------- */
-
-export function loadAuthSession(): AuthSession {
-  return readJson<AuthSession>(KEY_SESSION, null)
-}
-
-export function saveAuthSession(session: AuthSession): void {
-  if (session === null) {
-    localStorage.removeItem(KEY_SESSION)
-    return
-  }
-  const json = JSON.stringify(session, replacer)
-
-  // Step 1: 通常の setItem
-  try {
-    localStorage.setItem(KEY_SESSION, json)
-    return
-  } catch (e) {
-    if (!isQuotaError(e)) {
-      console.error('[miterude-admin] saveAuthSession failed (non-quota):', e)
-      return
-    }
-  }
-
-  // Step 2: EVICTABLE_KEYS を全部削除して再試行
-  for (const k of EVICTABLE_KEYS) {
-    try {
-      localStorage.removeItem(k)
-    } catch {
-      /* noop */
-    }
-  }
-  try {
-    localStorage.setItem(KEY_SESSION, json)
-    console.warn(
-      '[miterude-admin] saveAuthSession recovered by evicting EVICTABLE_KEYS',
-    )
-    return
-  } catch (e) {
-    if (!isQuotaError(e)) {
-      console.error('[miterude-admin] saveAuthSession failed after evict:', e)
-      return
-    }
-  }
-
-  // Step 3: 最終手段 — session 以外の miterude: プレフィックス全削除
-  // （impersonation を絶対に通すため。テナント業務データも消えうるが、
-  //  どのみち再ハイドレーションで戻る or サインアウト相当）
-  const toDelete: string[] = []
-  for (let i = 0; i < localStorage.length; i++) {
-    const k = localStorage.key(i)
-    if (!k) continue
-    if (k === KEY_SESSION) continue
-    if (k.startsWith('miterude:')) toDelete.push(k)
-  }
-  for (const k of toDelete) {
-    try {
-      localStorage.removeItem(k)
-    } catch {
-      /* noop */
-    }
-  }
-  try {
-    localStorage.setItem(KEY_SESSION, json)
-    console.warn(
-      `[miterude-admin] saveAuthSession recovered by clearing ${toDelete.length} miterude:* keys`,
-    )
-    return
-  } catch (e) {
-    console.error('[miterude-admin] saveAuthSession ultimately failed:', e)
-  }
-}
+// β-2f: 旧 localStorage AuthSession（loadAuthSession/saveAuthSession）は
+// 撤去。認証は Supabase Auth + JWT claim（src/lib/authSession.ts /
+// AuthProvider）に一本化済み。
 
 /** ストレージキー名のテナントスコープ版。
  *  miterude:tenant:<orgId>:state:v4 を返す。

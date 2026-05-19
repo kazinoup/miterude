@@ -2,14 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, LogOut, UserCog } from 'lucide-react'
 import type { UserSession } from '../types'
+import type { AppRole } from '../lib/authClaims'
 import { toast } from '../lib/toast'
-import {
-  loadAuthSession,
-  loadOrganizationMembers,
-  loadOrganizations,
-  loadUsers,
-  saveAuthSession,
-} from '../admin/lib/adminStorage'
+import { useAuth } from '../lib/AuthProvider'
+import { signOut } from '../lib/authSession'
 
 type Props = {
   session: UserSession
@@ -69,12 +65,13 @@ export function UserMenu({ session }: Props) {
     }
   }, [open])
 
+  const auth = useAuth()
   const initials = (session.userName.trim()[0] ?? '?').toUpperCase()
 
-  // 現在の権限ラベル（super_admin / 編集メンバー / 確認者）
+  // 現在の権限ラベル（claim の app_role 由来）
   const currentRoleLabel = useMemo(
-    () => (open ? buildCurrentRoleLabel() : null),
-    [open],
+    () => (open ? roleLabelFromAppRole(auth.appRole) : null),
+    [open, auth.appRole],
   )
 
   function handleProfile() {
@@ -83,10 +80,10 @@ export function UserMenu({ session }: Props) {
   }
   function handleLogout() {
     setOpen(false)
-    // Phase 1.5a: モック認証のサインアウト本実装。
-    // localStorage の auth session を消して /login へ遷移。
-    saveAuthSession(null)
-    window.location.href = '/login'
+    // β-2d-3: Supabase Auth サインアウト → /login
+    void signOut().finally(() => {
+      window.location.href = '/login'
+    })
   }
 
   return (
@@ -143,44 +140,19 @@ export function UserMenu({ session }: Props) {
   )
 }
 
-/** 現在のログインに対する権限ラベルを返す。
- *  - super_admin: 「システム管理者」
- *  - support 系: staff_category に応じて「サポート」「営業」
- *  - tenant: 「編集メンバー」「確認者」 */
-function buildCurrentRoleLabel(): string | null {
-  const session = loadAuthSession()
-  if (!session) return null
-  const users = loadUsers()
-  const u = users[session.userId]
-  if (!u) return null
-  if (u.systemRole === 'super_admin') return 'システム管理者'
-  if (u.systemRole === 'support') {
-    if (u.staffCategory === 'sales') return '営業'
-    return 'サポート'
+/** app_role → 権限ラベル（claim 由来）。
+ *  営業(sales)の細分は claim に無いため support は「サポート」に集約。 */
+function roleLabelFromAppRole(role: AppRole): string | null {
+  switch (role) {
+    case 'super_admin':
+      return 'システム管理者'
+    case 'support':
+      return 'サポート'
+    case 'editor':
+      return '編集メンバー'
+    case 'dashboard_confirmer':
+      return '確認者'
+    default:
+      return null
   }
-  if (session.kind === 'tenant') {
-    const members = loadOrganizationMembers()
-    const m = Object.values(members).find(
-      (x) => x.userId === u.id && x.organizationId === session.organizationId,
-    )
-    if (m?.role === 'editor') return '編集メンバー'
-    if (m?.role === 'dashboard_confirmer') return '確認者'
-  }
-  return null
-}
-
-/** 補助: AppUser / Organization の取得（DEV ツール用） */
-export function getCurrentTenantInfo() {
-  const session = loadAuthSession()
-  if (!session) return null
-  const users = loadUsers()
-  const orgs = loadOrganizations()
-  const user = users[session.userId] ?? null
-  const orgId =
-    session.kind === 'tenant'
-      ? session.organizationId
-      : session.kind === 'impersonation'
-        ? session.actingAsOrganizationId
-        : null
-  return { user, organization: orgId ? orgs[orgId] ?? null : null }
 }

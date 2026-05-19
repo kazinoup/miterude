@@ -548,11 +548,15 @@ export function AdminTenantDetailView({
       )
       return
     }
-    startImpersonation({
-      staffUserId: adminUserId,
+    void startImpersonation({
       organizationId: target.id,
       reason: 'super_admin によるテナント閲覧',
       redirectTo: `/${slug}/dashboard`,
+    }).catch((e) => {
+      toast(
+        e instanceof Error ? e.message : 'テナントに入れませんでした',
+        'error',
+      )
     })
   }
 

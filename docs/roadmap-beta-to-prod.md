@@ -1,33 +1,114 @@
 # Miterude β版 → 本番リリース ロードマップ
 
-最終更新: 2026-05-16  
-ステータス: β-0 / β-3 / β-4 完了。β-2 は a/b/c 完了。リファクタ第1弾
-（セキュリティ4件＋メンテ2件）完了・dev/stg デプロイ済み（commit f2b927c）。
+最終更新: 2026-05-19  
+ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
+**β-2d 完了**（`e7ecccf`）。**β-2e 完了**（stg 実機で 3 ユーザーの
+全フロー検証 OK + sensor_notes/dashboard_checkins の claim RLS 実証、
+テストデータ投入済）。次は β-2f（dev 展開 + mock-login/password_hash 撤去）。
 
-### ▶ 次に再開するとき（中断ポイント: 2026-05-16）
+### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**最優先: デプロイ整合（下記）。その後 β-2d へ。**
+**次の一手 = β-2f（dev を supabase 化 + レガシー撤去）。**
 
-#### ⚠ デプロイ整合（リファクタ第1弾 f2b927c + 第2弾 f4db2c1）
+β-2f の状態と残り:
+- ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
+  `AuthSession` 型を削除、typecheck/build グリーン）— 本コミットで完了
+- ⏳ 残（いずれも確認要）:
+  1. **dev Supabase 展開**: `0038`/`0039`/`0041`/`0042` を dev
+     （`kktwzllydtlsoahvdhzl`）に適用 + dev 検証ユーザー投入
+     （auth.users の token 列は `''`）+ Custom Access Token Hook を
+     dev で有効化（Supabase ダッシュボード操作）
+  2. **ブランチ同期**: `origin/main` push → `dev` へ merge（Vercel 自動デプロイ）
+  3. **破壊的撤去（最後）**: `mock-login` Edge Function 削除（dev/stg）+
+     `users.password_hash` カラム DROP（migration 化、dev/stg 適用）
+- 完了後 → β-1（RLS 全テーブルを claim ベースへ一般化）
 
-リファクタは全て `main` にコミット済みだが反映状態が不揃い:
-- migration 0040（C1 の RPC）: **dev/stg 適用済 ✓**
-- Edge Function: 第1弾は CLI で dev/stg デプロイ済。**第2弾の
-  webhook-milesight(C2)/detect-status-alerts(H1) は未デプロイ**
-  （Access Token revoke 済 → 再発行必要。`npx supabase functions deploy
-  <name> --project-ref <dev|stg ref>`、webhook-milesight は
-  `--no-verify-jwt`）
-- フロント（C1 supabaseQueries / 第1弾 DashboardView・PublicReportView）:
-  **main のみ。dev/stg ブランチ未同期 → Vercel dev/stg は旧フロント**
+#### β-2d 進捗・確定事項（user 承認済み）
 
-根本原因: これまで全コミットを `main` で行ってきたが、3 プロジェクト
-構成は dev/stg ブランチ→各 Vercel。**main→dev/stg ブランチの同期方針
-を決める必要**（毎回 cherry-pick/merge するか、開発を dev ブランチ起点に
-切替えるか）。β-2d 以降の作業フローと一体で決めるべき論点。
+- **方式**: dev も supabase 化（mock 分岐コードは書かない、supabase.auth 一本）。
+  stg 先行検証 → β-2f で dev へ β-2a/b/c 適用 + main/dev/stg 同期 +
+  mock-login/password_hash 撤去。デモログインチップは検証ユーザー
+  （editor@stg.miterude.cloud / confirmer@stg.miterude.cloud）で残す
+- ✅ **β-2d-1**: `0041_auth_rpcs.sql`（start/end_impersonation /
+  set_active_organization、SECURITY DEFINER、auth.uid()→users.auth_user_id
+  本人確認 + 監査）stg 適用済
+- ✅ **β-2d-2**: `src/lib/authClaims.ts`（JWT app_metadata を access_token
+  自前デコードで読む）/ `src/lib/authSession.ts`（getResolvedAuth /
+  onAuthChange / refreshClaims / signOut、旧 kind 互換を claim から再現）/
+  `supabase.ts` を persistSession:true・autoRefreshToken:true に
+- ✅ **β-2d-3（完了 2026-05-18、コミット `e7ecccf`）**:
+  正攻法 = AuthProvider（React Context）+ onAuthStateChange。
+  13 ファイル（新規 AuthProvider.tsx + permissions/tenantResolver/
+  impersonation/ImpersonationBanner/AdminTenantDetail/AdminStaffDetail/
+  ContextSelect/UserMenu/LoginView/App/AdminApp/main）。App は
+  ディスパッチャ + TenantWorkspace に分割（Hooks 順序を担保）。
+  AdminApp は ResolvedAuth props 化。typecheck/build グリーン。
+  旧設計メモは下記履歴参照。**壊れた中間状態を main に出さない方針を維持**
 
-再開時の最初の判断:
-A. デプロイ整合を先に取る（Edge Function 再デプロイ + ブランチ同期方針決定）
-B. β-2d に進み、整合はまとめて後で
+  ファイル別変更（実装はこの順を推奨）:
+  1. **新規 `src/lib/AuthProvider.tsx`**: Context + `useAuth():
+     ResolvedAuth`。マウント時 `getResolvedAuth()` + `onAuthChange()` 購読、
+     解決まで loading スピナー表示、解決後 children に Context 提供
+  2. **`src/lib/permissions.ts`**: 同期グローバル `getEffectiveRole()`
+     廃止 → `effectiveRoleFromClaims(claims)` 純関数 +
+     `canEdit/isConfirmer/getAdminRole/isSuperAdminOnly` を role 引数化
+     （呼び出し元は App.tsx のみ）
+  3. **`src/lib/tenantResolver.ts`**: `readSessionOrgId()`（localStorage
+     直読み）廃止 → `resolveActiveOrgFromUrl(opts?: {sessionOrgId?})` に
+     し、claim の org_id/impersonating_org_id を呼び出し側から渡す
+  4. **`src/main.tsx`**: L67 の同期 `else if (!loadAuthSession())` 削除。
+     通常ブートは `<AuthProvider><App/></AuthProvider>` を render。
+     resolveActiveOrgFromUrl は AuthProvider 解決後（App 内 useEffect、
+     claim の activeOrg を渡す）。loadAuthSession import 削除
+  5. **`src/App.tsx`**: `useMemo(loadAuthSession)` 廃止 → `useAuth()`。
+     `!auth.authed` → `/login` redirect。kind 分岐は `auth.kind`、
+     org は `auth.activeOrgId`（`activeTenantIdFrom` 廃止）。
+     `MOCK_SESSION.effectiveRole` は `auth.appRole`、userName/email は
+     `auth.appUserId` で users 引き。urlIsAdmin && super_admin 特例は
+     `auth.appRole==='super_admin'` で判定
+  6. **`src/admin/lib/impersonation.ts`**: localStorage 退避全廃 →
+     `start`: `supabase.rpc('start_impersonation',{p_target_org,p_reason,
+     p_duration_minutes})` → `refreshClaims()` → `location.assign(redirect)`。
+     `end`: `rpc('end_impersonation')` → `refreshClaims()` → reload。
+     logStaffAction は RPC 内で記録するので削除（重複回避）
+  7. **`src/components/views/LoginView.tsx`**: `callMockLogin` →
+     `supabase.auth.signInWithPassword({email,password})`。成功後
+     `getResolvedAuth()` の kind で redirect（admin→/admin/dashboard、
+     tenant→/）。デモチップ = `editor@stg.miterude.cloud` /
+     `confirmer@stg.miterude.cloud` + `StgTest2026!` で signInWithPassword。
+     saveAuthSession import 削除
+  8. **`src/components/ContextSelectView.tsx`**: `saveAuthSession(s)` →
+     `rpc('set_active_organization',{p_org})` → `refreshClaims()` →
+     reload。`loadAuthSession()` → `useAuth()`
+  9. **`src/components/UserMenu.tsx`**: `handleLogout`:
+     `saveAuthSession(null)` → `signOut()` → `/login`。
+     `loadAuthSession()`（L151/174 の role ラベル/テナント情報）→
+     `useAuth()` claim ベース
+  10. **`src/admin/AdminApp.tsx`**: `loadAuthSession()`(L490) と
+      session prop を `useAuth()`/ResolvedAuth ベースに
+  - 呼び出し追従: `AdminTenantDetailView`(L551) /
+    `AdminStaffDetailView`(L147) / `ImpersonationBanner`(L75) の
+    startImpersonation/endImpersonation シグネチャ変更に追従
+  - 旧 `AuthSession` 型（types.ts）と adminStorage の load/saveAuthSession
+    は β-2f まで残置（mock-login と一緒に撤去）。新コードは ResolvedAuth
+  - 検証用パスワード `StgTest2026!`、検証ユーザー:
+    inoue@canbright.co.jp(super_admin) / editor@ / confirmer@stg.miterude.cloud
+
+> 参考: 実 DB スキーマは `docs/database-schema.md`（実態反映済み）。
+
+#### ✅ デプロイ整合 完了（2026-05-16）
+
+リファクタ第1弾(f2b927c)＋第2弾(f4db2c1) を dev/stg に行き渡らせ済み:
+- migration 0040（C1 RPC）: dev/stg 適用済
+- Edge Function 第1/2弾: dev/stg デプロイ済・sha 一致確認
+  （webhook-milesight verify_jwt=false 維持）
+- フロント: **採用した同期方針 = 案A「dev/stg を main 追従」**。
+  `git checkout dev && git merge main --no-edit && git push`（stg も同様）
+  で Vercel 自動デプロイ。バンドルに C1 RPC 反映を実機確認済み
+- 以後の運用: main を正とし、配布時に dev/stg へ merge。β顧客が stg を
+  使い出したら本来の dev→stg→main 昇進フローへ移行
+
+> Access Token は使用後 revoke すること（CLI デプロイ都度発行 → 即 revoke）。
 
 ---
 
@@ -174,18 +255,50 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [x] **β-2c** stg 検証ユーザー 3 名を SQL 直接投入（auth.users/identities +
   public.users + organization_members）。Hook が claim を注入することを SQL 実証。
   ※本番ユーザー移行は β-2f/本番時に招待フローで別途。検証シードは migration 化しない
-- [ ] **β-2d** フロント改修（stg ブランチ）
-  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`
-  - `LoginView`: mock-login fetch → `supabase.auth.signInWithPassword()`
-  - `App`/`AdminApp`: `loadAuthSession()` → `getSession()`/`onAuthStateChange()`、
-    kind 判定を JWT claim ベースに
-  - `impersonation.ts`: localStorage 退避 → impersonation_sessions + `refreshSession()`
-  - テナント切替: active_organization_id 更新 RPC + `refreshSession()`
+  - ⚠️ **既知の落とし穴（2026-05-19 stg で顕在）**: `auth.users` を SQL 直接
+    投入すると `confirmation_token` / `recovery_token` /
+    `email_change_token_new` / `email_change`（+ `email_change_token_current`
+    / `phone_change` / `phone_change_token` / `reauthentication_token`）が
+    NULL のままになり、GoTrue がログイン時に
+    `Scan error ... converting NULL to string is unsupported` → 500
+    （"Database error querying schema"）で全ユーザー認証不可になる。
+    **シード時にこれらを `''`（空文字）で投入すること**。stg は事後 UPDATE
+    で修復済。β-2f の dev シードでは最初から `''` を入れる
+- [x] **β-2d** フロント改修（main、コミット `e7ecccf`）
+  - `supabase.ts`: `persistSession:true, autoRefreshToken:true`（β-2d-2）
+  - `LoginView`: `supabase.auth.signInWithPassword()`
+  - `App`/`AdminApp`: AuthProvider/`useAuth()`、kind 判定を JWT claim ベースに
+  - `impersonation.ts`: RPC（start/end_impersonation）+ `refreshClaims()`
+  - テナント切替: `set_active_organization` RPC + `refreshClaims()`
   - ログアウト: `supabase.auth.signOut()`
-- [ ] **β-2e** stg 全フロー検証（スタッフ/テナント/マルチ切替/impersonation/logout）
-  + 1〜2 テーブルで JWT ベース RLS を試験適用し claim が効くことを実証
-- [ ] **β-2f** dev/main 展開（`mock-login` Edge Function と `password_hash` カラム
-  撤去は最後。dev は β-2e 完了まで mock 温存）
+- [x] **β-2e** stg 全フロー検証（完了 2026-05-19）
+  - `0042_rls_jwt_trial.sql` stg 適用済（admin_full も 2 表で撤去）+
+    stg ブランチ push 済
+  - auth.users NULL トークン問題（β-2c の落とし穴）を stg で修復
+  - β-2e 検証用テストデータ投入済（demo: sensor 3 + readings 72 +
+    notes 2 + checkin 1 / 別組織 canbright: sensor 1 + readings 24 +
+    note 1 + checkin 1）。固定 UUID（device `1111…d1/d2/d3`・
+    `2222…e1` / note `3333…` / checkin `4444…`）。migration 化しない
+  - 実機で 3 ユーザーの全フロー（ログイン/コンテキスト/切替/
+    impersonation/logout/RLS 負テスト）検証 OK（inoue 確認）
+- [ ] **β-2f** dev 展開 + レガシー撤去
+  - [x] コード側撤去（`loadAuthSession`/`saveAuthSession`/`AuthSession`
+    型を削除。typecheck/build グリーン。コミット `e808898`）
+  - [x] dev に `0038/0039/0041/0042` 適用済（`kktwzllydtlsoahvdhzl`）
+  - [x] dev 検証ユーザー 3 名作成・紐付け済（pw `StgTest2026!`、
+    auth.users token 列は `''`）。Hook 関数が claim を正しく注入
+    することを dev で実証（editor→org_id+editor /
+    inoue→super_admin / confirmer→dashboard_confirmer）
+    - 紐付け: inoue@canbright.co.jp→users `…a001`(super_admin) /
+      editor@stg.miterude.cloud→`…a002`(demo028 editor) /
+      confirmer@stg.miterude.cloud→`…a003`(demo028 dashboard_confirmer)。
+      dev demo org = `…d001`(slug demo028)、別組織 demo086 が負テスト用
+  - [ ] ⚠️ **要手動**: dev Supabase ダッシュボードで Custom Access
+    Token Hook を有効化（Authentication → Hooks）。未有効だと GoTrue が
+    Hook を呼ばず claim 空 → guest 扱いでログインしてもテナント解決不可
+  - [ ] `origin/main` push → `dev` merge（Vercel 自動デプロイ）
+  - [ ] `mock-login` Edge Function 削除 + `users.password_hash` DROP
+    （migration 化、最後に実施）
 
 ### β-3: Resend 独自ドメイン認証 ✅ 完了（2026-05-16）
 

@@ -144,10 +144,11 @@ export function AdminStaffDetailView({
       a.notes ?? '',
     )
     if (!reasonInput || !reasonInput.trim()) return
-    startImpersonation({
-      staffUserId,
+    void startImpersonation({
       organizationId: a.organizationId,
       reason: reasonInput.trim(),
+    }).catch((e) => {
+      alert(e instanceof Error ? e.message : 'テナントに入れませんでした')
     })
     // startImpersonation 内で reload するので、以降の処理は不要
   }
