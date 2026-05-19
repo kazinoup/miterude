@@ -29,9 +29,14 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   Admin Console cross-tenant 操作のため `is_staff()` バイパス併設。
   stg/dev 適用済・両環境で `claim_*` 4 本のみを確認（2026-05-19）。
   `report_delivery_links` は公開 token 設計のため Phase E に回した
-- [ ] **C. コアデータ**: `devices` / `sensor_props` / `gateway_props` /
-  `sensor_readings` / `dashboards` を claim ベースへ。webhook-milesight
-  は service_role で無影響、公開共有も EF 経由で無影響を実機確認
+- [x] **C. コアデータ + Phase A 補正**:
+  `0047_rls_alert_logs_staff_bypass.sql`（AdminDashboardView の
+  cross-tenant SELECT 用に `alert_logs` に `is_staff()` バイパス追加）+
+  `0048_rls_phase_c_core_data.sql`（`devices` は claim+is_staff、
+  `sensor_props`/`gateway_props` は devices への exists で間接スコープ、
+  `sensor_readings` はテナント SELECT のみで書込は service_role、
+  `dashboards` はテナント claim 限定）。stg/dev 適用済、policy 検証 OK
+  （2026-05-19）
 - [ ] **D. 横断系**: `organizations` (id=current OR is_staff) /
   `organization_members` / `users` / `staff_assignments` /
   `staff_audit_logs` を `is_staff()` バイパス込みで設計
