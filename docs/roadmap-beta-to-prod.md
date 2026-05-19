@@ -23,10 +23,12 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   `is_super_admin()`）+ `0045_rls_alert_logs.sql`（demo_*/admin_full 撤去 →
   claim_*）。stg/dev 適用済・両環境で `alert_logs` の policy が
   `claim_*` 4 本のみに（2026-05-19）
-- [ ] **B. 設定系テナント表**: `sensor_categories` / `sensor_groups` /
-  `notification_groups` / `manufacturer_integrations` /
-  `report_schedules` / `report_delivery_links` を claim ベースへ
-  （`notification_groups` は `is_staff()` バイパス併設）
+- [x] **B. 設定系テナント表**: `0046_rls_phase_b_settings.sql`。
+  `sensor_categories` / `sensor_groups` / `manufacturer_integrations` /
+  `report_schedules` をテナント claim 限定、`notification_groups` は
+  Admin Console cross-tenant 操作のため `is_staff()` バイパス併設。
+  stg/dev 適用済・両環境で `claim_*` 4 本のみを確認（2026-05-19）。
+  `report_delivery_links` は公開 token 設計のため Phase E に回した
 - [ ] **C. コアデータ**: `devices` / `sensor_props` / `gateway_props` /
   `sensor_readings` / `dashboards` を claim ベースへ。webhook-milesight
   は service_role で無影響、公開共有も EF 経由で無影響を実機確認
