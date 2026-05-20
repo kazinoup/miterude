@@ -445,6 +445,10 @@ app_metadata に注入することを SQL レベルで実証済み。
     clear_existing トグル / 「投入」「クリア + 再投入」ボタン /
     結果 JSON 表示
   - `supabase.functions.invoke('seed-test-data', ...)` で β-7a EF を呼ぶ
+  - End-to-End 検証 OK（stg / demo-canbright に normal × 5 台 × 7 日 =
+    840 件投入成功、2026-05-19 inoue 確認）
+  - 初期版で CORS preflight ヘッダ未設定で `Failed to send a request` に
+    なる落とし穴を解消（`Access-Control-Allow-Headers` 追加、`686018a`）
 - [ ] **β-7e+**: 残機能（CSV import / 設定 ZIP export-import /
   webhook_inbox JSON export-replay / prod 無効化）
 
