@@ -44,9 +44,19 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   `staff_assignments`(CRUD: staff) / `staff_audit_logs`(SELECT/INSERT:
   staff、UPDATE/DELETE 無し＝不変)。SECURITY DEFINER の RPC は
   自動バイパス、service_role も bypassrls。stg/dev 適用済（2026-05-19）
-- [ ] **E. グローバル + 暫定撤去**: `manual_categories` /
-  `manual_pages`（全テナント read、`is_super_admin()` のみ write）+
-  `webhook_inbox` 暫定 `*_tmp` policy 全廃
+- [x] **E. グローバル + 暫定撤去**: `0028_manual_tables.sql` を stg にも
+  適用（β-0 欠番分）→ `0050_rls_phase_e_global.sql`。`manual_categories` /
+  `manual_pages` は全認証 read / `is_super_admin()` のみ write。
+  manual-images storage bucket も同様（read public、write super_admin）。
+  `webhook_inbox` は `is_staff()` SELECT のみ、書込は service_role 経由
+  （webhook-milesight）。stg/dev 適用済（2026-05-19）
+- [ ] **E.5 share-report EF 化（重要・回帰）**: PublicReportView が
+  anon で `report_delivery_links` / `organizations` / `devices` /
+  `sensor_props` / `sensor_readings` を直接 SELECT していたが、
+  Phase C/D で anon アクセス撤去のため stg/dev で公開レポート URL が
+  動作不可。share-dashboard と同形の `share-report` Edge Function
+  （verify_jwt=false / service_role）を新設して PublicReportView を
+  切替 → report_delivery_links を is_staff() のみに厳格化
 - [ ] **F. 負テスト**: stg で 3 ユーザー × 別組織不可視を全テーブル抜き打ち検証 →
   通れば dev へ展開 → β-1 完了
 
