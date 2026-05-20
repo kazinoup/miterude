@@ -449,8 +449,17 @@ app_metadata に注入することを SQL レベルで実証済み。
     840 件投入成功、2026-05-19 inoue 確認）
   - 初期版で CORS preflight ヘッダ未設定で `Failed to send a request` に
     なる落とし穴を解消（`Access-Control-Allow-Headers` 追加、`686018a`）
-- [ ] **β-7e+**: 残機能（CSV import / 設定 ZIP export-import /
-  webhook_inbox JSON export-replay / prod 無効化）
+- [x] **β-7e+ 初版**: CSV import + 全消去 + 本番ガード
+  - seed-test-data EF に `clear_only` モード追加（v3 デプロイ）
+  - 新規 `import-csv-readings` EF（super_admin / service_role、
+    device_number または device_id で対象を解決、500 件チャンク insert、
+    スキップ理由を errors[] で返す）
+  - Admin Console テストデータタブに CSV 取込セクション +
+    「seed_test を全消去」ボタン + 本番ドメイン
+    （miterude.cloud apex）/ `VITE_ENABLE_TEST_DATA_TAB=false`
+    では機能無効化の警告画面を表示
+- [ ] **β-7e++**: 残機能（テナント設定 ZIP export-import /
+  webhook_inbox JSON export-replay）
 
 ### β-8: メンバー招待フロー
 
