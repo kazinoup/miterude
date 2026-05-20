@@ -50,13 +50,13 @@ mock-login Edge Function を stg/dev 両環境で削除確認）。
   manual-images storage bucket も同様（read public、write super_admin）。
   `webhook_inbox` は `is_staff()` SELECT のみ、書込は service_role 経由
   （webhook-milesight）。stg/dev 適用済（2026-05-19）
-- [ ] **E.5 share-report EF 化（重要・回帰）**: PublicReportView が
-  anon で `report_delivery_links` / `organizations` / `devices` /
-  `sensor_props` / `sensor_readings` を直接 SELECT していたが、
-  Phase C/D で anon アクセス撤去のため stg/dev で公開レポート URL が
-  動作不可。share-dashboard と同形の `share-report` Edge Function
-  （verify_jwt=false / service_role）を新設して PublicReportView を
-  切替 → report_delivery_links を is_staff() のみに厳格化
+- [x] **E.5 share-report EF 化**: `supabase/functions/share-report/`
+  新設（verify_jwt=false / service_role）。PublicReportView を単一
+  fetch でこの EF を叩く形に再実装（旧 anon 直 SELECT を全廃）。
+  `0051_rls_report_delivery_links.sql` で `report_delivery_links` の
+  `*_tmp` を撤去し SELECT を `is_staff()` のみに（書込は service_role
+  経由＝dispatch-report-schedules）。stg/dev の両環境に EF デプロイ
+  +migration 適用済。typecheck/build グリーン（2026-05-19）
 - [ ] **F. 負テスト**: stg で 3 ユーザー × 別組織不可視を全テーブル抜き打ち検証 →
   通れば dev へ展開 → β-1 完了
 
