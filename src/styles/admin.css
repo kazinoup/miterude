@@ -3022,3 +3022,109 @@
   font-size: 0.85rem;
   color: var(--gray-700);
 }
+
+/* ===== β-7e: テストデータ投入ビュー ===== */
+.admin-page {
+  padding: 1.6rem 2rem;
+}
+.admin-page-head {
+  margin-bottom: 1.4rem;
+}
+.admin-page-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.4rem;
+  color: var(--navy-800);
+  font-size: 1.25rem;
+}
+.admin-page-sub {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+.admin-card {
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 1.2rem 1.4rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+.test-data-form .form-row {
+  margin-bottom: 1rem;
+}
+.test-data-form .form-row-inline {
+  display: flex;
+  gap: 1rem;
+}
+.test-data-form .form-col {
+  flex: 1;
+}
+.test-data-scenario-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+}
+.test-data-scenario-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--gray-300);
+  border-radius: 8px;
+  cursor: pointer;
+  background: #fff;
+}
+.test-data-scenario-card.is-active {
+  border-color: var(--navy-700);
+  background: #f4f7fb;
+}
+.test-data-scenario-card input[type='radio'] {
+  margin-top: 0.2rem;
+}
+.test-data-scenario-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.test-data-scenario-label {
+  font-weight: 600;
+  color: var(--navy-800);
+}
+.test-data-scenario-desc {
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.test-data-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+}
+.test-data-result {
+  margin-top: 1rem;
+  padding: 0.8rem 1rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+.spin {
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
