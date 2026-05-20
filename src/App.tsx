@@ -15,6 +15,7 @@ import { RecordsAndNotesReport } from './components/RecordsAndNotesReport'
 import { ToastContainer } from './components/ToastContainer'
 import { ContextSelectView } from './components/ContextSelectView'
 import { ImpersonationBanner } from './components/ImpersonationBanner'
+import { BetaBanner } from './components/BetaBanner'
 import { DashboardEditDialog } from './components/DashboardEditDialog'
 import type {
   AlertLogStore,
@@ -1359,6 +1360,7 @@ function TenantWorkspace({ auth }: { auth: ResolvedAuth }) {
       {auth.kind === 'impersonation' && (
         <ImpersonationBanner orgName={currentOrganization.name} />
       )}
+      <BetaBanner />
       <Sidebar
         current={view}
         onNavigate={navigate}

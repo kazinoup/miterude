@@ -125,3 +125,116 @@ input[type='radio'] {
     gap: 0;
   }
 }
+
+/* ===== β-5: β UI ===== */
+.beta-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  background: var(--navy-800);
+  color: #fff;
+  text-decoration: none;
+  vertical-align: middle;
+}
+.beta-badge-sm {
+  font-size: 0.65rem;
+  padding: 0.05rem 0.42rem;
+  margin-left: 0.4rem;
+}
+.beta-badge-md {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.55rem;
+  margin-left: 0.5rem;
+}
+.beta-badge:hover {
+  background: var(--navy-700);
+}
+
+.beta-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 1rem;
+  background: #fff7ed;
+  color: #7c2d12;
+  border-bottom: 1px solid #fed7aa;
+  font-size: 0.82rem;
+}
+.beta-banner strong {
+  color: #92400e;
+}
+.beta-banner-link {
+  margin-left: 0.5rem;
+  color: #92400e;
+  text-decoration: underline;
+}
+.app-shell.has-beta-banner {
+  /* impersonation-banner と組み合わせの余白調整は CSS 側に任せる */
+}
+
+.beta-terms-page {
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: var(--gray-50);
+}
+.beta-terms-card {
+  max-width: 720px;
+  width: 100%;
+  background: #fff;
+  border: 1px solid var(--gray-200);
+  border-radius: 10px;
+  padding: 1.8rem 2rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+.beta-terms-head h1 {
+  margin: 0.3rem 0 0.4rem;
+  color: var(--navy-800);
+  font-size: 1.4rem;
+}
+.beta-terms-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #92400e;
+  border: 1px solid #fed7aa;
+}
+.beta-terms-section {
+  margin-top: 1.4rem;
+}
+.beta-terms-section h2 {
+  font-size: 1rem;
+  margin: 0 0 0.4rem;
+  color: var(--navy-800);
+}
+.beta-terms-section p,
+.beta-terms-section li {
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--gray-700);
+}
+.beta-terms-section ul {
+  padding-left: 1.1rem;
+  margin: 0;
+}
+.beta-terms-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.8rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gray-200);
+}
+.login-terms-link {
+  color: var(--navy-700);
+  text-decoration: underline;
+}

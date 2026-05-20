@@ -10,6 +10,8 @@ import { useState } from 'react'
 import { LogIn, UserCircle2, ShieldCheck, AlertCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { getResolvedAuth } from '../../lib/authSession'
+import { BetaBadge } from '../BetaBadge'
+import { BETA_MODE, BETA_TERMS_PATH } from '../../lib/betaMode'
 
 const DEMO_PASSWORD = 'StgTest2026!'
 
@@ -93,7 +95,9 @@ export function LoginView() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <span className="login-brand-name">ミテルデ</span>
+          <span className="login-brand-name">
+            ミテルデ <BetaBadge />
+          </span>
           <span className="login-brand-sub">IoT モニタリング</span>
         </div>
 
@@ -187,6 +191,14 @@ export function LoginView() {
           <ShieldCheck size={11} /> Supabase Auth による認証。検証ユーザーは
           stg 環境専用です。
         </p>
+
+        {BETA_MODE && (
+          <p className="login-note muted">
+            <a href={BETA_TERMS_PATH} className="login-terms-link">
+              β 利用規約
+            </a>
+          </p>
+        )}
       </div>
     </div>
   )
