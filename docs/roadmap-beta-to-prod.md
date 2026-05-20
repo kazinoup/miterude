@@ -438,12 +438,15 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [ ] **β-7d**: Webhook 転送機能（Admin Console から prod → stg/demo へリアルタイム転送）
   - `webhook_forwarding_rules` テーブル + HMAC 再署名ロジック
   - Admin UI（連携設定タブ内）
-- [ ] **β-7e**: テストデータタブ UI
-  - シナリオ投入ボタン
-  - sensor_readings CSV import
-  - テナント設定 ZIP export / import
-  - webhook_inbox JSON export / replay
-  - データクリアボタン（prod では無効化）
+- [x] **β-7e**: テストデータタブ UI（初版）
+  - Admin Console サイドバー「テストデータ」（super_admin 専用、
+    `/admin/test-data`）
+  - 対象テナント選択 / 4 シナリオラジオ / sensor_count / days /
+    clear_existing トグル / 「投入」「クリア + 再投入」ボタン /
+    結果 JSON 表示
+  - `supabase.functions.invoke('seed-test-data', ...)` で β-7a EF を呼ぶ
+- [ ] **β-7e+**: 残機能（CSV import / 設定 ZIP export-import /
+  webhook_inbox JSON export-replay / prod 無効化）
 
 ### β-8: メンバー招待フロー
 

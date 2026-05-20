@@ -6,7 +6,7 @@
  * Phase A-5 でスタッフ管理 + impersonation、A-7 で監査ログを足す。
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Building2, Users2, History, ShieldCheck, BookOpen, LayoutDashboard } from 'lucide-react'
+import { Building2, Users2, History, ShieldCheck, BookOpen, LayoutDashboard, Database } from 'lucide-react'
 import { UserMenu } from '../components/UserMenu'
 import { ContextSelectView } from '../components/ContextSelectView'
 import { ToastContainer } from '../components/ToastContainer'
@@ -17,6 +17,7 @@ import { AdminStaffDetailView } from './views/AdminStaffDetailView'
 import { AdminAuditView } from './views/AdminAuditView'
 import { AdminManualView } from './views/AdminManualView'
 import { AdminDashboardView } from './views/AdminDashboardView'
+import { AdminTestDataView } from './views/AdminTestDataView'
 import {
   loadOrganizations,
   loadUsers,
@@ -63,6 +64,7 @@ export type AdminViewKey =
   | 'staff-detail'
   | 'audit'
   | 'manual'
+  | 'test-data'
 
 type Props = {
   /** 現在の認証状態（claim 由来）。kind は 'admin' 前提で App から渡される。 */
@@ -205,9 +207,10 @@ export function AdminApp({ auth }: Props) {
     setUnmatchedCount(globalUnmatchedDeviceCount())
   }, [view, activeTenantId])
 
-  // 非 super_admin が /admin/staff 系に URL 直アクセスしたらテナント一覧に戻す
+  // 非 super_admin が /admin/staff 系・/admin/test-data に URL 直アクセスしたら
+  // テナント一覧に戻す
   useEffect(() => {
-    if (!isSuper && (view === 'staff' || view === 'staff-detail')) {
+    if (!isSuper && (view === 'staff' || view === 'staff-detail' || view === 'test-data')) {
       setView('tenants')
       setActiveStaffId(null)
     }
@@ -394,6 +397,17 @@ export function AdminApp({ auth }: Props) {
             <BookOpen size={16} />
             <span>マニュアル</span>
           </button>
+          {/* テストデータは super_admin 専用（seed-test-data EF も super_admin 限定） */}
+          {isSuper && (
+            <button
+              type="button"
+              className={`admin-nav-item ${view === 'test-data' ? 'is-active' : ''}`}
+              onClick={() => setView('test-data')}
+            >
+              <Database size={16} />
+              <span>テストデータ</span>
+            </button>
+          )}
         </nav>
 
         <div className="admin-sidebar-foot">
@@ -472,6 +486,7 @@ export function AdminApp({ auth }: Props) {
             }}
           />
         )}
+        {view === 'test-data' && isSuper && <AdminTestDataView />}
       </main>
 
       <ToastContainer />
