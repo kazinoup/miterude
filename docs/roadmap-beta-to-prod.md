@@ -423,8 +423,16 @@ app_metadata に注入することを SQL レベルで実証済み。
 
 ### β-7: テストデータ環境
 
-- [ ] **β-7a**: シードジェネレータ Edge Function
-  - normal / with-deviations / with-offline / battery-low の 4 シナリオ
+- [x] **β-7a**: シードジェネレータ Edge Function
+  （`supabase/functions/seed-test-data/`、verify_jwt=true）
+  - POST `/functions/v1/seed-test-data` で `{ organization_id, scenario,
+    sensor_count?, days?, clear_existing? }` を受ける
+  - 認可: super_admin の JWT または service_role キー（cron 用）。
+    関数内で JWT app_metadata.app_role を確認、service_role キーは
+    直接比較で通す
+  - 4 シナリオ: normal / with-deviations / with-offline / battery-low
+  - 既存 `metadata.seed_test=true` の devices をオプションで一掃可能
+  - stg/dev 両環境にデプロイ済（2026-05-19）、状態 ACTIVE
 - [ ] **β-7b**: 合成 webhook ストリーム（pg_cron で 30 分おきに stg / demo へ投入）
 - [ ] **β-7c**: 物理センサー設置（任意・社内テスト用）
 - [ ] **β-7d**: Webhook 転送機能（Admin Console から prod → stg/demo へリアルタイム転送）
