@@ -8,6 +8,8 @@ import { installDemoResetHook } from './lib/demoReset'
 import { PublicDashboardView } from './components/views/PublicDashboardView'
 import { PublicReportView } from './components/views/PublicReportView'
 import { LoginView } from './components/views/LoginView'
+import { BetaTermsView } from './components/views/BetaTermsView'
+import { BETA_TERMS_PATH } from './lib/betaMode'
 
 // URL クエリ `?reset=demo` や console `miterudeResetDemo()` で
 // localStorage を初期化できるようにする。React より前に実行。
@@ -32,6 +34,13 @@ function extractSharePath(): SharePath {
 
 function isLoginPath(): boolean {
   return typeof window !== 'undefined' && window.location.pathname === '/login'
+}
+
+function isBetaTermsPath(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    window.location.pathname === BETA_TERMS_PATH
+  )
 }
 
 const share = extractSharePath()
@@ -60,6 +69,15 @@ if (share?.kind === 'dashboard') {
     <StrictMode>
       <ErrorBoundary>
         <LoginView />
+      </ErrorBoundary>
+    </StrictMode>,
+  )
+} else if (isBetaTermsPath()) {
+  // β 利用規約: 認証不要・テナント解決もしない
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <ErrorBoundary>
+        <BetaTermsView />
       </ErrorBoundary>
     </StrictMode>,
   )

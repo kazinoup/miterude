@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Building2, Users2, History, ShieldCheck, BookOpen, LayoutDashboard, Database } from 'lucide-react'
 import { UserMenu } from '../components/UserMenu'
+import { BetaBadge } from '../components/BetaBadge'
 import { ContextSelectView } from '../components/ContextSelectView'
 import { ToastContainer } from '../components/ToastContainer'
 import { AdminTenantsView } from './views/AdminTenantsView'
@@ -326,6 +327,7 @@ export function AdminApp({ auth }: Props) {
           <div className="admin-sidebar-brand-line">
             <ShieldCheck size={16} />
             <span className="admin-sidebar-brand-name">ミテルデ</span>
+            <BetaBadge />
           </div>
           <div className="admin-sidebar-brand-sub">Admin Console</div>
         </div>

@@ -409,11 +409,21 @@ app_metadata に注入することを SQL レベルで実証済み。
 - [ ] **残**: `miterude.cloud` apex は現在 miterude-dev に仮紐付け。
   prod 作成時（β顧客契約後）に miterude-prod へ付け替える
 
-### β-5: β UI / 規約
+### β-5: β UI / 規約 ✅ 実装完了（2026-05-19）
 
-- [ ] `VITE_BETA_MODE=true` で右上「β」バッジ表示
-- [ ] β 利用規約画面（β期間中につき無償・SLA なし）
-- [ ] β顧客限定の利用上注意 banner
+- [x] `VITE_BETA_MODE=true` で「β」バッジ表示
+  - 共通ヘルパ `src/lib/betaMode.ts`（`BETA_MODE` / `BETA_TERMS_PATH`）
+  - `src/components/BetaBadge.tsx`: ピル状の β バッジ（クリックで規約へ）
+  - サイドバーのブランド名横（テナント / Admin Console 両方）、
+    ログイン画面のブランド横に表示
+- [x] β 利用規約画面 `/terms-beta`（認証不要、main.tsx で route 分岐）
+  - `src/components/views/BetaTermsView.tsx`: SLA 無し・データ取扱・無償・
+    免責・問い合わせ先までを 1 ページに集約
+- [x] β 利用注意 banner（TenantWorkspace 最上部に常設）
+  - `src/components/BetaBanner.tsx`: AlertTriangle + 規約リンク
+- ⚠️ **要手動**: dev / stg の Vercel プロジェクトで
+  `VITE_BETA_MODE=true` を Production env として設定 → 再デプロイ。
+  prod プロジェクト作成時は `false`（既定）のままにする
 
 ### β-6: β顧客セットアップ手順書
 

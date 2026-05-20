@@ -16,6 +16,7 @@ import type {
   ViewKey,
 } from '../types'
 import { UserMenu } from './UserMenu'
+import { BetaBadge } from './BetaBadge'
 import { canEdit } from '../lib/permissions'
 
 type Props = {
@@ -95,6 +96,7 @@ export function Sidebar({
     <aside className="sidebar">
       <div className="sidebar-brand">
         <span className="brand-name">ミテルデ</span>
+        <BetaBadge />
       </div>
 
       <nav className="sidebar-nav">
