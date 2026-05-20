@@ -43,6 +43,9 @@ type Body = {
   sensor_count?: number
   days?: number
   clear_existing?: boolean
+  /** β-7e+: true なら seed_test マークの devices/readings/props を
+   *  削除するだけで新規投入はしない。 */
+  clear_only?: boolean
 }
 
 const CORS_HEADERS = {
@@ -144,7 +147,8 @@ Deno.serve(async (req) => {
   const scenario: Scenario = body.scenario ?? 'normal'
   const sensorCount = Math.max(1, Math.min(20, body.sensor_count ?? 5))
   const days = Math.max(1, Math.min(30, body.days ?? 7))
-  const clearExisting = body.clear_existing === true
+  const clearOnly = body.clear_only === true
+  const clearExisting = clearOnly || body.clear_existing === true
 
   if (!orgId) return jsonResponse({ ok: false, error: 'organization_id required' }, 400)
   if (
@@ -153,7 +157,8 @@ Deno.serve(async (req) => {
     return jsonResponse({ ok: false, error: 'invalid scenario' }, 400)
   }
 
-  // ---------- 1) clear_existing: seed-test マークの devices を削除 ----------
+  // ---------- 1) clear_existing / clear_only: seed-test マークの devices を削除 ----------
+  let clearedDevices = 0
   if (clearExisting) {
     const { data: oldDevices } = await supabase
       .from('devices')
@@ -165,7 +170,18 @@ Deno.serve(async (req) => {
       await supabase.from('sensor_readings').delete().in('sensor_id', oldIds)
       await supabase.from('sensor_props').delete().in('device_id', oldIds)
       await supabase.from('devices').delete().in('id', oldIds)
+      clearedDevices = oldIds.length
     }
+  }
+
+  // clear_only モードはここで終了（投入は行わない）
+  if (clearOnly) {
+    return jsonResponse({
+      ok: true,
+      organization_id: orgId,
+      mode: 'clear_only',
+      devices_cleared: clearedDevices,
+    })
   }
 
   // ---------- 2) devices + sensor_props を作成 ----------
