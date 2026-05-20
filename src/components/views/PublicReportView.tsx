@@ -8,7 +8,6 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Printer, FileBarChart2 } from 'lucide-react'
-import { supabase } from '../../lib/supabase'
 import { ReportPreview } from '../ReportPreview'
 import type {
   ReportKind,
@@ -65,159 +64,79 @@ export function PublicReportView({ token }: Props) {
     let cancelled = false
     setStatus('loading')
 
-    ;(async () => {
-      try {
-        // 1) link 行を token で SELECT
-        const { data: linkData, error: linkErr } = await supabase
-          .from('report_delivery_links')
-          .select(
-            'id, organization_id, schedule_id, report_kind, period_start, period_end, target_sensor_ids, expires_at',
-          )
-          .eq('token', token)
-          .maybeSingle()
-        if (linkErr) throw new Error(`link: ${linkErr.message}`)
-        if (!linkData) throw new Error('指定されたレポート URL は無効です')
-        const l = linkData as LinkRow
-        if (l.expires_at && new Date(l.expires_at).getTime() < Date.now()) {
-          throw new Error('このレポート URL は有効期限が切れています')
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
+    if (!supabaseUrl) {
+      setStatus('error')
+      setError('Supabase URL が設定されていません')
+      return
+    }
+
+    // β-1 E.5: share-report Edge Function 経由で取得（service_role）。
+    // 旧 anon 直 SELECT は claim ベース RLS で塞がれているため EF を経由する。
+    fetch(
+      `${supabaseUrl}/functions/v1/share-report?token=${encodeURIComponent(token)}`,
+    )
+      .then(async (r) => {
+        const body = await r.json().catch(() => null)
+        if (!r.ok || !body?.ok) {
+          const msg = body?.error
+          if (msg === 'expired') throw new Error('このレポート URL は有効期限が切れています')
+          if (msg === 'not-found') throw new Error('指定されたレポート URL は無効です')
+          throw new Error(msg ?? `${r.status} ${r.statusText}`)
         }
+        if (cancelled) return
 
-        // 2) 並列で 組織 + 対象センサー（メタ + thresholds）を取得
-        const orgPromise = supabase
-          .from('organizations')
-          .select('id, name')
-          .eq('id', l.organization_id)
-          .maybeSingle()
-
-        const targetIds = l.target_sensor_ids ?? []
-        const hasTargetIds = targetIds.length > 0
-        const sensorsPromise = hasTargetIds
-          ? supabase
-              .from('devices')
-              .select('id, name, device_number, serial_number')
-              .in('id', targetIds)
-          : supabase
-              .from('devices')
-              .select('id, name, device_number, serial_number')
-              .eq('organization_id', l.organization_id)
-              .eq('device_type', 'sensor')
-
-        const [orgRes, devicesRes] = await Promise.all([orgPromise, sensorsPromise])
-        if (orgRes.error) throw new Error(`org: ${orgRes.error.message}`)
-        if (!orgRes.data) throw new Error('組織が見つかりません')
-        if (devicesRes.error) throw new Error(`devices: ${devicesRes.error.message}`)
-        const devices = (devicesRes.data ?? []) as Array<{
+        const l = body.link as LinkRow
+        const o = body.organization as OrgRow
+        const sensorMetas: SensorMeta[] = (body.sensors as Array<{
           id: string
           name: string | null
           device_number: string | null
           serial_number: string
-        }>
-
-        // 3) thresholds を sensor_props から取る
-        const sensorIds = devices.map((d) => d.id)
-        const propsRes = sensorIds.length
-          ? await supabase
-              .from('sensor_props')
-              .select('device_id, thresholds')
-              .in('device_id', sensorIds)
-          : { data: [], error: null as null | { message: string } }
-        if (propsRes.error) throw new Error(`sensor_props: ${propsRes.error.message}`)
-        const thresholdsByDevice: Record<string, SensorThresholds | undefined> = {}
-        for (const row of (propsRes.data ?? []) as Array<{
-          device_id: string
           thresholds: SensorThresholds | null
-        }>) {
-          thresholdsByDevice[row.device_id] = row.thresholds ?? undefined
-        }
-
-        const sensorMetas: SensorMeta[] = devices.map((d) => ({
-          id: d.id,
-          name: d.name,
-          device_number: d.device_number,
-          serial_number: d.serial_number,
-          thresholds: thresholdsByDevice[d.id],
+        }>).map((s) => ({
+          id: s.id,
+          name: s.name,
+          device_number: s.device_number,
+          serial_number: s.serial_number,
+          thresholds: s.thresholds ?? undefined,
         }))
 
-        // 4) 対象期間の sensor_readings を取得（センサーごと並列、1000 件単位ページング）
-        //    period_end は inclusive なので、翌日 0:00 (UTC 想定) で < に切る
-        const periodStartIso = `${l.period_start}T00:00:00+09:00`
-        const endDate = ymdToDate(l.period_end)
-        endDate.setUTCDate(endDate.getUTCDate() + 1)
-        const periodEndIso = endDate.toISOString()
-
-        async function fetchAllReadings(sensorId: string): Promise<SensorReading[]> {
-          const PAGE = 1000
-          const out: SensorReading[] = []
-          let offset = 0
-          // eslint-disable-next-line no-constant-condition
-          while (true) {
-            const { data, error } = await supabase
-              .from('sensor_readings')
-              .select('sensor_id, measured_at, temperature, humidity, battery')
-              .eq('sensor_id', sensorId)
-              .gte('measured_at', periodStartIso)
-              .lt('measured_at', periodEndIso)
-              .order('measured_at', { ascending: true })
-              .range(offset, offset + PAGE - 1)
-            if (error) throw error
-            const rows = data ?? []
-            for (const r of rows as Array<{
-              sensor_id: string
-              measured_at: string
-              temperature: number | null
-              humidity: number | null
-              battery: number | null
-            }>) {
-              if (r.temperature == null && r.humidity == null) continue
-              out.push({
-                deviceId: r.sensor_id,
-                measuredAt: new Date(r.measured_at),
-                temperature: r.temperature ?? NaN,
-                humidity: r.humidity ?? NaN,
-                battery: r.battery ?? undefined,
-              })
-            }
-            if (rows.length < PAGE) break
-            offset += PAGE
+        const allReadings: Record<string, SensorReading[]> = {}
+        const rbs = body.readingsBySensor as Record<string, Array<{
+          sensor_id: string
+          measured_at: string
+          temperature: number | null
+          humidity: number | null
+          battery: number | null
+        }>>
+        for (const [sid, rows] of Object.entries(rbs ?? {})) {
+          const list: SensorReading[] = []
+          for (const r of rows) {
+            if (r.temperature == null && r.humidity == null) continue
+            list.push({
+              deviceId: r.sensor_id,
+              measuredAt: new Date(r.measured_at),
+              temperature: r.temperature ?? NaN,
+              humidity: r.humidity ?? NaN,
+              battery: r.battery ?? undefined,
+            })
           }
-          return out
+          allReadings[sid] = list
         }
 
-        const allReadings: Record<string, SensorReading[]> = {}
-        await Promise.all(
-          sensorMetas.map(async (s) => {
-            try {
-              allReadings[s.id] = await fetchAllReadings(s.id)
-            } catch (e) {
-              console.warn('[public-report] reading fetch failed', s.id, e)
-              allReadings[s.id] = []
-            }
-          }),
-        )
-
-        if (cancelled) return
         setLink(l)
-        setOrg(orgRes.data as OrgRow)
+        setOrg(o)
         setSensors(sensorMetas)
         setReadingsBySensor(allReadings)
         setStatus('ready')
-
-        // 監査用に view_count を加算（失敗しても本体には影響させない）
-        supabase
-          .from('report_delivery_links')
-          .update({
-            last_viewed_at: new Date().toISOString(),
-            view_count: 1, // 単純加算: 後で increment 表現に置換可能
-          })
-          .eq('id', l.id)
-          .then(() => undefined)
-      } catch (e) {
+      })
+      .catch((e) => {
         if (cancelled) return
         console.error('[public-report] load failed', e)
         setStatus('error')
         setError(e instanceof Error ? e.message : String(e))
-      }
-    })()
+      })
 
     return () => {
       cancelled = true

@@ -2,14 +2,70 @@
 
 最終更新: 2026-05-19  
 ステータス: β-0/β-3/β-4 完了。リファクタ第1/2弾完了・dev/stg 反映済。
-**β-2d/β-2e 完了**。**β-2f はコード/DB 撤去まで完了**
-（`loadAuthSession` 系撤去 + dev 展開 + 0043 で password_hash DROP +
-mock-login ローカル撤去）。残: デプロイ済 mock-login 関数削除（CLI 手動）
-→ 完了で β-2 全クローズ → β-1（RLS 全テーブル一般化）へ。
+**β-2 全クローズ**（auth フロント `e7ecccf` + 0038-0043 + dev 展開 +
+mock-login Edge Function を stg/dev 両環境で削除確認）。
+次は **β-1（RLS 全テーブル一般化）**。
+
+### β-1 設計方針（β-2 で確立した claim 基盤を全テーブルへ展開）
+
+- スコープ判定: `public.current_org_id() = coalesce(impersonating_org_id,
+  org_id)`（0042 で導入済）。impersonation 中の staff は自然に target org を見る
+- staff バイパス: `public.is_staff()` = `app_role in ('super_admin','support')`。
+  Admin Console が cross-tenant 読みするテーブル（organizations /
+  organization_members / users / staff_* / manual_* / webhook_inbox /
+  notification_groups）に追加
+- service_role: bypassrls で自動バイパス（Edge Function は無影響）
+- 公開共有: `share-dashboard` EF が service_role 利用のため anon 直 SELECT 不要
+
+### β-1 実施フェーズ（小さく刻んで stg 先行検証）
+
+- [x] **A. helpers + alert_logs**: `0044_rls_helpers.sql`（`is_staff()`/
+  `is_super_admin()`）+ `0045_rls_alert_logs.sql`（demo_*/admin_full 撤去 →
+  claim_*）。stg/dev 適用済・両環境で `alert_logs` の policy が
+  `claim_*` 4 本のみに（2026-05-19）
+- [x] **B. 設定系テナント表**: `0046_rls_phase_b_settings.sql`。
+  `sensor_categories` / `sensor_groups` / `manufacturer_integrations` /
+  `report_schedules` をテナント claim 限定、`notification_groups` は
+  Admin Console cross-tenant 操作のため `is_staff()` バイパス併設。
+  stg/dev 適用済・両環境で `claim_*` 4 本のみを確認（2026-05-19）。
+  `report_delivery_links` は公開 token 設計のため Phase E に回した
+- [x] **C. コアデータ + Phase A 補正**:
+  `0047_rls_alert_logs_staff_bypass.sql`（AdminDashboardView の
+  cross-tenant SELECT 用に `alert_logs` に `is_staff()` バイパス追加）+
+  `0048_rls_phase_c_core_data.sql`（`devices` は claim+is_staff、
+  `sensor_props`/`gateway_props` は devices への exists で間接スコープ、
+  `sensor_readings` はテナント SELECT のみで書込は service_role、
+  `dashboards` はテナント claim 限定）。stg/dev 適用済、policy 検証 OK
+  （2026-05-19）
+- [x] **D. 横断系**: `0049_rls_phase_d_cross_org.sql`。
+  `organizations`(SELECT: id=current OR is_staff / 書込: staff) /
+  `users`(SELECT: 本人 OR staff / 書込: staff) /
+  `organization_members`(SELECT: 自テナント OR staff / 書込: staff) /
+  `staff_assignments`(CRUD: staff) / `staff_audit_logs`(SELECT/INSERT:
+  staff、UPDATE/DELETE 無し＝不変)。SECURITY DEFINER の RPC は
+  自動バイパス、service_role も bypassrls。stg/dev 適用済（2026-05-19）
+- [x] **E. グローバル + 暫定撤去**: `0028_manual_tables.sql` を stg にも
+  適用（β-0 欠番分）→ `0050_rls_phase_e_global.sql`。`manual_categories` /
+  `manual_pages` は全認証 read / `is_super_admin()` のみ write。
+  manual-images storage bucket も同様（read public、write super_admin）。
+  `webhook_inbox` は `is_staff()` SELECT のみ、書込は service_role 経由
+  （webhook-milesight）。stg/dev 適用済（2026-05-19）
+- [x] **E.5 share-report EF 化**: `supabase/functions/share-report/`
+  新設（verify_jwt=false / service_role）。PublicReportView を単一
+  fetch でこの EF を叩く形に再実装（旧 anon 直 SELECT を全廃）。
+  `0051_rls_report_delivery_links.sql` で `report_delivery_links` の
+  `*_tmp` を撤去し SELECT を `is_staff()` のみに（書込は service_role
+  経由＝dispatch-report-schedules）。stg/dev の両環境に EF デプロイ
+  +migration 適用済。typecheck/build グリーン（2026-05-19）
+- [ ] **F. 負テスト**: stg で 3 ユーザー × 別組織不可視を全テーブル抜き打ち検証 →
+  通れば dev へ展開 → β-1 完了
 
 ### ▶ 次に再開するとき（中断ポイント: 2026-05-19）
 
-**次の一手 = β-2f（dev を supabase 化 + レガシー撤去）。**
+**次の一手 = β-1（RLS 全テーブル一般化）Phase A（helpers + alert_logs）。**
+
+旧 β-2f メモは下記履歴。β-2f は完了済み（mock-login 削除確認 / 0043
+適用済 / dev 展開済 / 3 ブランチ同期済）。
 
 β-2f の状態と残り:
 - ✅ コード側レガシー撤去（`loadAuthSession`/`saveAuthSession`/
